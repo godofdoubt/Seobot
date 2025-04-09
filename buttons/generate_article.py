@@ -46,6 +46,9 @@ def select_focus_keyword(text_report: str) -> str:
         logging.error(f"Error in select_focus_keyword: {e}")
         return "general information about the website"
 
+# Fix for the f-string backslash issue in generate_article.py
+# Replace the problematic part in your code with this approach:
+
 def generate_article(text_report: str, url: str, article_options: dict = None) -> str:
     """Generates an article using Gemini based on the text report and URL, supporting multiple languages."""
     try:
@@ -99,6 +102,14 @@ def generate_article(text_report: str, url: str, article_options: dict = None) -
         # --- Gemini Language Instruction ---
         language_instruction = f"Respond in Turkish. " if lang == "tr" else "" # Add more languages as needed
 
+        # --- Fix: prepare the title instruction outside the f-string ---
+        # This avoids using backslashes in f-string expressions
+        if article_options['custom_title']:
+            title_part = "Use the provided title exactly as specified."
+        else:
+            # Create the part with quotes separately, avoiding backslashes in f-string expressions
+            title_part = f'Create a creative and compelling title that accurately reflects the article\'s content, emphasizing **"{focus_keyword}"**.'
+
         # --- Construct the Full Prompt ---
         prompt = f"""{language_instruction}{prompt_prefix} based on the SEO analysis below.
 
@@ -122,13 +133,14 @@ def generate_article(text_report: str, url: str, article_options: dict = None) -
     * **List Used Keywords:** At the end of the article, under the heading "Keywords:", provide a bulleted list of the *primary keywords you intentionally used* in the article, including **"{focus_keyword}"**.
     * **Suggest New Keywords (Optional):** If possible, also suggest 2-3 *additional, potentially new* keywords that could be relevant to **"{focus_keyword}"** for future content or SEO efforts. List these under "Suggested Keywords:" if applicable. If not applicable or you cannot think of new keywords, skip this "Suggested Keywords:" section.
 
-8. **Compelling Title:** {"Use the provided title exactly as specified." if article_options['custom_title'] else "Create a creative and compelling title that accurately reflects the article's content, emphasizing **\"" + focus_keyword + "\"**."} 
+8. **Compelling Title:** {title_part}
 
 **SEO Report for {website_name}:**
 
 {text_report}
 
 **--- Timestamp for Variation: {variation_seed} ---**
+
 """
         response = model.generate_content(
             prompt,
