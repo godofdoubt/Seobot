@@ -131,7 +131,7 @@ async def main():
                 st.markdown(message["content"])
     
     # Handle chat input
-    placeholder_text = language_manager.get_text("enter_url", lang)
+    placeholder_text = language_manager.get_text("enter_url_welcome", lang)
     if prompt := st.chat_input(placeholder_text):
         # Add user message to shared session state
         st.session_state.messages.append({"role": "user", "content": prompt})
