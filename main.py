@@ -218,17 +218,21 @@ async def process_url(url, lang="en"):
     try:
         # Normalize URL
         normalized_url = normalize_url(url)
+        logging.info(f"Starting process_url for {url}")
         
         with st.spinner(language_manager.get_text("analyzing_website", lang)):
             # Check if we have a saved report
+            logging.info(f"Checking for saved report: {normalized_url}")
             saved_report = load_saved_report(normalized_url, supabase)
-            
-            if saved_report:
+            # 04.19.25 not ve debuglar eklendi saçmaladığı için.
+            if not saved_report:
                 st.info(language_manager.get_text("found_existing_report", lang))
                 text_report, full_report = saved_report
+                logging.info(f"Saved report found: {saved_report is not None}")
             else:
                 # Generate new report
-                analysis_result = analyze_website(normalized_url, supabase)
+                st.info(language_manager.get_text("generating_new_report", lang))
+                analysis_result = await analyze_website(normalized_url, supabase)
                 if analysis_result:
                     text_report, full_report = analysis_result
                 else:
