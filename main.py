@@ -218,33 +218,51 @@ async def process_url(url, lang="en"):
     try:
         # Normalize URL
         normalized_url = normalize_url(url)
-        logging.info(f"Starting process_url for {url}")
+        logging.info(f"Starting process_url for {normalized_url}")
         
         with st.spinner(language_manager.get_text("analyzing_website", lang)):
             # Check if we have a saved report
-            logging.info(f"Checking for saved report: {normalized_url}")
             saved_report = load_saved_report(normalized_url, supabase)
-            # 04.19.25 not ve debuglar eklendi saçmaladığı için.
-            if not saved_report:
-                st.info(language_manager.get_text("found_existing_report", lang))
+            
+            # Debug information
+            if saved_report:
+                logging.info(f"Found existing report for {normalized_url}")
+                logging.info(f"Report content exists: {bool(saved_report[0])}")
+            else:
+                logging.info(f"No existing report found for {normalized_url}")
+            
+            # Process based on whether we have a saved report
+            if saved_report and saved_report[0] and saved_report[1]:  # Ensure both text_report and full_report exist
+                # Use existing report
                 text_report, full_report = saved_report
-                logging.info(f"Saved report found: {saved_report is not None}")
+                st.info(language_manager.get_text("found_existing_report", lang))
+                logging.info("Using existing report")
             else:
                 # Generate new report
-                st.info(language_manager.get_text("generating_new_report", lang))
+                logging.info(f"Generating new report for {normalized_url}")
+                st.info("Generating new analysis...")
+                
+                # Call analyzer
                 analysis_result = await analyze_website(normalized_url, supabase)
-                if analysis_result:
+                
+                if analysis_result and analysis_result[0] and analysis_result[1]:
                     text_report, full_report = analysis_result
+                    logging.info("New analysis successfully generated")
                 else:
-                    st.error(language_manager.get_text("analysis_failed", lang))
+                    st.error("Failed to analyze website")
+                    logging.error(f"Analysis failed for {normalized_url}")
                     return
             
-            # Display the report
+            # Display the report after successfully retrieving or generating it
+            logging.info("Displaying report")
             display_report(text_report, full_report, normalized_url)
     
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
-        logging.error(f"Error processing URL: {str(e)}")
+        error_message = f"Error in process_url: {str(e)}"
+        st.error(error_message)
+        logging.error(error_message)
+        import traceback
+        logging.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
