@@ -17,7 +17,8 @@ class LanguageSupport:
                 
                 # Messages
                 "welcome_message": "Welcome to Se10 AI",
-                "enter_url": "Enter website URL to analyze: Or Ask any question:",
+                "enter_url": "Enter website URL to analyze",
+                "enter_url_welcome": "Enter website URL to analyze: Or ask a question",
                 "analysis_complete": "Analysis complete! You now have access to our suite of SEO tools.",
                 "analyzing_website": "Analyzing website...",
                 "found_existing_report": "Found existing report for this website.",
@@ -34,6 +35,7 @@ class LanguageSupport:
                 "welcome_seo_helper_analyzed": "Welcome to the Seo Helper Page.\nUsing analysis for: {}", # <-- ADDED KEY
                 "welcome_article_writer_not_analyzed": "Welcome to the Article Writer page. Please analyze a website in the SEO Helper page first to proceed.",
                 "welcome_article_writer_analyzed": "Welcome to the Article Writer page. Ready to help you write an article based on the analysis of {}.",
+                "generating_new_report": "Generating new SEO report...",
 
                 "content_generation_tools": "Content Generation Tools",
                 "create_optimized_content": "Create optimized content based on your website analysis:",
@@ -114,7 +116,8 @@ class LanguageSupport:
                 
                 # Messages
                 "welcome_message": "S10 Yapay Zeka Web Servisine Hoş Geldiniz",
-                "enter_url": "URL girin: Yada Soru Sorun",
+                "enter_url": "URL girin:",
+                "enter_url_welcome": "Website URLnizi girin , Yada Soru Sorun.",
                 "analysis_complete": "Analiz tamamlandı! Artık Servislere araçlarımıza erişebilirsiniz.",
                 "analyzing_website": "....Web sitesi analiz ediliyor...",
                 "found_existing_report": "Bu web sitesi için mevcut rapor bulundu.",
@@ -131,6 +134,7 @@ class LanguageSupport:
                 "welcome_seo_helper_analyzed": "Seo Yardımcısı Sayfasına Hoş Geldiniz.\nAnaliz şunun için kullanılıyor: {}", # <-- ADDED KEY & TRANSLATION
                 "welcome_article_writer_not_analyzed": "Makale Yazarı sayfasına hoş geldiniz. Devam etmek için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
                 "welcome_article_writer_analyzed": "Makale Yazarı sayfasına hoş geldiniz. {} analizine dayalı bir makale yazmanıza yardımcı olmaya hazırım.",
+                "generating_new_report": "Yeni SEO raporu oluşturuluyor...",
                 
                 "content_generation_tools": "İçerik Oluşturma Araçları",
                 "create_optimized_content": "Web sitesi analizinize dayalı optimize edilmiş içerik oluşturun:",
