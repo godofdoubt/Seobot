@@ -1,4 +1,4 @@
-#buttons/generate_seo_suggestions.py
+#Seobot/buttons/generate_seo_suggestions.py
 import google.generativeai as genai
 import logging
 import os
