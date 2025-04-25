@@ -43,8 +43,35 @@ class SEOReportSaver:
         output.append(f"Analysis Time: {analysis.get('timestamp', 'Unknown')}")
         output.append("\n" + "="*50 + "\n")
 
-        # Keywords Section - Moved to top for prominence
+        # Crawling statistics - NEW SECTION
+        crawled_count = analysis.get('crawled_internal_pages_count', 0)
+        output.append(f"CRAWLING STATS: {crawled_count + 1} pages analyzed (main page + {crawled_count} internal pages)")
+    
+        # Content Length Statistics - NEW SECTION
+        if 'content_length_stats' in analysis:
+            cl_stats = analysis['content_length_stats']
+            output.append("\nCONTENT LENGTH STATISTICS:")
+            output.append(f"Total Content: {cl_stats.get('total', 0):,} characters across all pages")
+            output.append(f"Average: {cl_stats.get('average', 0):.0f} characters per page")
+            output.append(f"Min: {cl_stats.get('min', 0):,} characters")
+            output.append(f"Max: {cl_stats.get('max', 0):,} characters")
+            output.append(f"Median: {cl_stats.get('median', 0):,} characters")
+
+        # Word Count Statistics - NEW SECTION
+        if 'word_count_stats' in analysis:
+            wc_stats = analysis['word_count_stats']
+            output.append("\nWORD COUNT STATISTICS:")
+            output.append(f"Total Words: {wc_stats.get('total', 0):,} words across all pages")
+            output.append(f"Average: {wc_stats.get('average', 0):.0f} words per page")
+            output.append(f"Min: {wc_stats.get('min', 0):,} words")
+            output.append(f"Max: {wc_stats.get('max', 0):,} words")
+            output.append(f"Median: {wc_stats.get('median', 0):,} words")
+
+        output.append("\n" + "="*50 + "\n")
+
+        # Keywords Section - Now includes aggregated keywords
         output.append("KEYWORD ANALYSIS:")
+        output.append(f"Keywords aggregated from {crawled_count + 1} pages")
         keywords = analysis.get('keywords', {})
         if keywords:
             output.append("\nTop Keywords by Frequency:")
@@ -121,8 +148,8 @@ class SEOReportSaver:
         output.append(f"Description: {meta_tags.get('description', 'Not found')}")
         output.append(f"Keywords: {meta_tags.get('keywords', 'Not found')}")
 
-        # Content Stats
-        output.append("\nCONTENT STATISTICS:")
+        # Content Stats of main page
+        output.append("\nMAIN PAGE CONTENT STATISTICS:")
         output.append(f"Content Length: {analysis.get('content_length', 0)} characters")
         output.append(f"Word Count: {analysis.get('word_count', 0)} words")
 
@@ -149,8 +176,41 @@ class SEOReportSaver:
         output.append(f"Images with Alt Text: {images_with_alt}")
         output.append(f"Images missing Alt Text: {total_images - images_with_alt}")
 
-        return "\n".join(output)
+        # Individual Page Statistics - NEW SECTION
+        if 'page_statistics' in analysis and len(analysis['page_statistics']) > 1:  # More than just the main URL
+            output.append("\n" + "="*50)
+            output.append("\nINDIVIDUAL PAGE STATISTICS:")
+            output.append("\nContent length by page (Top 10):")
+        
+            # Sort pages by content length (descending)
+            page_stats = analysis['page_statistics']
+            sorted_pages = sorted(
+                page_stats.items(), 
+                key=lambda x: x[1].get('content_length', 0), 
+                reverse=True
+            )
+        
+            # Display top 10 pages by content length
+            for i, (page_url, stats) in enumerate(sorted_pages[:10]):
+                output.append(f"{i+1}. {page_url}")
+                output.append(f"   - Content Length: {stats.get('content_length', 0):,} characters")
+                output.append(f"   - Word Count: {stats.get('word_count', 0):,} words")
+        
+            # Mention if there are more pages
+            if len(sorted_pages) > 10:
+                output.append(f"... and {len(sorted_pages) - 10} more pages")
 
+        # List of crawled URLs - NEW SECTION
+        if analysis.get('crawled_urls'):
+            output.append("\n" + "="*50)
+            output.append("\nCRAWLED URLS:")
+            for i, crawled_url in enumerate(analysis['crawled_urls'][:10]):
+                output.append(f"{i+1}. {crawled_url}")
+            if len(analysis['crawled_urls']) > 10:
+                output.append(f"... and {len(analysis['crawled_urls']) - 10} more URLs")
+
+        return "\n".join(output)
+        
     async def save_reports(self, analysis):
         """Save analysis reports to Supabase."""
         try:
