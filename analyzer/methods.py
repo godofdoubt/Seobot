@@ -141,7 +141,7 @@ def extract_keywords(text: str, max_keywords: int = 20):
     """
     Extract top keywords and return cleaned text, along with other extracted information.
     Keywords are derived from text after removing identified entities (phones, emails, etc.).
-    The returned `cleaned_text` is the generally cleaned version of the original text.
+
     Returns a tuple (list of top `max_keywords` keywords, cleaned_text, filtered_words_str, extracted_info_dict).
     Uses COMMON_STOP_WORDS from config.
     """
@@ -206,7 +206,7 @@ def extract_keywords(text: str, max_keywords: int = 20):
                          # This check is tricky. The current logic is to remove numbers that are *part of* other entities.
                          # If a number is "555" and phone is "555-1234", "555" might be filtered.
                          # The goal is to get *other* numbers not captured.
-                         pass # This part of logic might need refinetment based on desired behavior.
+                         pass # This part of logic might need refinement based on desired behavior.
             filtered_numbers.append(num_match)
     extracted_info['numbers'] = list(set(filtered_numbers))
     logging.debug(f"Extracted info: {extracted_info}")
@@ -240,8 +240,8 @@ def extract_keywords(text: str, max_keywords: int = 20):
 
     # Step 6: Create the general `cleaned_text` for return (normalized, punctuation removed, but entities NOT removed)
     # This is useful for other NLP tasks like semantic analysis that need fuller context.
-    general_cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', normalized_text)
-    general_cleaned_text = re.sub(r'\s+', ' ', general_cleaned_text).strip()
+    cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', normalized_text)
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
 
     # Step 7: Filter words (from entity-removed text) using stop words, length, etc.
     filtered_words = [
@@ -312,7 +312,7 @@ def extract_keywords(text: str, max_keywords: int = 20):
     filtered_words_str = " ".join(filtered_words)
 
     # Step 12: Return the results
-    return (unique_keywords, general_cleaned_text, filtered_words_str, extracted_info)
+    return (unique_keywords, cleaned_text, filtered_words_str, extracted_info)
 
 
 
