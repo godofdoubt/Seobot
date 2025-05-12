@@ -1,547 +1,368 @@
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import time
 import random
 import asyncio
-import os
+from collections import deque, Counter
 from dotenv import load_dotenv
-from supabase import create_client, Client
-from playwright.async_api import async_playwright
-from analyzer.methods import validate_url, extract_keywords, load_history, save_history, get_formatted_datetime, get_current_user
+from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
+import aiohttp # Keep aiohttp for the sitemap module's session
+from typing import Set, List
+from analyzer.methods import validate_url, extract_keywords, analyze_headings
+from analyzer.seoreportsaver import SEOReportSaver
+import analyzer.config as config
+# Import the new sitemap functions
+from analyzer.sitemap import discover_sitemap_urls, fetch_all_pages_from_sitemaps
 
-# Load environment variables from .env file
 load_dotenv()
-
-# Initialize Supabase client globally
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables or .env file.")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-class SEOReportSaver:
-    def __init__(self):
-        """Initialize with the global Supabase client."""
-        self.supabase = supabase
-
-    def format_analysis_results(self, analysis):
-        """Format analysis results for text output."""
-        if not analysis:
-            return "Analysis failed or no results available."
-
-        output = []
-        # Header with datetime and user info
-        output.append(f"Current Date and Time (UTC -MM-DD HH:MM:SS formatted): {get_formatted_datetime()}")
-        output.append(f"Current User's Login: {get_current_user()}")
-        output.append("\n" + "="*80)
-
-        output.append(f"\nSEO Analysis Report for: {analysis.get('url', 'Unknown URL')}")
-        output.append(f"Analysis Time: {analysis.get('timestamp', 'Unknown')}")
-        output.append("\n" + "="*50 + "\n")
-
-        # Keywords Section - Moved to top for prominence
-        output.append("KEYWORD ANALYSIS:")
-        keywords = analysis.get('keywords', {})
-        if keywords:
-            output.append("\nTop Keywords by Frequency:")
-            sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)
-            for keyword, frequency in sorted_keywords:
-                output.append(f"- {keyword}: {frequency} occurrences")
-        else:
-            output.append("No keywords found")
-
-        output.append("\n" + "="*50 + "\n")
-
-        # Product Analysis
-        output.append("PRODUCT ANALYSIS:")
-        products = analysis.get('content_types', {}).get('products', {})
-
-        # URL-based product count with specific formatting
-        url_based_count = products.get('url_based_count', 0)
-        output.append(f'\n"url_based_count": {url_based_count}')
-
-        # Categories with specific formatting and counts
-        categories = products.get('categories', {})
-        if categories:
-            output.append('\n"categories":')
-            sorted_categories = sorted(categories.items(), key=lambda x: x[1], reverse=True)
-            for category, count in sorted_categories:
-                output.append(f'  "{category}": {count}')
-
-            output.append(f"\nTotal Categories Found: {len(categories)}")
-            total_products = sum(categories.values())
-            output.append(f"Total Products in Categories: {total_products}")
-        else:
-            output.append('\n"categories":')
-            output.append('  "no categories found"') # fixed: replaced hardcoded value with dynamic message
-
-        # Product Distribution
-        if categories:
-            output.append("\nProduct Distribution by Category:")
-            for category, count in sorted_categories:
-                percentage = (count / url_based_count * 100) if url_based_count > 0 else 0
-                bar_length = int(percentage / 2)
-                bar = "█" * bar_length
-                output.append(f"{category.ljust(20)}: {bar} {count} ({percentage:.1f}%)")
-
-        # Visual Products Section
-        output.append(f"\nVisually Detected Products: {products.get('count', 0)}")
-        if products.get('elements'):
-            output.append("\nSample Products:")
-            for product in products['elements'][:5]:
-                output.append(f"- {product}")
-
-        # Product URLs Section
-        if products.get('product_urls'):
-            output.append("\nSample Product URLs:")
-            for url in products['product_urls'][:5]:
-                output.append(f"- {url}")
-            if len(products['product_urls']) > 5:
-                output.append(f"... and {len(products['product_urls']) - 5} more")
-
-        # Articles Section
-        output.append("\n" + "="*50)
-        output.append("\nARTICLE ANALYSIS:")
-        articles = analysis.get('content_types', {}).get('articles', {})
-        output.append(f"Articles Found: {articles.get('count', 0)}")
-        if articles.get('elements'):
-            output.append("\nSample Articles:")
-            for article in articles['elements'][:5]:
-                output.append(f"- {article}")
-
-        # Meta Info Section
-        output.append("\n" + "="*50)
-        output.append("\nMETA INFORMATION:")
-        meta_tags = analysis.get('meta_tags', {})
-        output.append(f"Title: {meta_tags.get('title', 'Not found')}")
-        output.append(f"Description: {meta_tags.get('description', 'Not found')}")
-        output.append(f"Keywords: {meta_tags.get('keywords', 'Not found')}")
-
-        # Content Stats
-        output.append("\nCONTENT STATISTICS:")
-        output.append(f"Content Length: {analysis.get('content_length', 0)} characters")
-        output.append(f"Word Count: {analysis.get('word_count', 0)} words")
-
-        # Headings Structure
-        output.append("\nHEADING STRUCTURE:")
-        for heading_type, headings in analysis.get('headings', {}).items():
-            if headings:
-                output.append(f"\n{heading_type.upper()} Tags ({len(headings)}):")
-                for heading in headings[:3]:
-                    output.append(f"- {heading}")
-
-        # Links Analysis
-        links = analysis.get('links', {})
-        output.append("\nLINK ANALYSIS:")
-        output.append(f"Internal Links: {links.get('internal_count', 0)}")
-        output.append(f"External Links: {links.get('external_count', 0)}")
-
-        # Images Analysis
-        images = analysis.get('images', [])
-        total_images = len(images)
-        images_with_alt = sum(1 for img in images if img.get('has_alt', False))
-        output.append("\nIMAGE ANALYSIS:")
-        output.append(f"Total Images: {total_images}")
-        output.append(f"Images with Alt Text: {images_with_alt}")
-        output.append(f"Images missing Alt Text: {total_images - images_with_alt}")
-
-        return "\n".join(output)
-
-    async def save_reports(self, analysis):
-        """Save analysis reports to Supabase."""
-        try:
-            if not analysis:
-                return
-
-            # Generate text report
-            text_report = self.format_analysis_results(analysis)
-
-            # Prepare data for Supabase
-            data = {
-                'url': analysis['url'],
-                'timestamp': analysis['timestamp'],
-                'report': analysis,  # JSONB
-                'text_report': text_report  # TEXT
-            }
-
-            # Use asyncio.to_thread for async compatibility
-            response = await asyncio.to_thread(
-                self.supabase.table('seo_reports').insert(data).execute
-            )
-
-            if response.data:
-                logging.info(f"Reports saved to Supabase for {analysis['url']}")
-            else:
-                logging.error(f"Failed to save report to Supabase: {response.error}")
-
-        except Exception as e:
-            logging.error(f"Error saving reports to Supabase: {e}")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class SEOAnalyzer:
     def __init__(self):
-        self.history = {}  # Initialize empty history
         self.saver = SEOReportSaver()
+    
+    # _get_robots_txt, _extract_sitemaps_from_robots, _fetch_sitemap are now moved. inside sitemap.py
+    # analyze headings inside methods.py
 
-    async def analyze_meta_tags(self, page):
-        """Analyze meta tags of the page"""
-        return await page.evaluate("""
-            () => {
-                const meta = {
-                    title: document.title,
-                    description: '',
-                    keywords: ''
-                };
+    def _normalize_url(self, url: str, base_url: str) -> str | None:
+        # ... (no changes to this method)
+        try:
+            absolute_url = urljoin(base_url, url)
+            parsed = urlparse(absolute_url)
+            if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+                return None
+            scheme = "https"
+            netloc = parsed.netloc.lower().replace('www.', '')
+            path = parsed.path.rstrip('/') or '/' # Ensure path ends without slash, or is '/'
+            query = parsed.query
+            # Consider sorting query params for stricter normalization if necessary
+            normalized = f"{scheme}://{netloc}{path}"
+            if query:
+                normalized += f"?{query}"
+            return normalized
+        except Exception as e:
+            logging.warning(f"Error normalizing URL '{url}' with base '{base_url}': {e}")
+            return None
 
-                const descTag = document.querySelector('meta[name="description"]');
-                const keywordsTag = document.querySelector('meta[name="keywords"]');
 
-                if (descTag) meta.description = descTag.content;
-                if (keywordsTag) meta.keywords = keywordsTag.content;
-
-                return meta;
-            }
-        """)
-
-    async def analyze_headings(self, page):
-        """Analyze heading structure of the page"""
-        return await page.evaluate("""
-            () => {
-                const headings = {};
-                for (let i = 1; i <= 6; i++) {
-                    const elements = document.getElementsByTagName('h' + i);
-                    headings['h' + i] = Array.from(elements).map(el => el.innerText.trim());
-                }
-                return headings;
-            }
-        """)
-
-    async def analyze_links(self, page, base_url):
-        """Analyze links on the page"""
+    async def analyze_links(self, page: Page, base_url: str):
+        # ... (no changes to this method)
         try:
             base_domain = urlparse(base_url).netloc.replace('www.', '')
-
-            links = await page.evaluate("""
-                (baseUrl) => {
+            links_data = await page.evaluate("""
+                ([baseDomain, pageUrl]) => {
+                    const internal = new Set();
+                    const external = new Set();
+                    const allowedSchemes = ['http:', 'https:'];
                     try {
-                        const baseUrlObj = new URL(baseUrl);
-                        const baseDomain = baseUrlObj.hostname.replace('www.', '');
-
-                        const allLinks = Array.from(document.links)
-                            .map(link => link.href)
-                            .filter(href => href && href.startsWith('http'));
-
-                        const internal = [];
-                        const external = [];
-
-                        allLinks.forEach(link => {
+                        Array.from(document.links).forEach(link => {
                             try {
-                                const linkUrl = new URL(link);
+                                const absoluteUrl = new URL(link.href, pageUrl).href;
+                                const linkUrl = new URL(absoluteUrl);
+                                if (!allowedSchemes.includes(linkUrl.protocol)) return;
                                 const linkDomain = linkUrl.hostname.replace('www.', '');
-
+                                const normalizedUrl = absoluteUrl.split('#')[0];
                                 if (linkDomain === baseDomain) {
-                                    internal.push(link);
+                                    internal.add(normalizedUrl);
                                 } else {
-                                    external.push(link);
+                                    external.add(normalizedUrl);
                                 }
-                            } catch (e) {
-                                console.error('Invalid URL:', link);
-                            }
+                            } catch (e) { /* ignore invalid URLs */ }
                         });
-
-                        return {
-                            internal_links: internal,
-                            external_links: external,
-                            internal_count: internal.length,
-                            external_count: external.length
-                        };
-                    } catch (e) {
-                        console.error('Error in link analysis:', e);
-                        return {
-                            internal_links: [],
-                            external_links: [],
-                            internal_count: 0,
-                            external_count: 0
-                        };
-                    }
+                    } catch (e) { console.error('Error extracting links:', e); }
+                    return { internal_links: Array.from(internal), external_links: Array.from(external) };
                 }
-            """, base_url)
-
-            verified_internal = []
-            verified_external = []
-
-            all_links = (links.get('internal_links', []) + links.get('external_links', []))
-
-            for link in all_links:
-                try:
-                    link_domain = urlparse(link).netloc.replace('www.', '')
-                    if link_domain == base_domain:
-                        if link not in verified_internal:
-                            verified_internal.append(link)
-                    else:
-                        if link not in verified_external:
-                            verified_external.append(link)
-                except Exception as e:
-                    logging.error(f"Error processing link {link}: {e}")
-                    continue
-
+            """, [base_domain, page.url])
             return {
-                'internal_links': verified_internal,
-                'external_links': verified_external,
-                'internal_count': len(verified_internal),
-                'external_count': len(verified_external)
+                'internal_links': links_data.get('internal_links', []),
+                'external_links': links_data.get('external_links', []),
+                'internal_count': len(links_data.get('internal_links', [])),
+                'external_count': len(links_data.get('external_links', []))
             }
-
         except Exception as e:
-            logging.error(f"Error in analyze_links: {e}")
-            return {
-                'internal_links': [],
-                'external_links': [],
-                'internal_count': 0,
-                'external_count': 0
-            }
+            logging.error(f"Error in analyze_links for {base_url}: {e}")
+            return {'internal_links': [], 'external_links': [], 'internal_count': 0, 'external_count': 0}
 
-    async def analyze_images(self, page):
-        """Analyze images on the page"""
-        return await page.evaluate("""
-            () => {
-                return Array.from(document.images).map(img => ({
-                    src: img.src,
-                    alt: img.alt,
-                    has_alt: !!img.alt
-                }));
-            }
-        """)
-
-    async def analyze_content_types(self, page):
-        """Analyze article and product counts on the website including URL-based product counts"""
+    async def _extract_internal_links_from_page(self, page: Page, base_domain: str, exclude_patterns: list[str]) -> set[str]:
+        # ... (no changes to this method)
+        found_links = set()
         try:
-            content_analysis = await page.evaluate("""
-                () => {
-                    const analysis = {
-                        content_types: {
-                            articles: {
-                                count: 0,
-                                elements: []
-                            },
-                            products: {
-                                count: 0,
-                                elements: [],
-                                categories: {},
-                                url_based_count: 0,
-                                product_urls: []
-                            }
-                        }
-                    };
-
-                    const getProductPathInfo = (url) => {
-                        const paths = [
-                            '/urunler/', '/ürünler/',
-                            '/products/', '/product/',
-                            '/urun/', '/ürün/',
-                            '/items/', '/item/',
-                            '/katalog/', '/catalog/'
-                        ];
-
+            links_on_page = await page.evaluate("""
+                (baseDomain) => {
+                    const links = new Set();
+                    const allowedSchemes = ['http:', 'https:'];
+                    Array.from(document.links).forEach(link => {
                         try {
-                            const urlObj = new URL(url);
-                            const path = urlObj.pathname;
-
-                            for (const productPath of paths) {
-                                if (path.includes(productPath)) {
-                                    const parts = path.split(productPath)[1].split('/').filter(p => p);
-                                    if (parts.length > 0) {
-                                        return {
-                                            isProduct: true,
-                                            category: parts.length > 1 ? parts[0] : 'uncategorized',
-                                            path: parts.join('/')
-                                        };
-                                    }
-                                }
+                            const absoluteUrl = new URL(link.href, document.baseURI).href;
+                            const linkUrl = new URL(absoluteUrl);
+                            if (allowedSchemes.includes(linkUrl.protocol) && 
+                                linkUrl.hostname.replace('www.', '') === baseDomain) {
+                                links.add(absoluteUrl.split('#')[0]);
                             }
-                        } catch (e) {
-                            console.error('Error parsing URL:', e);
-                        }
-                        return { isProduct: false };
-                    };
-
-                    const links = Array.from(document.getElementsByTagName('a'));
-                    const processedUrls = new Set();
-
-                    links.forEach(link => {
-                        const href = link.href;
-                        if (!processedUrls.has(href) && href) {
-                            const productInfo = getProductPathInfo(href);
-                            if (productInfo.isProduct) {
-                                processedUrls.add(href);
-                                analysis.content_types.products.url_based_count++;
-                                analysis.content_types.products.product_urls.push(href);
-
-                                const category = productInfo.category;
-                                analysis.content_types.products.categories[category] =
-                                    (analysis.content_types.products.categories[category] || 0) + 1;
-                            }
-                        }
+                        } catch (e) {}
                     });
-
-                    const productSelectors = [
-                        '[itemtype*="Product"]',
-                        '.product',
-                        '.product-item',
-                        '[class*="product-"]',
-                        '[id*="product-"]',
-                        '.woocommerce-product',
-                        '.shopify-product',
-                        '[data-product]',
-                        '[class*="ProductCard"]',
-                        '[class*="product-card"]',
-                        '[class*="productCard"]',
-                        '[class*="item-card"]',
-                        '[class*="shop-item"]',
-                        '.item-product',
-                        '.catalog-item',
-                        '.product-grid-item',
-                        '.product-list-item',
-                        '#urunler', '.urunler',
-                        '.ürünler', '#ürünler',
-                        '[class*="urun"]',
-                        '[class*="ürün"]',
-                        '[id*="urun"]',
-                        '[id*="ürün"]',
-                        '.urun-detay', '.ürün-detay',
-                        '.urun-karti', '.ürün-kartı',
-                        '[class*="urun-fiyat"]',
-                        '[class*="ürün-fiyat"]',
-                        '.stok-urun', '.stok-ürün'
-                    ];
-
-                    const getUniqueTextContent = (element) => {
-                        const titleSelectors = [
-                            'h1', 'h2', 'h3',
-                            '[class*="title"]', '[class*="name"]',
-                            '[class*="heading"]', '.product-name',
-                            '[itemprop="name"]',
-                            '[class*="baslik"]', '[class*="başlık"]',
-                            '.urun-adi', '.ürün-adı',
-                            '[class*="urun-isim"]', '[class*="ürün-isim"]'
-                        ];
-
-                        for (const selector of titleSelectors) {
-                            const titleElement = element.querySelector(selector);
-                            if (titleElement) {
-                                const text = titleElement.innerText.trim();
-                                if (text) return text;
-                            }
-                        }
-
-                        const text = element.innerText.trim().split('\\n')[0];
-                        return text.length > 100 ? text.substring(0, 100) + '...' : text;
-                    };
-
-                    const isVisible = (element) => {
-                        const style = window.getComputedStyle(element);
-                        return style.display !== 'none' &&
-                                style.visibility !== 'hidden' &&
-                                style.opacity !== '0' &&
-                                element.offsetWidth > 0 &&
-                                element.offsetHeight > 0;
-                    };
-
-                    productSelectors.forEach(selector => {
-                        document.querySelectorAll(selector).forEach(element => {
-                            if (isVisible(element)) {
-                                const text = getUniqueTextContent(element);
-                                if (text && !analysis.content_types.products.elements.includes(text)) {
-                                    analysis.content_types.products.elements.push(text);
-                                    analysis.content_types.products.count++;
-                                }
-                            }
-                        });
-                    });
-
-                    const isLikelyArticle = (text) => {
-                        const wordCount = text.trim().split(/\\s+/).length;
-                        const sentenceCount = text.split(/[.!?]+/).length;
-                        return wordCount > 100 && sentenceCount > 3 && text.length > 500;
-                    };
-
-                    document.querySelectorAll('article, .article, .post, .blog-post, [class*="article"], [class*="blog"]').forEach(element => {
-                        if (isVisible(element) && isLikelyArticle(element.innerText)) {
-                            const text = getUniqueTextContent(element);
-                            if (text && !analysis.content_types.articles.elements.includes(text)) {
-                                analysis.content_types.articles.elements.push(text);
-                                analysis.content_types.articles.count++;
-                            }
-                        }
-                    });
-
-                    return analysis;
+                    return Array.from(links);
                 }
-            """)
+            """, base_domain)
 
-            return content_analysis['content_types']
+            for link in links_on_page:
+                normalized = self._normalize_url(link, page.url)
+                if normalized and not any(exclude in normalized for exclude in exclude_patterns):
+                    found_links.add(normalized)
         except Exception as e:
-            logging.error(f"Error analyzing content types: {e}")
-            return {'articles': {'count': 0, 'elements': []},
-                    'products': {
-                        'count': 0,
-                        'elements': [],
-                        'categories': {},
-                        'url_based_count': 0,
-                        'product_urls': []
-                    }}
+            logging.warning(f"Could not extract links from {page.url}: {e}")
+        return found_links
+
 
     async def analyze_url(self, url):
-        """Perform SEO analysis on the given URL using Playwright"""
-        browser = None
-        try:
-            url = validate_url(url)
-            self.history = load_history()
-
-            async with async_playwright() as p:
-                browser = await p.chromium.launch()
-                context = await browser.new_context(
-                    viewport={'width': 1920, 'height': 1080}
-                )
-                page = await context.new_page()
-
-                await asyncio.sleep(random.uniform(1, 2))
-                await page.goto(url, wait_until='networkidle', timeout=30000)
-                text_content = await page.evaluate('() => document.body.innerText')
-
-                analysis = {
-                    'url': url,
-                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'meta_tags': await self.analyze_meta_tags(page),
-                    'headings': await self.analyze_headings(page),
-                    'keywords': extract_keywords(text_content),
-                    'links': await self.analyze_links(page, url),
-                    'images': await self.analyze_images(page),
-                    'content_length': len(text_content) if text_content else 0,
-                    'word_count': len(text_content.split()) if text_content else 0,
-                    'content_types': await self.analyze_content_types(page)
-                }
-
-                if url not in self.history:
-                    self.history[url] = []
-                self.history[url].append(analysis)
-                save_history(self.history)
-
-                # Save reports to Supabase (async call)
-                await self.saver.save_reports(analysis)
-
-                return analysis
-
-        except Exception as e:
-            logging.error(f"Error analyzing URL {url}: {e}")
+        start_time = time.time()
+        analysis_url_input = validate_url(url)
+        if not analysis_url_input:
+            logging.error(f"Invalid start URL provided: {url}")
             return None
-        finally:
-            if browser:
-                await browser.close()
+        
+        normalized_analysis_url = self._normalize_url(analysis_url_input, analysis_url_input)
+        if not normalized_analysis_url:
+            logging.error(f"Could not normalize the validated start URL: {analysis_url_input}")
+            return None
+        
+        logging.info(f"Analyzing URL: {normalized_analysis_url}")
+        parsed_start_url = urlparse(normalized_analysis_url)
+        # Ensure start_domain is derived after normalization for consistency
+        start_domain = parsed_start_url.netloc 
+
+        sitemap_pages_raw: Set[str] = set()
+        sitemap_urls_discovered: List[str] = []
+
+        async with aiohttp.ClientSession(headers={'User-Agent': config.USER_AGENT}) as session: # Use configured user-agent
+            sitemap_urls_discovered = await discover_sitemap_urls(normalized_analysis_url, session)
+            if sitemap_urls_discovered:
+                sitemap_pages_raw = await fetch_all_pages_from_sitemaps(sitemap_urls_discovered, session)
+        
+        filtered_sitemap_pages = {
+            normalized for page_url in sitemap_pages_raw
+            if (normalized := self._normalize_url(page_url, normalized_analysis_url)) and 
+               not any(exclude in normalized for exclude in config.EXCLUDE_PATTERNS) and
+               urlparse(normalized).netloc == start_domain # Critical: ensure sitemap pages are for the same domain
+        }
+        logging.info(f"Total unique URLs from sitemaps after domain filtering & normalization: {len(filtered_sitemap_pages)}")
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True) # Consider adding args e.g. ['--no-sandbox'] if in restricted env
+            try:
+                context = await browser.new_context(
+                    user_agent=config.USER_AGENT,
+                    viewport={'width': config.VIEWPORT_WIDTH, 'height': config.VIEWPORT_HEIGHT},
+                )
+                await context.route("**/*", lambda route: route.abort() if 
+                    route.request.resource_type in config.BLOCKED_RESOURCES or 
+                    any(domain in route.request.url for domain in config.BLOCKED_DOMAINS) 
+                    else route.continue_())
+
+                page_for_initial_analysis = await context.new_page()
+                initial_text_content = ""
+                initial_headings = {}
+                initial_keywords_list = []
+                initial_cleaned_text = ""
+                initial_filtered_words = ""
+                initial_extracted_info = {}  # Added to store extracted information
+                initial_page_general_links = {'internal_links': [], 'external_links': [], 'internal_count': 0, 'external_count': 0}
+                links_from_start_page_for_queue = set()
+
+                try:
+                    logging.info(f"Performing initial analysis of {normalized_analysis_url}")
+                    await page_for_initial_analysis.goto(normalized_analysis_url, wait_until='domcontentloaded', timeout=config.PAGE_TIMEOUT * 1.5)
+                    initial_text_content = await page_for_initial_analysis.evaluate('() => document.body ? document.body.innerText : ""')
+                    initial_headings = await analyze_headings(page_for_initial_analysis)
+                    # Capture all four return values from extract_keywords
+                    initial_keywords_list, initial_cleaned_text, initial_filtered_words, initial_extracted_info = extract_keywords(initial_text_content) if initial_text_content else ([], "", "", {})
+                    initial_page_general_links = await self.analyze_links(page_for_initial_analysis, normalized_analysis_url)
+                    links_from_start_page_for_queue = await self._extract_internal_links_from_page(page_for_initial_analysis, start_domain, config.EXCLUDE_PATTERNS)
+                except PlaywrightTimeoutError:
+                    logging.warning(f"Timeout loading initial page: {normalized_analysis_url}")
+                    # Allow to continue with empty initial data, or handle as critical error
+                except Exception as e:
+                    logging.error(f"Error during initial analysis of {normalized_analysis_url}: {e}", exc_info=True) # Log stack trace
+                    await browser.close() # Ensure browser is closed
+                    return None 
+                finally:
+                    await page_for_initial_analysis.close()
+                
+                analysis = {
+                    'url': normalized_analysis_url,
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'links': initial_page_general_links,
+                    'content_length': len(initial_text_content) if initial_text_content else 0,
+                    'word_count': len(initial_text_content.split()) if initial_text_content else 0,
+                    'crawled_internal_pages_count': 0, # Updated after loop
+                    'crawled_urls': [normalized_analysis_url] if initial_text_content else [], # Add only if successfully analyzed
+                    'page_statistics': {}, # Populated below
+                    'content_length_stats': {},
+                    'word_count_stats': {},
+                    'aggregated_keywords': {},
+                    'analysis_duration_seconds': 0,
+                    'sitemap_found': bool(sitemap_urls_discovered), # If any sitemap URLs were listed (even if they 404'd later)
+                    'sitemap_urls_discovered': sitemap_urls_discovered, # Actual URLs attempted from robots/common
+                    'sitemap_urls_discovered_count': len(sitemap_urls_discovered),
+                    'sitemap_pages_processed_count': len(filtered_sitemap_pages) # Pages from sitemap after filtering
+                }   
+                # Add initial page stats if content was fetched
+                if initial_text_content or not analysis['crawled_urls']: # if crawled_urls is empty, means initial failed hard
+                     analysis['page_statistics'][normalized_analysis_url] = {
+                        'url': normalized_analysis_url,
+                        'content_length': len(initial_text_content) if initial_text_content else 0,
+                        'word_count': len(initial_text_content.split()) if initial_text_content else 0,
+                        'keywords': initial_keywords_list,
+                        'cleaned_text': initial_cleaned_text,
+                        'filtered_words': initial_filtered_words,
+                        'extracted_info': initial_extracted_info,  # Store extracted information
+                        'headings': initial_headings,
+                    }
+                
+                content_lengths_list = [analysis['content_length']] if initial_text_content else []
+                word_counts_list = [analysis['word_count']] if initial_text_content else []
+                
+                visited_urls = {normalized_analysis_url} # All URLs we attempt to goto
+                all_discovered_links = set(visited_urls) # Master set of all unique internal links
+                all_discovered_links.update(links_from_start_page_for_queue)
+                all_discovered_links.update(filtered_sitemap_pages)
+
+                # Initialize queue with links from sitemap and initial page, excluding already visited
+                urls_to_visit_list_intermediate = [
+                    link for link in (filtered_sitemap_pages | links_from_start_page_for_queue) 
+                    if link not in visited_urls and link # Ensure link is not None
+                ]
+                urls_to_visit = deque(urls_to_visit_list_intermediate)
+
+                logging.info(f"Initial analysis of {normalized_analysis_url} complete.")
+                logging.info(f"Unique internal links from start page for queue: {len(links_from_start_page_for_queue)}")
+                logging.info(f"Unique internal links from sitemaps for queue: {len(filtered_sitemap_pages)}")
+                logging.info(f"Combined unique URLs to start crawl queue (after filtering visited): {len(urls_to_visit)}")
+                logging.info(f"Total discovered links before loop (master set): {len(all_discovered_links)}")
+
+                analyzed_pages_count_in_loop = 0 # Pages analyzed *in the loop* (initial page is separate)
+
+                # Main crawl loop
+                while urls_to_visit and \
+                      len(all_discovered_links) < config.MAX_LINKS_TO_DISCOVER and \
+                      (analyzed_pages_count_in_loop + (1 if analysis['crawled_urls'] else 0)) < config.MAX_PAGES_TO_ANALYZE:
+
+                    current_url_to_crawl = urls_to_visit.popleft()
+
+                    if current_url_to_crawl in visited_urls: # Should be rare due to pre-filtering
+                        logging.debug(f"Skipping {current_url_to_crawl} as it's already in visited_urls.")
+                        continue
+                    
+                    # Final check for domain consistency before costly page load
+                    if urlparse(current_url_to_crawl).netloc != start_domain:
+                        logging.warning(f"Skipping {current_url_to_crawl} due to domain mismatch with {start_domain}. Adding to visited to prevent re-queue.")
+                        visited_urls.add(current_url_to_crawl)
+                        continue
+                        
+                    logging.info(f"Processing page [{analyzed_pages_count_in_loop + (1 if analysis['crawled_urls'] else 0)}/{config.MAX_PAGES_TO_ANALYZE}]: {current_url_to_crawl} (Queue: {len(urls_to_visit)}, Discovered: {len(all_discovered_links)})")
+                    page_for_crawling = await context.new_page()
+                    
+                    try:
+                        await page_for_crawling.goto(current_url_to_crawl, wait_until='domcontentloaded', timeout=config.PAGE_TIMEOUT)
+                        visited_urls.add(current_url_to_crawl) # Mark as visited after successful/attempted goto
+
+                        # Extract links from this page
+                        newly_found_links_on_page = await self._extract_internal_links_from_page(page_for_crawling, start_domain, config.EXCLUDE_PATTERNS)
+                        for new_link in newly_found_links_on_page:
+                            if new_link not in all_discovered_links: # Check against master set
+                                if len(all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
+                                    all_discovered_links.add(new_link)
+                                    if new_link not in visited_urls: # Not yet visited (or failed)
+                                        urls_to_visit.append(new_link)
+                                else:
+                                    logging.info(f"MAX_LINKS_TO_DISCOVER ({config.MAX_LINKS_TO_DISCOVER}) reached while adding new links.")
+                                    break # from new_link loop
+                        
+                        # Analyze content if within limits
+                        if (analyzed_pages_count_in_loop + (1 if analysis['crawled_urls'] else 0)) < config.MAX_PAGES_TO_ANALYZE:
+                            logging.info(f"Analyzing content of: {current_url_to_crawl}")
+                            text = await page_for_crawling.evaluate('() => document.body ? document.body.innerText : ""')
+                            # Capture all four return values from extract_keywords
+                            page_keywords_list, page_cleaned_text, page_filtered_words, page_extracted_info = extract_keywords(text) if text else ([], "", "", {})
+                            page_headings = await analyze_headings(page_for_crawling)
+
+                            analysis['page_statistics'][current_url_to_crawl] = {
+                                'url': current_url_to_crawl,
+                                'content_length': len(text) if text else 0,
+                                'word_count': len(text.split()) if text else 0,
+                                'keywords': page_keywords_list,
+                                'cleaned_text': page_cleaned_text,
+                                'filtered_words': page_filtered_words,
+                                'extracted_info': page_extracted_info,  # Store extracted information
+                                'headings': page_headings,
+                            }
+                            content_lengths_list.append(len(text) if text else 0)
+                            word_counts_list.append(len(text.split()) if text else 0)
+                            analysis['crawled_urls'].append(current_url_to_crawl)
+                            analyzed_pages_count_in_loop += 1
+                        else:
+                            logging.info(f"MAX_PAGES_TO_ANALYZE limit reached. Skipping content analysis for {current_url_to_crawl}. Links (if any) were still extracted.")
+                            
+                    except PlaywrightTimeoutError:
+                        logging.warning(f"Timeout loading page for link extraction/analysis: {current_url_to_crawl}")
+                        visited_urls.add(current_url_to_crawl) # Mark as visited to prevent re-queue
+                    except Exception as e:
+                        logging.error(f"Error processing {current_url_to_crawl} for links/analysis: {e}", exc_info=True)
+                        visited_urls.add(current_url_to_crawl) # Mark as visited
+                    finally:
+                        await page_for_crawling.close()
+
+                    # Check limits again to break outer while loop if necessary
+                    if len(all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER or \
+                       (analyzed_pages_count_in_loop + (1 if analysis['crawled_urls'] else 0)) >= config.MAX_PAGES_TO_ANALYZE:
+                        logging.info("Loop termination condition met (MAX_LINKS or MAX_PAGES).")
+                        break
+                    
+                    await asyncio.sleep(random.uniform(config.CRAWL_DELAY_MIN, config.CRAWL_DELAY_MAX)) # Use config values
+
+                # Update final counts based on what was actually analyzed
+                analysis['crawled_internal_pages_count'] = len(analysis['crawled_urls']) 
+                logging.info(f"Crawl finished. Discovered {len(all_discovered_links)} unique links. Analyzed content of {analysis['crawled_internal_pages_count']} pages.")
+
+                # Calculate stats only if lists are not empty
+                if content_lengths_list:
+                    sorted_lengths = sorted(content_lengths_list)
+                    analysis['content_length_stats'] = {
+                        'total': sum(content_lengths_list),
+                        'average': round(sum(content_lengths_list) / len(content_lengths_list), 2),
+                        'min': min(content_lengths_list),
+                        'max': max(content_lengths_list),
+                        'median': sorted_lengths[len(sorted_lengths) // 2] if sorted_lengths else 0,
+                        'pages_analyzed': len(content_lengths_list)
+                    }
+                if word_counts_list:
+                    sorted_counts = sorted(word_counts_list)
+                    analysis['word_count_stats'] = {
+                        'total': sum(word_counts_list),
+                        'average': round(sum(word_counts_list) / len(word_counts_list), 2),
+                        'min': min(word_counts_list),
+                        'max': max(word_counts_list),
+                        'median': sorted_counts[len(sorted_counts) // 2] if sorted_counts else 0,
+                        'pages_analyzed': len(word_counts_list)
+                    }
+                
+                all_keywords_from_analyzed_pages = []
+                for page_url_key in analysis['crawled_urls']: # Iterate over successfully crawled URLs
+                    page_data = analysis['page_statistics'].get(page_url_key)
+                    if page_data and 'keywords' in page_data:
+                        all_keywords_from_analyzed_pages.extend(page_data['keywords'])
+                analysis['aggregated_keywords'] = dict(Counter(all_keywords_from_analyzed_pages).most_common(config.TOP_N_KEYWORDS)) # Use config
+                
+                analysis['analysis_duration_seconds'] = round(time.time() - start_time, 2)
+                
+                await self.saver.save_reports(analysis)
+                logging.info(f"Analysis saved. Duration: {analysis['analysis_duration_seconds']}s")
+                return analysis
+            
+            except Exception as e: # Catch broad errors in Playwright setup
+                logging.critical(f"A critical error occurred in Playwright setup or main analysis structure: {e}", exc_info=True)
+                return None # Indicate overall failure
+            finally:
+                if 'browser' in locals() and browser.is_connected(): # Ensure browser is defined and connected
+                    await browser.close()
+                    logging.info("Playwright browser closed.")
