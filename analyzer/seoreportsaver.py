@@ -7,7 +7,7 @@ from urllib.parse import urlparse, urlunparse
 from analyzer.methods import get_formatted_datetime, get_current_user
 import analyzer.config as config
 from analyzer.llm_analysis_start import llm_analysis_start
-import subprocess
+#import subprocess
 # Load environment variables from .env file
 load_dotenv()
 
@@ -102,45 +102,45 @@ class SEOReportSaver:
             
 
         # --- INDIVIDUAL PAGE STATISTICS (excluding start page) ---
-        if 'page_statistics' in analysis and len(analysis['page_statistics']) > 1:
-            output.append("\n\n" + "="*80)
-            output.append("\nINDIVIDUAL INTERNAL PAGE DETAILS (Sample)")
-            output.append("="*80)
+     #   if 'page_statistics' in analysis and len(analysis['page_statistics']) > 1:
+     #       output.append("\n\n" + "="*80)
+            output.append("\nINDIVIDUAL INTERNAL PAGE DETAILS Will be Aviable after Full Analysis")
+      #      output.append("="*80)
 
-            page_stats = analysis['page_statistics']
-            main_url = analysis.get('url')
-            sorted_internal_pages = sorted(
-                [(k, v) for k, v in page_stats.items() if k != main_url],
-                key=lambda item: item[0]
-            )
+         #   page_stats = analysis['page_statistics']
+          #  main_url = analysis.get('url')
+           # sorted_internal_pages = sorted(
+            #    [(k, v) for k, v in page_stats.items() if k != main_url],
+             #   key=lambda item: item[0]
+            #)
 
-            sample_size = min(10, len(sorted_internal_pages))
-            for i, (page_url, stats) in enumerate(sorted_internal_pages[:sample_size]):
-                output.append(f"\n--- Page {i+1}: {page_url} ---")
-                output.append(f"  Content: {stats.get('content_length', 0):,} chars, {stats.get('word_count', 0):,} words")
+            #sample_size = min(10, len(sorted_internal_pages))
+            #for i, (page_url, stats) in enumerate(sorted_internal_pages[:sample_size]):
+            #    output.append(f"\n--- Page {i+1}: {page_url} ---")
+             #   output.append(f"  Content: {stats.get('content_length', 0):,} chars, {stats.get('word_count', 0):,} words")
 
                 # Cleaned Text
-                cleaned_text = stats.get('cleaned_text', '')
-                output.append("  Cleaned Text (First 750 chars):")
-                if cleaned_text:
-                    output.append(f"  - {cleaned_text[:750]}{'...' if len(cleaned_text) > 750 else ''}")
+           #     cleaned_text = stats.get('cleaned_text', '')
+            output.append("This is the Main page report.Please Wait Until Full Analyze Finish")
+             #   if cleaned_text:
+              #      output.append(f"  - {cleaned_text[:750]}{'...' if len(cleaned_text) > 750 else ''}")
                     
                 # Headings
-                page_headings = stats.get('headings', {})
-                if page_headings and 'stats' in page_headings:
-                    h_stats = page_headings['stats']
-                    output.append("\n  Headings:")
-                    h_summary = []
-                    for h_level in range(1, 7):
-                        h_tag = f'h{h_level}_count'
-                        if h_stats.get(h_tag, 0) > 0:
-                            h_summary.append(f"H{h_level}:{h_stats.get(h_tag, 0)}")
-                    if h_summary:
-                        output.append(f"  - Counts: {', '.join(h_summary)}")
-                    else:
-                        output.append("  - None found.")
-                else:
-                    output.append("\n  Headings: Not analyzed")
+               # page_headings = stats.get('headings', {})
+                #if page_headings and 'stats' in page_headings:
+                 #   h_stats = page_headings['stats']
+                  #  output.append("\n  Headings:")
+                   # h_summary = []
+                    #for h_level in range(1, 7):
+                     #   h_tag = f'h{h_level}_count'
+                      #  if h_stats.get(h_tag, 0) > 0:
+                       #     h_summary.append(f"H{h_level}:{h_stats.get(h_tag, 0)}")
+                    #if h_summary:
+                     #   output.append(f"  - Counts: {', '.join(h_summary)}")
+                    #else:
+                     #   output.append("  - None found.")
+                #else:
+                 #   output.append("\n  Headings: Not analyzed")
 
         # List of crawled URLs
         if analysis.get('crawled_urls'):
@@ -224,13 +224,13 @@ class SEOReportSaver:
                 report_id = response.data[0]['id']
                 logging.info(f"Reports saved to Supabase for {standardized_url} with ID {report_id}")
                 # Trigger llm_analysis_end.py as a subprocess---------------------------------------------
-                try:
-                    subprocess.run(['python', 'analyzer/llm_analysis_end.py', str(report_id)], check=True)
-                    logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
-                except subprocess.CalledProcessError as e:
-                    logging.error(f"Failed to run llm_analysis_end.py: {e}")
+               # try:
+               #     subprocess.run(['python', 'analyzer/llm_analysis_end.py', str(report_id)], check=True)
+                #    logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
+                #except subprocess.CalledProcessError as e:
+                #    logging.error(f"Failed to run llm_analysis_end.py: {e}")
 
-                return {"success": True, "report_id": report_id, "existing": False}
+               # return {"success": True, "report_id": report_id, "existing": False}
             else:
                 logging.warning(f"Report saving status uncertain for {standardized_url}. Response: {response}")
                 return {"success": False, "report_id": None, "error": "Uncertain response from database"}

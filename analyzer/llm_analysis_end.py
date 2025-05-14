@@ -1,9 +1,6 @@
 #analayzer/llm_analysis_end.py
 #This will be a loop to making same analysis like llm_analysis_start.py updates llm_analysis field in supabase with crawled urls except main page . 
 
-
-
-#analyzer/llm_analysis_end.py
 import json
 import logging
 import os
@@ -224,6 +221,131 @@ Ensure your entire response is ONLY a valid JSON object.
         }
 
 
+async def generate_comprehensive_text_report(llm_analysis_all: dict) -> str:
+    """
+    Generate a comprehensive text report from the llm_analysis_all dictionary.
+    
+    Args:
+        llm_analysis_all: Dictionary containing LLM analysis results for all pages
+        
+    Returns:
+        String containing a formatted text report
+    """
+    main_page_analysis = llm_analysis_all.get('main_page', {})
+    other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page'}
+    
+    report_sections = []
+    
+    # Add a header
+    report_sections.append("# COMPREHENSIVE SEO ANALYSIS REPORT")
+    report_sections.append("Generated: " + time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+    report_sections.append("")
+    
+    # Main page analysis
+    if main_page_analysis:
+        main_url = main_page_analysis.get('url', 'Main Page')
+        report_sections.append(f"## Main Page Analysis: {main_url}")
+        
+        content_summary = main_page_analysis.get('content_summary', '')
+        if content_summary:
+            report_sections.append(f"### Content Summary")
+            report_sections.append(content_summary)
+            report_sections.append("")
+        
+        keywords = main_page_analysis.get('keywords', [])
+        if keywords:
+            report_sections.append(f"### Primary Keywords")
+            report_sections.append(", ".join(keywords))
+            report_sections.append("")
+        
+        seo_keywords = main_page_analysis.get('suggested_keywords_for_seo', [])
+        if seo_keywords:
+            report_sections.append(f"### Suggested SEO Keywords")
+            report_sections.append(", ".join(seo_keywords))
+            report_sections.append("")
+        
+        contacts = main_page_analysis.get('other_information_and_contacts', [])
+        if contacts:
+            report_sections.append(f"### Contact Information")
+            for contact in contacts:
+                report_sections.append(f"- {contact}")
+            report_sections.append("")
+    
+    # Other pages analysis
+    if other_pages:
+        report_sections.append("## Subpage Analysis")
+        report_sections.append(f"Number of additional pages analyzed: {len(other_pages)}")
+        report_sections.append("")
+        
+        # Collect all keywords from all pages for overall site keyword analysis
+        all_keywords = []
+        all_seo_keywords = []
+        
+        for url, page_analysis in other_pages.items():
+            # Add page-specific analysis
+            report_sections.append(f"### {url}")
+            
+            content_summary = page_analysis.get('content_summary', '')
+            if content_summary:
+                report_sections.append(content_summary)
+                report_sections.append("")
+            
+            keywords = page_analysis.get('keywords', [])
+            if keywords:
+                report_sections.append(f"**Keywords**: {', '.join(keywords)}")
+                all_keywords.extend(keywords)
+            
+            seo_keywords = page_analysis.get('suggested_keywords_for_seo', [])
+            if seo_keywords:
+                report_sections.append(f"**SEO Suggestions**: {', '.join(seo_keywords)}")
+                all_seo_keywords.extend(seo_keywords)
+            
+            report_sections.append("")
+        
+        # Add site-wide keyword analysis
+        if all_keywords:
+            # Count keyword frequency
+            keyword_count = {}
+            for keyword in all_keywords:
+                keyword_count[keyword] = keyword_count.get(keyword, 0) + 1
+            
+            # Sort by frequency
+            sorted_keywords = sorted(keyword_count.items(), key=lambda x: x[1], reverse=True)
+            
+            report_sections.append("## Site-Wide Keyword Analysis")
+            report_sections.append("Most common keywords across all pages:")
+            for keyword, count in sorted_keywords[:15]:  # Top 15 keywords
+                report_sections.append(f"- {keyword} ({count} pages)")
+            report_sections.append("")
+        
+        # Add site-wide SEO suggestions
+        if all_seo_keywords:
+            # Count keyword frequency
+            seo_keyword_count = {}
+            for keyword in all_seo_keywords:
+                seo_keyword_count[keyword] = seo_keyword_count.get(keyword, 0) + 1
+            
+            # Sort by frequency
+            sorted_seo_keywords = sorted(seo_keyword_count.items(), key=lambda x: x[1], reverse=True)
+            
+            report_sections.append("## Site-Wide SEO Suggestions")
+            report_sections.append("Most frequently suggested SEO keywords:")
+            for keyword, count in sorted_seo_keywords[:10]:  # Top 10 suggested keywords
+                report_sections.append(f"- {keyword} ({count} pages)")
+            report_sections.append("")
+    
+    # Add recommendations section
+    report_sections.append("## General Recommendations")
+    report_sections.append("1. Focus on content quality and relevance to your primary keywords")
+    report_sections.append("2. Ensure consistent header and footer elements across all pages")
+    report_sections.append("3. Optimize metadata (title tags, meta descriptions) for core pages")
+    report_sections.append("4. Improve internal linking to strengthen site structure")
+    report_sections.append("5. Consider creating dedicated content for high-value SEO suggestions")
+    
+    # Join all sections with appropriate line breaks
+    return "\n".join(report_sections)
+
+
 async def process_seo_report(report_id):
     """
     Process a single SEO report, analyzing all pages except the main page.
@@ -304,11 +426,16 @@ async def process_seo_report(report_id):
             if i + batch_size < len(pages_to_analyze):
                 await asyncio.sleep(delay_between_batches)
         
-        # Update the report in Supabase with the analysis results
+        # Generate a comprehensive text report from the llm_analysis_all dictionary
+        logging.info(f"Generating comprehensive text report for report ID {report_id}")
+        comprehensive_text_report = await generate_comprehensive_text_report(llm_analysis_all)
+        
+        # Update the report in Supabase with the analysis results and the new text report
         update_data = {
             'llm_analysis_all': llm_analysis_all,
             'llm_analysis_all_completed': True,
-            'llm_analysis_all_timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+            'llm_analysis_all_timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
+            'text_report': comprehensive_text_report  # Update text_report with the new comprehensive report
         }
         
         update_response = await asyncio.to_thread(
@@ -319,7 +446,7 @@ async def process_seo_report(report_id):
             logging.error(f"Failed to update report in Supabase: {update_response.error}")
             return False
         
-        logging.info(f"Successfully processed and updated report ID {report_id} with {len(pages_to_analyze)} page analyses")
+        logging.info(f"Successfully processed and updated report ID {report_id} with {len(pages_to_analyze)} page analyses and updated text_report")
         return True
         
     except Exception as e:

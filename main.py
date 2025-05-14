@@ -8,7 +8,7 @@ from utils.shared_functions import analyze_website, load_saved_report, init_shar
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
-
+import subprocess
 
 # --- Configuration & Setup ---
 load_dotenv()
@@ -237,6 +237,31 @@ async def process_url(url, lang="en"):
                 text_report, full_report = saved_report
                 st.info(language_manager.get_text("found_existing_report", lang))
                 logging.info("Using existing report")
+                
+                # Get report id from database for existing report
+                report_response = supabase.table('seo_reports').select('id').eq('url', normalized_url).execute()
+                if report_response.data and len(report_response.data) > 0:
+                    report_id = report_response.data[0]['id']
+                    logging.info(f"Found existing report ID: {report_id}")
+                    
+                    # Check if llm_analysis_all_completed flag is set
+                    completion_check = supabase.table('seo_reports').select('llm_analysis_all_completed').eq('id', report_id).execute()
+                    if completion_check.data and len(completion_check.data) > 0:
+                        llm_analysis_completed = completion_check.data[0].get('llm_analysis_all_completed', False)
+                        
+                        # If the LLM analysis is not complete, trigger it
+                        if not llm_analysis_completed:
+                            logging.info(f"LLM analysis not complete for report ID {report_id}, starting llm_analysis_end.py")
+                            try:
+                                import subprocess
+                                subprocess.Popen(['python', 'analyzer/llm_analysis_end.py', str(report_id)], 
+                                             stdout=subprocess.PIPE, 
+                                             stderr=subprocess.PIPE)
+                                logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
+                            except Exception as e:
+                                logging.error(f"Failed to run llm_analysis_end.py: {e}")
+                else:
+                    logging.warning(f"Could not find report ID for existing report")
             else:
                 # Generate new report
                 logging.info(f"Generating new report for {normalized_url}")
@@ -248,6 +273,24 @@ async def process_url(url, lang="en"):
                 if analysis_result and analysis_result[0] and analysis_result[1]:
                     text_report, full_report = analysis_result
                     logging.info("New analysis successfully generated")
+                    
+                    # Get report id from database for newly created report
+                    report_response = supabase.table('seo_reports').select('id').eq('url', normalized_url).execute()
+                    if report_response.data and len(report_response.data) > 0:
+                        report_id = report_response.data[0]['id']
+                        logging.info(f"New report ID: {report_id}")
+                        
+                        # Trigger llm_analysis_end.py as a subprocess
+                        try:
+                            import subprocess
+                            subprocess.Popen(['python', 'analyzer/llm_analysis_end.py', str(report_id)], 
+                                         stdout=subprocess.PIPE, 
+                                         stderr=subprocess.PIPE)
+                            logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
+                        except Exception as e:
+                            logging.error(f"Failed to run llm_analysis_end.py: {e}")
+                    else:
+                        logging.warning("Could not find report ID for new analysis")
                 else:
                     st.error("Failed to analyze website")
                     logging.error(f"Analysis failed for {normalized_url}")
@@ -263,6 +306,7 @@ async def process_url(url, lang="en"):
         logging.error(error_message)
         import traceback
         logging.error(traceback.format_exc())
+   
 
 if __name__ == "__main__":
     main()
