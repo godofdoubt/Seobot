@@ -6,7 +6,7 @@ import requests
 from utils.s10tools import normalize_url, Tool
 from typing import Callable, Dict, Any
 from utils.language_support import language_manager
-
+from utils.shared_functions import analyze_website
 language_names = {"en": "English", "tr": "Turkish"}
 
 def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:

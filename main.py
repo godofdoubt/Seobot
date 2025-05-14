@@ -8,7 +8,7 @@ from utils.shared_functions import analyze_website, load_saved_report, init_shar
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
-import subprocess
+import subprocess # Ensure this is imported
 
 # --- Configuration & Setup ---
 load_dotenv()
@@ -162,10 +162,43 @@ def main():
                         update_page_history("product")
                     st.switch_page("pages/3_Product_Writer.py")
 
+            # Check for pending detailed analysis for the *current* report
+            if "detailed_analysis_info" in st.session_state and \
+               st.session_state.detailed_analysis_info.get("report_id") and \
+               st.session_state.detailed_analysis_info.get("url") == st.session_state.url:
+                
+                # Display status message and update button
+                st.info(st.session_state.detailed_analysis_info["status_message"])
+                if st.button(language_manager.get_text("check_report_update_button", lang), key="check_update_button"):
+                    report_id_to_check = st.session_state.detailed_analysis_info["report_id"]
+                    current_url_for_reload = st.session_state.detailed_analysis_info["url"]
+                    
+                    # Query Supabase (synchronous call is fine in Streamlit callbacks)
+                    completion_check_response = supabase.table('seo_reports').select('llm_analysis_all_completed, text_report, report').eq('id', report_id_to_check).single().execute()
+
+                    if completion_check_response.data:
+                        if completion_check_response.data.get('llm_analysis_all_completed'):
+                            st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_complete_loaded", lang)
+                            # Update session state with the new full report
+                            st.session_state.text_report = completion_check_response.data.get('text_report')
+                            st.session_state.full_report = completion_check_response.data.get('report')
+                            # st.session_state.url = current_url_for_reload # Already set, but good practice
+                            st.session_state.analysis_complete = True # Re-affirm
+                            
+                            # Clear the pending status as it's now loaded
+                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}
+                            st.rerun()
+                        else:
+                            st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_still_inprogress", lang)
+                            st.rerun() # To update the status message displayed
+                    else:
+                        st.error(language_manager.get_text("error_checking_report_status", lang))
+                        # Optionally clear pending status if report seems to be gone or error is persistent
+                        # st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}
+
             st.subheader(language_manager.get_text("analysis_results", lang, st.session_state.url))
             st.text_area("SEO Report", st.session_state.text_report, height=300)
                   
-
         else:
             # Only show welcome message and URL form if analysis is NOT complete
             st.markdown(f"""
@@ -199,6 +232,7 @@ def main():
             if 'page_history' in st.session_state:
                 st.session_state.page_history = {}
             st.session_state.analysis_complete = False
+            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""} # Reset this too
             for key in ['text_report', 'full_report', 'url']:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -220,85 +254,90 @@ async def process_url(url, lang="en"):
         normalized_url = normalize_url(url)
         logging.info(f"Starting process_url for {normalized_url}")
         
+        # Reset any previous detailed analysis tracking for a new URL analysis
+        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}
+
         with st.spinner(language_manager.get_text("analyzing_website", lang)):
             # Check if we have a saved report
-            saved_report = load_saved_report(normalized_url, supabase)
+            # Use asyncio.to_thread for blocking Supabase calls within an async function
+            saved_report_data = await asyncio.to_thread(load_saved_report, normalized_url, supabase)
             
-            # Debug information
-            if saved_report:
-                logging.info(f"Found existing report for {normalized_url}")
-                logging.info(f"Report content exists: {bool(saved_report[0])}")
-            else:
-                logging.info(f"No existing report found for {normalized_url}")
-            
-            # Process based on whether we have a saved report
-            if saved_report and saved_report[0] and saved_report[1]:  # Ensure both text_report and full_report exist
-                # Use existing report
-                text_report, full_report = saved_report
+            text_report, full_report = None, None
+
+            if saved_report_data and saved_report_data[0] and saved_report_data[1]:
+                text_report, full_report = saved_report_data
                 st.info(language_manager.get_text("found_existing_report", lang))
-                logging.info("Using existing report")
+                logging.info(f"Found existing report for {normalized_url}")
                 
-                # Get report id from database for existing report
-                report_response = supabase.table('seo_reports').select('id').eq('url', normalized_url).execute()
+                report_response = await asyncio.to_thread(
+                    supabase.table('seo_reports').select('id, llm_analysis_all_completed').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute
+                )
+                
                 if report_response.data and len(report_response.data) > 0:
                     report_id = report_response.data[0]['id']
-                    logging.info(f"Found existing report ID: {report_id}")
+                    llm_analysis_completed = report_response.data[0].get('llm_analysis_all_completed', False)
+                    logging.info(f"Found existing report ID: {report_id}, llm_analysis_all_completed: {llm_analysis_completed}")
                     
-                    # Check if llm_analysis_all_completed flag is set
-                    completion_check = supabase.table('seo_reports').select('llm_analysis_all_completed').eq('id', report_id).execute()
-                    if completion_check.data and len(completion_check.data) > 0:
-                        llm_analysis_completed = completion_check.data[0].get('llm_analysis_all_completed', False)
-                        
-                        # If the LLM analysis is not complete, trigger it
-                        if not llm_analysis_completed:
-                            logging.info(f"LLM analysis not complete for report ID {report_id}, starting llm_analysis_end.py")
-                            try:
-                                import subprocess
-                                subprocess.Popen(['python', 'analyzer/llm_analysis_end.py', str(report_id)], 
-                                             stdout=subprocess.PIPE, 
-                                             stderr=subprocess.PIPE)
-                                logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
-                            except Exception as e:
-                                logging.error(f"Failed to run llm_analysis_end.py: {e}")
+                    if not llm_analysis_completed:
+                        logging.info(f"LLM analysis not complete for report ID {report_id}, starting llm_analysis_end.py in background.")
+                        st.session_state.detailed_analysis_info = {
+                            "report_id": report_id,
+                            "url": normalized_url,
+                            "status_message": language_manager.get_text("detailed_analysis_inprogress", lang)
+                        }
+                        try:
+                            subprocess.Popen(['python', 'analyzer/llm_analysis_end.py', str(report_id)], 
+                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            logging.info(f"Successfully triggered llm_analysis_end.py (background) for report ID {report_id}")
+                        except Exception as e:
+                            logging.error(f"Failed to run llm_analysis_end.py in background: {e}")
+                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""} # Clear on error
+                            st.error(language_manager.get_text("detailed_analysis_trigger_error", lang))
                 else:
-                    logging.warning(f"Could not find report ID for existing report")
+                    logging.warning(f"Could not find report ID for existing report {normalized_url} to check llm_analysis_all_completed status.")
             else:
-                # Generate new report
                 logging.info(f"Generating new report for {normalized_url}")
                 st.info("Generating new analysis...")
                 
-                # Call analyzer
-                analysis_result = await analyze_website(normalized_url, supabase)
+                analysis_result = await analyze_website(normalized_url, supabase) # analyze_website is already async
                 
                 if analysis_result and analysis_result[0] and analysis_result[1]:
                     text_report, full_report = analysis_result
                     logging.info("New analysis successfully generated")
                     
-                    # Get report id from database for newly created report
-                    report_response = supabase.table('seo_reports').select('id').eq('url', normalized_url).execute()
+                    report_response = await asyncio.to_thread(
+                        supabase.table('seo_reports').select('id').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute
+                    )
                     if report_response.data and len(report_response.data) > 0:
                         report_id = report_response.data[0]['id']
-                        logging.info(f"New report ID: {report_id}")
-                        
-                        # Trigger llm_analysis_end.py as a subprocess
+                        logging.info(f"New report ID: {report_id}. Triggering llm_analysis_end.py in background.")
+                        st.session_state.detailed_analysis_info = {
+                            "report_id": report_id,
+                            "url": normalized_url,
+                            "status_message": language_manager.get_text("detailed_analysis_inprogress", lang)
+                        }
                         try:
-                            import subprocess
                             subprocess.Popen(['python', 'analyzer/llm_analysis_end.py', str(report_id)], 
-                                         stdout=subprocess.PIPE, 
-                                         stderr=subprocess.PIPE)
-                            logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
+                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            logging.info(f"Successfully triggered llm_analysis_end.py (background) for new report ID {report_id}")
                         except Exception as e:
-                            logging.error(f"Failed to run llm_analysis_end.py: {e}")
+                            logging.error(f"Failed to run llm_analysis_end.py in background: {e}")
+                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""} # Clear on error
+                            st.error(language_manager.get_text("detailed_analysis_trigger_error", lang))
                     else:
-                        logging.warning("Could not find report ID for new analysis")
+                        logging.warning(f"Could not find report ID for new analysis {normalized_url} to trigger detailed analysis.")
                 else:
                     st.error("Failed to analyze website")
                     logging.error(f"Analysis failed for {normalized_url}")
                     return
             
-            # Display the report after successfully retrieving or generating it
-            logging.info("Displaying report")
-            display_report(text_report, full_report, normalized_url)
+            if text_report and full_report:
+                logging.info(f"Displaying initial report for {normalized_url}")
+                display_report(text_report, full_report, normalized_url)
+            else:
+                # This case should ideally not be reached if logic above is correct
+                st.error("Report data is unavailable.")
+                logging.error(f"Report data (text_report or full_report) is None for {normalized_url} before display_report call.")
     
     except Exception as e:
         error_message = f"Error in process_url: {str(e)}"

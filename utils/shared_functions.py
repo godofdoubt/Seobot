@@ -36,7 +36,10 @@ def init_shared_session_state():
         st.session_state.analysis_complete = False
      # Initialize language if not set
     if "language" not in st.session_state:
-        st.session_state.language = "en"        
+        st.session_state.language = "en"
+     # For tracking background detailed analysis
+    if "detailed_analysis_info" not in st.session_state:
+        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}            
 
 def update_page_history(page_name):
     """Store the current page's message history"""
