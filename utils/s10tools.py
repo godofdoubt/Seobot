@@ -1,6 +1,7 @@
 #s10tools.py
 from dataclasses import dataclass
 from typing import Callable, List, Optional
+from urllib.parse import urlparse, urlunparse
 
 @dataclass
 class Tool:
@@ -12,10 +13,13 @@ class Tool:
     prompt: Optional[str] = None
 
 def normalize_url(url: str) -> str:
-    """Normalizes a URL by adding 'https://' if no protocol is specified."""
-    if not (url.startswith('http://') or url.startswith('https://')):
+    """Normalizes a URL to its main page by ensuring a protocol and removing paths."""
+    parsed = urlparse(url)
+    if not parsed.scheme:
         url = 'https://' + url
-    return url
+        parsed = urlparse(url)
+    normalized = urlunparse((parsed.scheme, parsed.netloc, '', '', '', ''))
+    return normalized
 
 FUNCTION_DECLARATIONS = [
     {

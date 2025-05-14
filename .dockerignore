@@ -1,0 +1,7 @@
+.seo/
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+dataflow.txt

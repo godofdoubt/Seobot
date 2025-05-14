@@ -1,0 +1,15 @@
+
+services:
+  app:
+    build: . # Build from the Dockerfile in the current directory - Correct
+    env_file:
+      - .env 
+    ports:
+      - "8501:8501" # Map local port 8501 to container port 8501 - Correct
+    volumes:
+      # Mount the current local directory (.) to /app in the container - Correct for development
+      # This will overlay the files copied by the Dockerfile's COPY . /app during development,
+      # allowing you to make local code changes without rebuilding the image.
+      - .:/app
+    # command: streamlit run main.py # You can explicitly set the command here, or let CMD from Dockerfile be used
+    # Leaving this commentedA out allows the CMD instruction in the Dockerfile to be used, which is fine.

@@ -1,0 +1,68 @@
+---------------------------------------------------------------------
+Github:
+
+
+git commit -m "Commit Mesajı Buraya geliyor." yada vscode da kullanılabilir staged halinden sonra.
+
+git push origin A-1 --- Enson git e döndermek için. 
+
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+
+Lokal Kurulum:
+
+python -m venv .seo  --#"sanal ortam kur"
+
+source .seo/bin/activate  --#"sanal ortamı aktif et."
+
+pip install --upgrade pip 
+
+pip install playwright asyncio streamlit
+
+pip install google.generativeai
+
+pip install supabase python-dotenv
+
+playwright install 
+
+streamlit run main.py --# programı başlatır.
+---------------------------------------------------------------------
+.venv/Scripts/Activate.ps1
+
+aktive etme windows
+
+
+
+---------------------------------------------------------------------
+Server ayarları:
+
+## on render = playwright install chromium
+
+
+pip install playwright asyncio slugify
+pip install streamlit
+
+python main.py
+
+playwright install chromium
+
+
+Build Command
+
+pip install -r requirements.txt && playwright install chromium
+
+
+Start Command
+streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+
+
+
+------------------------------------------------------
+Şimdilik Gereksiz:
+
+docker build -t seo-analysis-tool
+
+docker run -p 8501:8501 -v $(pwd)/seo_reports:/app/seo_reports seo-analysis-tool
+
+docker compose 
