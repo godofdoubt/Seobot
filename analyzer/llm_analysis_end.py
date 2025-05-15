@@ -104,7 +104,7 @@ async def analyze_single_page(page_url: str, page_data: dict) -> dict:
 
     prompt = f"""
 Analyze the following web page content for the URL: {page_url}
-
+If content is Turkish make your analysis in Turkish , Otherwise make it in English.
 **Page Content (Cleaned Text Snippet):**
 ---
 {truncated_cleaned_text}

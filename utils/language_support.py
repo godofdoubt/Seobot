@@ -16,7 +16,8 @@ class LanguageSupport:
                 "generate_seo_suggestions": "Generate SEO Suggestions",
                 "generate_article": "Generate Article",
                 "generate_product_description": "Generate Product Description",
-                "refresh_full_report_button": "🔄 Check for Full Report / Refresh",
+                "check_report_update_button": "🔄 Check for Full Report / Refresh",
+                "go_to_login":"Please Login First",
 
 
                 # Messages
@@ -42,7 +43,8 @@ class LanguageSupport:
                 "failed_to_analyze": "Sorry, we encountered an error while trying to analyze the website. Please try again or contact support.",
                 "no_report_available_error": "An error occurred, and no report is available for this URL.",
                 "full_site_analysis_complete": "✅ Full site analysis, including all sub-pages, is complete!",
-                "sub_page_analysis_pending": "ℹ️ Main page analysis is complete. In-depth analysis for all site pages is currently processing.",
+                "detailed_analysis_inprogress": "ℹ️ Main page analysis is complete. In-depth analysis for all site pages is currently processing.",
+                "detailed_analysis_still_inprogress": " Detailed analysis still in progress please wait. 🔄.",
                 "llm_analysis_status_unknown": "Status of detailed sub-page analysis is currently unknown. Analyze or refresh if expecting results.",
                 "no_ai_model": "No AI model API key (Gemini or Mistral) is configured. Please set at least one in your environment.",
                 "no_ai_model_configured": "No AI model configured. Please provide either GEMINI_API_KEY or MISTRAL_API_KEY.",
@@ -68,13 +70,15 @@ class LanguageSupport:
                 "processing_question": "Processing your question",
                 "generating_response": "Generating response",
                 "could_not_generate_description": "Could not generate product description",
-                "error_processing_request": "Error processing request",
+                "error_processing_request": "Error processing request🔄",
+                "Processing_request": "Processing request",
                 "analyzing": "Analyzing",
                 "analyze_website_first_product": "Please analyze a website first in the SEO Helper page before I can help with product descriptions.",
                 "welcome_seo_helper_analyzed": "Welcome to the Seo Helper Page.\nUsing analysis for: {0}",
                 "welcome_article_writer_not_analyzed": "Welcome to the Article Writer page. Please analyze a website in the SEO Helper page first to proceed.",
                 "welcome_article_writer_analyzed": "Welcome to the Article Writer page. Ready to help you write an article based on the analysis of {0}.",
-
+                "enter_url_or_question_seo_helper":"Enter Url......Ask a Question.......",
+                "enter_url":"Enter Url.",
                 # Article Options
                 "article_options_title": "Article Options",
                 "focus_keyword": "Focus Keyword",
@@ -118,7 +122,8 @@ class LanguageSupport:
                 "generate_seo_suggestions": "SEO Analizimi Oluştur",
                 "generate_article": "Makale Oluştur",
                 "generate_product_description": "Ürün Açıklaması Oluştur",
-                "refresh_full_report_button": "🔄 Tam Raporu Kontrol Et / Yenile",
+                "check_report_update_button": "🔄 Tam Raporu Kontrol Et / Yenile",
+                "go_to_login":"Lütfen Giriş Yapın.",
 
                 # Messages
                 "welcome_message": "SE10 Web Servislerine Hoş Geldiniz!",
@@ -143,7 +148,8 @@ class LanguageSupport:
                 "failed_to_analyze": "Üzgünüz, web sitesini analiz etmeye çalışırken bir hata oluştu. Lütfen tekrar deneyin veya destekle iletişime geçin.",
                 "no_report_available_error": "Bir hata oluştu ve bu URL için rapor mevcut değil.",
                 "full_site_analysis_complete": "✅ Tüm alt sayfalar dahil olmak üzere tam site analizi tamamlandı!",
-                "sub_page_analysis_pending": "ℹ️ Ana sayfa analizi tamamlandı. Tüm site sayfaları için derinlemesine analiz işleniyor.",
+                "detailed_analysis_inprogress": "ℹ️ Ana sayfa analizi tamamlandı. Tüm site sayfaları için derinlemesine analiz işleniyor.",
+                "detailed_analysis_still_inprogress": " Detaylı Analiz hala devam ediyor. 🔄.",
                 "llm_analysis_status_unknown": "Detaylı alt sayfa analizinin durumu şu anda bilinmiyor. Sonuç bekliyorsanız analiz edin veya yenileyin.",
                 "no_ai_model": "Hiçbir AI modeli API anahtarı (Gemini veya Mistral) yapılandırılmamış. Lütfen ortamınızda en az birini ayarlayın.",
                 "no_ai_model_configured": "Yapılandırılmış bir AI modeli yok. Lütfen GEMINI_API_KEY veya MISTRAL_API_KEY sağlayın.",
@@ -170,12 +176,14 @@ class LanguageSupport:
                 "generating_response": "Yanıt oluşturuluyor",
                 "could_not_generate_description": "Ürün açıklaması oluşturulamadı",
                 "error_processing_request": "İstek işlenirken hata oluştu",
+                "processing_request": "İstek işleniyor..🔄",
                 "analyzing": "Analiz ediliyor",
                 "analyze_website_first_product": "Ürün açıklamalarıyla yardımcı olabilmem için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
                 "welcome_seo_helper_analyzed": "Seo Yardımcısı Sayfasına Hoş Geldiniz.\nAnaliz şunun için kullanılıyor: {0}",
                 "welcome_article_writer_not_analyzed": "Makale Yazarı sayfasına hoş geldiniz. Devam etmek için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
                 "welcome_article_writer_analyzed": "Makale Yazarı sayfasına hoş geldiniz. {0} analizine dayalı bir makale yazmanıza yardımcı olmaya hazırım.",
-
+                "enter_url_or_question_seo_helper":" Url Gir...Yada...Soru sor........",
+                "enter_url":"Web sitenizin adresini girin.",
                 # Article Options
                 "article_options_title": "Makale Seçenekleri",
                 "focus_keyword": "Odak Anahtar Kelime",
