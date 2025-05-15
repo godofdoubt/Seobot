@@ -79,7 +79,7 @@ def extract_products_from_keywords(text_report: str) -> str:
 
 
 # *** UPDATED Gemini Function ***
-def generate_product_description(seo_report_text: str, product_options: dict) -> str:
+def generate_product_description(text_report: str, product_options: dict) -> str:
     """Generates a product description using Gemini based on SEO report and user options."""
     if not model:
         return "Error: Gemini model not configured. Check GEMINI_API_KEY."
@@ -112,7 +112,7 @@ def generate_product_description(seo_report_text: str, product_options: dict) ->
             length_guidance = "a moderate length" # Default if mapping fails
 
         # Extract a keyword for context (optional enrichment)
-        seo_context_keyword = extract_products_from_keywords(seo_report_text)
+        seo_context_keyword = extract_products_from_keywords(text_report)
 
         # Construct the prompt using the provided options
         prompt = f"""
@@ -132,7 +132,7 @@ Act as an expert copywriter. Write a compelling product description based on the
 6.  **Do not** mention the SEO report explicitly. You can subtly incorporate relevant themes or keywords like '{seo_context_keyword}' if they fit naturally with the product description, but prioritize describing the product based on the provided details.
 
 **[Optional Context from SEO Report Summary - Use subtly if relevant]:**
-{seo_report_text[:1500]}  # Provide a snippet for context, not the whole report
+{text_report[:1500]}  # Provide a snippet for context, not the whole report
 
 Generate the product description now:
 """
@@ -153,7 +153,7 @@ Generate the product description now:
 
 
 # *** UPDATED Mistral Function ***
-def generate_product_description_with_mistral(seo_report_text: str, product_options: dict, api_key: str) -> str:
+def generate_product_description_with_mistral(text_report: str, product_options: dict, api_key: str) -> str:
     """Generates a product description using Mistral API based on SEO report and user options."""
     url = "https://api.mistral.ai/v1/chat/completions"
 
@@ -192,7 +192,7 @@ def generate_product_description_with_mistral(seo_report_text: str, product_opti
             length_guidance = "a moderate length"
 
         # Extract a keyword for context (optional enrichment)
-        seo_context_keyword = extract_products_from_keywords(seo_report_text)
+        seo_context_keyword = extract_products_from_keywords(text_report)
 
         # System Prompt
         system_prompt = f"""You are an expert copywriter. Your task is to write a compelling product description.
@@ -213,7 +213,7 @@ def generate_product_description_with_mistral(seo_report_text: str, product_opti
 {product_details}
 
 **[Optional Context from SEO Report Summary]:**
-{seo_report_text[:1500]}
+{text_report[:1500]}
 """
 
         data = {
@@ -260,7 +260,7 @@ def generate_product_description_with_mistral(seo_report_text: str, product_opti
         return f"Error: Could not generate product description via Mistral ({e})."
 
 # *** UPDATED API Choice Function ***
-def generate_product_description_with_api_choice(seo_report_text: str, product_options: dict) -> str:
+def generate_product_description_with_api_choice(text_report: str, product_options: dict) -> str:
     """Generates product description using either Gemini or Mistral based on availability and user preference."""
 
     # Retrieve keys securely
@@ -284,10 +284,10 @@ def generate_product_description_with_api_choice(seo_report_text: str, product_o
     try:
         if use_mistral:
             logging.info("Using Mistral API for product description.")
-            return generate_product_description_with_mistral(seo_report_text, product_options, mistral_api_key)
+            return generate_product_description_with_mistral(text_report, product_options, mistral_api_key)
         elif use_gemini:
             logging.info("Using Gemini API for product description.")
-            return generate_product_description(seo_report_text, product_options)
+            return generate_product_description(text_report, product_options)
         else:
             logging.error("No suitable API key found or model configured.")
             # Provide specific message based on which keys are missing

@@ -15,7 +15,7 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 # --- Streamlit Page Configuration ---
 st.set_page_config(
     page_title="Article Writer Beta",
-    page_icon=":robot_face:",
+    page_icon="✍️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
