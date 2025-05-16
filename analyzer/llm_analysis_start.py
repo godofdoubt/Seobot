@@ -8,6 +8,7 @@ import asyncio # For to_thread
 from dotenv import load_dotenv
 from utils.language_support import language_manager
 import streamlit as st
+
 language_names = {"en": "English", "tr": "Turkish"}
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -136,7 +137,8 @@ async def llm_analysis_start(report_data: dict) -> dict:
     max_text_len = 25000 # Characters
     truncated_cleaned_text = cleaned_text[:max_text_len] + ('...' if len(cleaned_text) > max_text_len else '')
     language_instruction = f"Please respond in {language_names.get(st.session_state.language, 'English')}." if st.session_state.language != "en" else ""
-    prompt = f"""{language_instruction}
+    lang = st.session_state.get("language", "en")
+    prompt = f"""{language_instruction} If content is Turkish make your analysis in Turkish , Otherwise make it in English.
 Analyze the following web page content for the URL: {page_url_from_report}
 
 **Page Content (Cleaned Text Snippet):**

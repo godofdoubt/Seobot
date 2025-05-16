@@ -1,5 +1,5 @@
 '''
-SEO Analyzer Configuration File
+SEO Analyzer Configuration File - Updated
 Contains all configurable parameters used by the SEO analyzer
 analyzer/config.py
 '''
@@ -213,6 +213,9 @@ EXCLUDE_PATTERNS = [
     '&fbclid=',
     '?gclid=',
     '&gclid=',
+    
+    # New exclude pattern for specific categories we want to skip
+    '/category/tdt',  # Specifically exclude the tdt category
 ]
 
 
@@ -271,23 +274,4 @@ COMMON_STOP_WORDS = {
     'sadece', 'sonra', 'önce', 'http', 'https', 'html', 'page', 'click', 'site', 'website', 'web', 'net',
     'org', 'gov', 'edu', 'info', 'biz', 'menu', 'search', 'contact', 'about', 'home', 'not', 'your', 'our',
     'ne', 'nasıl', 'neden', 'kim', 'nereye', 'their', 'his', 'may', 'if', 'as', 'so', 'who', 'which', 'than',
-    #'facebook', 'twitter', 'instagram', 'youtube', 'linkedin', 'pinterest', 'google', 'apple', 'microsoft',
-    #'amazon', 'anasayfa', 'hakkımızda', 'iletişim', 'ürünler', 'hizmetler', 'blog', 'galeri', 'yardım',
-    #'destek', 'kayıt', 'giriş', 'çıkış', 'hesabım', 'sepetim', 'sipariş', 'ödeme', 'teslimat', 'iade',
-    #'gizlilik', 'kullanım', 'şartları', 'koşulları', 'sıkça', 'sorulan', 'sorular', 'devamını', 'oku',
-   # 'fazla', 'bilgi', 'tıklayın', 'buraya', 'git', 'bak', 'al', 'ver', 'yap', 'et', 'ol', 'acaba', 'aslında',
-    'ayrıca', 'az', 'bazı', 'belki', 'bile', 'böyle', 'böylece', 'bütün', 'çünkü', 'da', 'dahi', 'defa',
-    'diğer', 'elbette', 'gayet', 'gene', 'gerek', 'göre', 'halen', 'hangi', 'hatta', 'hem', 'henüz', 'hep',
-    'hepsi', 'hiç', 'ise', 'işte', 'itibaren', 'itibariyle', 'kadar', 'karşın', 'kez', 'kimse', 'ki', 'madem',
-    #'mesela', 'oysa', 'oysaki', 'pek', 'rağmen', 'sanki', 'şayet', 'şimdi', 'şöyle', 'tabi', 'tamam', 'üzere',
-    #'yani', 'yerine', 'yine', 'zaten', 'vb', 'vs', 'copyright', 'all', 'rights', 'reserved', 'biri', 'birkaç',
-    #'de', 'eğer', 'mı', 'mu', 'mü', 'nerde', 'nerede', 'niçin', 'niye', 'tüm', 'ya', 'sepet', 'sepeti',
-    #'üye', 'girişi', 'ürün', 'ürünü', 'dahil', 'kdv', 'ekle', 'tükendi', 'yeni',  'haklari', 
-    #'saklidir', 'sepete', 'indirim' 'İndirim' , 'Indirim'
 }
-
-
-
-
-
-
