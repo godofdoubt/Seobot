@@ -32,6 +32,7 @@ class LanguageSupport:
                 "analysis_results": "Analysis Results for: {0}",
                 "authentication_required": "You need to log in first to use this service.",
                 "login_failed": "Authentication failed. Please check your API key.",
+                "enter_api_key_label": "Please enter your API key to continue:",
                 "enter_api_key": "Please enter your API key to continue:",
                 "next_steps": "Next Steps:",
                 "continue_optimizing": "Continue optimizing your site or generate content:",
@@ -78,7 +79,7 @@ class LanguageSupport:
                 "welcome_article_writer_not_analyzed": "Welcome to the Article Writer page. Please analyze a website in the SEO Helper page first to proceed.",
                 "welcome_article_writer_analyzed": "Welcome to the Article Writer page. Ready to help you write an article based on the analysis of {0}.",
                 "enter_url_or_question_seo_helper":"Enter Url......Ask a Question.......",
-                "enter_url":"Enter Url.",
+                "enter_url_placeholder":"Enter Url.",
                 # Article Options
                 "article_options_title": "Article Options",
                 "focus_keyword": "Focus Keyword",
@@ -137,6 +138,7 @@ class LanguageSupport:
                 "analysis_results": "Şunun için analiz sonuçları: {0}",
                 "authentication_required": "Bu hizmeti kullanmak için önce giriş yapmanız gerekiyor.",
                 "login_failed": "Kimlik doğrulama başarısız oldu. Lütfen API anahtarınızı kontrol edin.",
+                "enter_api_key_label": "Devam etmek için lütfen API anahtarınızı girin:",
                 "enter_api_key": "Devam etmek için lütfen API anahtarınızı girin:",
                 "next_steps": "Sonraki Adımlar:",
                 "continue_optimizing": "Sitenizi optimize etmeye devam edin veya içerik oluşturun:",
@@ -183,7 +185,7 @@ class LanguageSupport:
                 "welcome_article_writer_not_analyzed": "Makale Yazarı sayfasına hoş geldiniz. Devam etmek için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
                 "welcome_article_writer_analyzed": "Makale Yazarı sayfasına hoş geldiniz. {0} analizine dayalı bir makale yazmanıza yardımcı olmaya hazırım.",
                 "enter_url_or_question_seo_helper":" Url Gir...Yada...Soru sor........",
-                "enter_url":"Web sitenizin adresini girin.",
+                "enter_url_placeholder":"Web sitenizin adresini girin.",
                 # Article Options
                 "article_options_title": "Makale Seçenekleri",
                 "focus_keyword": "Odak Anahtar Kelime",

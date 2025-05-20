@@ -1,3 +1,5 @@
+
+
 #s10tools.py
 from dataclasses import dataclass
 from typing import Callable, List, Optional
@@ -13,12 +15,26 @@ class Tool:
     prompt: Optional[str] = None
 
 def normalize_url(url: str) -> str:
-    """Normalizes a URL to its main page by ensuring a protocol and removing paths."""
+    """
+    Normalizes a URL by ensuring a scheme, removing 'www.' prefix, 
+    and removing paths, queries, and fragments.
+    """
     parsed = urlparse(url)
-    if not parsed.scheme:
+    
+    # Ensure a scheme (default to https)
+    scheme = parsed.scheme
+    if not scheme:
         url = 'https://' + url
         parsed = urlparse(url)
-    normalized = urlunparse((parsed.scheme, parsed.netloc, '', '', '', ''))
+        scheme = parsed.scheme # Re-assign scheme after re-parsing
+
+    netloc = parsed.netloc
+    # Remove 'www.' prefix if it exists
+    if netloc.startswith('www.'):
+        netloc = netloc[4:]
+    
+    # Reconstruct the URL with the scheme, modified netloc, and no path/query/fragment
+    normalized = urlunparse((scheme, netloc, '', '', '', ''))
     return normalized
 
 FUNCTION_DECLARATIONS = [

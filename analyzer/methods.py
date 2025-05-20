@@ -6,6 +6,11 @@ import getpass
 import os
 from urllib.parse import urlparse
 import analyzer.config as config 
+from typing import List, Optional  # For type hinting
+#text i intial page content olarak değiştirebiliriz
+# analyzer/methods.py
+
+
 
 
 def get_current_user():
@@ -41,57 +46,57 @@ def validate_url(url):
         return None   
 
 
-async def analyze_headings(page):
-    """Extract and analyze heading tags from a page with their text content"""
-    headings_data = await page.evaluate("""
-        () => {
-            const result = {
-                h1: [],
-                h2: [],
-                h3: [],
-                h4: [],
-                h5: [],
-                h6: []
-            };
+# async def analyze_headings(page):
+#     """Extract and analyze heading tags from a page with their text content"""
+#     headings_data = await page.evaluate("""
+#         () => {
+#             const result = {
+#                 h1: [],
+#                 h2: [],
+#                 h3: [],
+#                 h4: [],
+#                 h5: [],
+#                 h6: []
+#             };
             
-            const getHeadingInfo = (element) => {
-                const text = element.textContent.trim();
-                const id = element.id ? element.id : '';
-                const classes = element.className ? element.className : '';
-                return {
-                    text: text
+#             const getHeadingInfo = (element) => {
+#                 const text = element.textContent.trim();
+#                 const id = element.id ? element.id : '';
+#                 const classes = element.className ? element.className : '';
+#                 return {
+#                     text: text
                     
-                };
-            };
+#                 };
+#             };
             
-            for (let i = 1; i <= 6; i++) {
-                const headings = document.querySelectorAll(`h${i}`);
-                headings.forEach(heading => {
-                    const headingInfo = getHeadingInfo(heading);
-                    if (headingInfo.text) {
-                        result[`h${i}`].push(headingInfo);
-                    }
-                });
-            }
+#             for (let i = 1; i <= 6; i++) {
+#                 const headings = document.querySelectorAll(`h${i}`);
+#                 headings.forEach(heading => {
+#                     const headingInfo = getHeadingInfo(heading);
+#                     if (headingInfo.text) {
+#                         result[`h${i}`].push(headingInfo);
+#                     }
+#                 });
+#             }
             
-            return result;
-        }
-    """)
+#             return result;
+#         }
+#     """)
     
-    headings_count = {
-        'h1_count': len(headings_data.get('h1', [])),
-        'h2_count': len(headings_data.get('h2', [])),
-        'h3_count': len(headings_data.get('h3', [])),
-        'h4_count': len(headings_data.get('h4', [])),
-        'h5_count': len(headings_data.get('h5', [])),
-        'h6_count': len(headings_data.get('h6', [])),
-        'total_count': sum(len(headings_data.get(f'h{i}', [])) for i in range(1, 7))
-    }
+#     headings_count = {
+#         'h1_count': len(headings_data.get('h1', [])),
+#         'h2_count': len(headings_data.get('h2', [])),
+#         'h3_count': len(headings_data.get('h3', [])),
+#         'h4_count': len(headings_data.get('h4', [])),
+#         'h5_count': len(headings_data.get('h5', [])),
+#         'h6_count': len(headings_data.get('h6', [])),
+#         'total_count': sum(len(headings_data.get(f'h{i}', [])) for i in range(1, 7))
+#     }
     
-    return {
-        'headings': headings_data,
-        'stats': headings_count
-    }
+#     return {
+#         'headings': headings_data,
+#         'stats': headings_count
+#     }
 
 
 def normalize_turkish_text(text: str) -> str:
@@ -114,27 +119,72 @@ def normalize_turkish_text(text: str) -> str:
     return text.strip()
 
 
-#text i intial page content olarak değiştirebiliriz
-def extract_text(text: str):
+
+
+def _remove_snippets_from_text_internal(text: str, snippets_to_remove: Optional[List[str]]) -> str:
     """
-    Extract top keywords and return cleaned text, along with other extracted information.
-    Returns a tuple (list of top `max_keywords` keywords, cleaned_text, filtered_words_str, extracted_info_dict).
-    Uses COMMON_STOP_WORDS from config.
+    Internal helper to remove a list of text snippets from a larger text string.
+    Uses case-insensitive, whole-word matching.
     """
-    import re
-    from collections import Counter
+    modified_text = text
+    if not snippets_to_remove or not text or not any(s and s.strip() for s in snippets_to_remove):
+        return text
+        
+    for snippet in snippets_to_remove:
+        if snippet and snippet.strip(): # Ensure snippet is not None and not just whitespace
+            try:
+                # Using regex for case-insensitive, whole-word replacement
+                # re.escape handles any special regex characters in the snippet
+                pattern = r'\b' + re.escape(snippet.strip()) + r'\b'
+                modified_text = re.sub(pattern, '', modified_text, flags=re.IGNORECASE | re.UNICODE)
+            except re.error as e:
+                # Log this error if you have logging configured for methods.py
+                logging.warning(f"Regex error while trying to remove snippet '{snippet[:50]}...': {e}")
+                pass # Continue with other snippets
     
-    if not text or len(text.strip()) < 10:
-        return ([], "", "", {})
+    # Clean up multiple spaces that might result from removals and trim
+    modified_text = re.sub(r'\s{2,}', ' ', modified_text).strip()
+    return modified_text
+
+def extract_text(text: str, 
+                 header_snippets: Optional[List[str]] = None, 
+                 footer_snippets: Optional[List[str]] = None) -> str:
+    """
+    Extracts and cleans text. Optionally removes provided header and footer snippets
+    after initial cleaning.
+    The original function snippet showed: return (cleaned_text ) which implies a string.
+    """
+    import re # Ensure re is imported if not at module level
+    # from collections import Counter # Not used if only returning cleaned_text
     
-    # Normalize text first
-    text = normalize_turkish_text(text)
-    text = re.sub(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})(?=\d{1,2}[/.-])', r'\1 ', text)
-    # Clean text after extraction is complete
-    cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', text)
+    if not text or len(text.strip()) < 10: # Basic check for meaningful content
+        return "" 
+    
+    # 1. Normalize text (e.g., Turkish character normalization)
+    #    Your snippet included normalize_turkish_text, so we'll assume it's available
+    processed_text = normalize_turkish_text(text)
+    
+    # 2. Date pattern adjustment (from your provided snippet)
+    processed_text = re.sub(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})(?=\d{1,2}[/.-])', r'\1 ', processed_text)
+    
+    # 3. Initial cleaning: remove non-alphanumeric (but keep specific chars), multiple spaces
+    #    Keeping ' - and Turkish characters as per your snippet
+    cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', processed_text)
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip() # This is the line you mentioned
+    
+    # 4. Remove header snippets if provided
+    if header_snippets:
+        # logging.debug(f"Attempting to remove headers. Text length before: {len(cleaned_text)}")
+        cleaned_text = _remove_snippets_from_text_internal(cleaned_text, header_snippets)
+        # logging.debug(f"Text length after header removal: {len(cleaned_text)}")
+        
+    # 5. Remove footer snippets if provided
+    if footer_snippets:
+        # logging.debug(f"Attempting to remove footers. Text length before: {len(cleaned_text)}")
+        cleaned_text = _remove_snippets_from_text_internal(cleaned_text, footer_snippets)
+        # logging.debug(f"Text length after footer removal: {len(cleaned_text)}")
+        
+    # 6. Final clean-up of spaces that might have been introduced or left by removals
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-
-
     
-    return (cleaned_text )
-    
+    return cleaned_text

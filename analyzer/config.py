@@ -5,11 +5,11 @@ analyzer/config.py
 '''
 
 # Crawling and Analysis Limits
-MAX_PAGES_TO_ANALYZE = 100
-MAX_LINKS_TO_DISCOVER = 500
+MAX_PAGES_TO_ANALYZE = 15
+MAX_LINKS_TO_DISCOVER = 50
 PAGE_TIMEOUT = 20000  # milliseconds
-AGGREGATED_KEYWORD_COUNT = 50
-MAX_CATEGORY_PAGES_TO_SCAN = 25
+
+#MAX_CATEGORY_PAGES_TO_SCAN = 25
 CRAWL_DELAY_MIN = 2
 CRAWL_DELAY_MAX = 12
 # Browser Configuration
@@ -23,9 +23,7 @@ EXCLUDE_PATTERNS = [
     'replytocom=',   # Catch variations without the leading ?
     '&replytocom=',  # Catch when it's part of a query string
     # Rest of the existing exclude patterns remain the same...
-    '/tag/',
-    '/tag',
-    '/login',
+    '/category/uncategorized/',
     '/tag/',
     '/tag',
     '/login',
