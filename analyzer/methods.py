@@ -46,57 +46,6 @@ def validate_url(url):
         return None   
 
 
-# async def analyze_headings(page):
-#     """Extract and analyze heading tags from a page with their text content"""
-#     headings_data = await page.evaluate("""
-#         () => {
-#             const result = {
-#                 h1: [],
-#                 h2: [],
-#                 h3: [],
-#                 h4: [],
-#                 h5: [],
-#                 h6: []
-#             };
-            
-#             const getHeadingInfo = (element) => {
-#                 const text = element.textContent.trim();
-#                 const id = element.id ? element.id : '';
-#                 const classes = element.className ? element.className : '';
-#                 return {
-#                     text: text
-                    
-#                 };
-#             };
-            
-#             for (let i = 1; i <= 6; i++) {
-#                 const headings = document.querySelectorAll(`h${i}`);
-#                 headings.forEach(heading => {
-#                     const headingInfo = getHeadingInfo(heading);
-#                     if (headingInfo.text) {
-#                         result[`h${i}`].push(headingInfo);
-#                     }
-#                 });
-#             }
-            
-#             return result;
-#         }
-#     """)
-    
-#     headings_count = {
-#         'h1_count': len(headings_data.get('h1', [])),
-#         'h2_count': len(headings_data.get('h2', [])),
-#         'h3_count': len(headings_data.get('h3', [])),
-#         'h4_count': len(headings_data.get('h4', [])),
-#         'h5_count': len(headings_data.get('h5', [])),
-#         'h6_count': len(headings_data.get('h6', [])),
-#         'total_count': sum(len(headings_data.get(f'h{i}', [])) for i in range(1, 7))
-#     }
-    
-#     return {
-#         'headings': headings_data,
-#         'stats': headings_count
-#     }
 
 
 def normalize_turkish_text(text: str) -> str:
@@ -173,15 +122,15 @@ def extract_text(text: str,
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip() # This is the line you mentioned
     
     # 4. Remove header snippets if provided
-    if header_snippets:
+    #if header_snippets:
         # logging.debug(f"Attempting to remove headers. Text length before: {len(cleaned_text)}")
-        cleaned_text = _remove_snippets_from_text_internal(cleaned_text, header_snippets)
+    cleaned_text = _remove_snippets_from_text_internal(cleaned_text, header_snippets)
         # logging.debug(f"Text length after header removal: {len(cleaned_text)}")
         
     # 5. Remove footer snippets if provided
-    if footer_snippets:
+    #if footer_snippets:
         # logging.debug(f"Attempting to remove footers. Text length before: {len(cleaned_text)}")
-        cleaned_text = _remove_snippets_from_text_internal(cleaned_text, footer_snippets)
+    cleaned_text = _remove_snippets_from_text_internal(cleaned_text, footer_snippets)
         # logging.debug(f"Text length after footer removal: {len(cleaned_text)}")
         
     # 6. Final clean-up of spaces that might have been introduced or left by removals

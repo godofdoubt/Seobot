@@ -134,7 +134,7 @@ async def llm_analysis_start(report_data: dict) -> dict:
             "footer": []
         }
 
-    max_text_len = 25000 # Characters
+    max_text_len = 30000 # Characters
     truncated_cleaned_text = cleaned_text[:max_text_len] + ('...' if len(cleaned_text) > max_text_len else '')
     language_instruction = f"Please respond in {language_names.get(st.session_state.language, 'English')}." if st.session_state.language != "en" else ""
     lang = st.session_state.get("language", "en")
@@ -185,6 +185,8 @@ Output ONLY the JSON object. Do NOT include any explanatory text, markdown forma
     *   Format each piece of information as a descriptive string in a list.
     *   Example: ["Email: contact@example.com", "Phone: (555) 123-4567", "Main Office: 123 Innovation Drive, Tech City", "Product: Alpha Suite", "Twitter: https://twitter.com/example"]
     *   If no such information is found, return an empty list [].
+    *   Avoid generic phrases that do not provide specific information. Example: "Contact us" or "Follow us on social media" is too vague.
+
 
 4.  **"suggested_keywords_for_seo"**:
     *   Based on the page content and its main topics, suggest 3-5 additional keywords or key phrases that could be targeted for SEO.
@@ -194,17 +196,18 @@ Output ONLY the JSON object. Do NOT include any explanatory text, markdown forma
 
 5.  **"header"**:
     *   From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main header.
-    *   This typically includes site navigation links (e.g., "Home", "About Us", "Services", "Contact"), site branding text (e.g., company name if prominently in header), or a primary tagline.
+    *   This typically includes site navigation links (e.g., "Home", "About Us", "Services", "Contact" , Certificates), site branding text (e.g., company name if prominently in header), or a primary tagline.
     *   Provide these as a list of strings. Each string can be a distinct link text or a phrase from the header.
+    *   May contain menu items, site title, or catagory and product name.
     *   If no clear header text is discernible, return an empty list [].
-    *   Example: ["Home", "Products", "Blog", "Login", "Site Title Example Inc."]
+    *   Example: ["Home", "Products", "Blog", "Login", "Site Title Example Inc." , "About Us", "Contact Us"]
 
 6.  **"footer"**:
     *   From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main footer.
     *   This typically includes copyright notices, links to privacy policy, terms of service, sitemap, contact information repeated in the footer, or social media links.
     *   Provide these as a list of strings. Each string can be a distinct link text or a phrase from the footer.
     *   If no clear footer text is discernible, return an empty list [].
-    *   Example: ["© 2024 Company Name", "Privacy Policy", "Terms of Use", "Contact Us", "Follow us on Twitter"]
+    *   Example: ["© 2024 Company Name", "Privacy Policy", "Terms of Use", "Contact Us", "Follow us on Twitter" , © 2025 Company name. Tüm Hakları Saklıdır",]
 
 Ensure your entire response is ONLY a valid JSON object.
 """

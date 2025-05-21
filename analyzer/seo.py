@@ -1,4 +1,3 @@
-
 import logging
 import time
 import random
@@ -254,6 +253,7 @@ class SEOAnalyzer:
                 self.visited_urls.add(s_url) 
 
         actual_initial_url = None # Define for broader scope, in case of errors before assignment
+        initial_cleaned_text_for_main_url = "" # Store this for LLM analysis only
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -323,13 +323,9 @@ class SEOAnalyzer:
                             )
                             logging.debug(f"Initial page text length after H/F removal: {len(final_initial_cleaned_text)} (Original: {len(raw_initial_cleaned_text)})")
                         
-                        if actual_initial_url not in url_in_report_dict: 
-                            analysis['page_statistics'][actual_initial_url] = {
-                                'url': actual_initial_url,
-                                'cleaned_text': final_initial_cleaned_text, 
-                            }
-                            url_in_report_dict[actual_initial_url] = True
-                            analysis['crawled_urls'].append(actual_initial_url)
+                        # Store the cleaned text but DON'T add to page_statistics
+                        initial_cleaned_text_for_main_url = final_initial_cleaned_text
+                        analysis['crawled_urls'].append(actual_initial_url)
                         
                         for link in initial_result['new_links']:
                             if link not in self.visited_urls and link not in urls_to_visit :
@@ -413,6 +409,10 @@ class SEOAnalyzer:
                                 if len(self.all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER: break
                                 continue
 
+                            # Skip adding to page_statistics if it's the main URL
+                            if actual_processed_url == analysis_url_input:
+                                continue
+
                             if page_result_data['cleaned_text']: 
                                 if len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE :
                                     analysis['page_statistics'][actual_processed_url] = {
@@ -449,6 +449,10 @@ class SEOAnalyzer:
                         break 
                     
                     await asyncio.sleep(random.uniform(config.CRAWL_DELAY_MIN / 2, config.CRAWL_DELAY_MAX / 2))
+
+                # Add the cleaned text to the LLM report if it exists
+                if self.initial_page_llm_report and initial_cleaned_text_for_main_url:
+                    self.initial_page_llm_report['cleaned_text'] = initial_cleaned_text_for_main_url
 
                 analysis['crawled_internal_pages_count'] = len(analysis['crawled_urls'])
                 analysis['analysis_duration_seconds'] = round(time.time() - start_time, 2)

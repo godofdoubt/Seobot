@@ -8,7 +8,8 @@ from utils.shared_functions import analyze_website, load_saved_report, init_shar
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
-import subprocess
+
+from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor 
 
 # --- Configuration & Setup ---
 load_dotenv()
@@ -18,7 +19,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# Load environment variables
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -47,27 +47,41 @@ def display_report(text_report, full_report, normalized_url):
     st.session_state.full_report = full_report
     st.session_state.url = normalized_url
     st.session_state.analysis_complete = True
-    st.rerun()
+    st.rerun() # This can now stay
 
-async def trigger_detailed_analysis_background_process(report_id):
-    """Triggers the detailed analysis background script."""
+# Changed to a synchronous function
+def trigger_detailed_analysis_background_process(report_id: int): # report_id is int from DB
+    """Triggers the detailed analysis by scheduling it in a background thread."""
     try:
-        # Updated to call the new runner script
-        script_path = os.path.join('analyzer', 'run_llm_analysis_end_class.py')
-        if not os.path.exists(script_path):
-            logging.error(f"Detailed analysis script not found at {script_path}")
-            st.error(language_manager.get_text("detailed_analysis_script_missing", st.session_state.get("language", "en")))
-            return False
-
-        # Ensure report_id is a string for Popen
-        subprocess.Popen(['python', script_path, str(report_id)],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0) # Hide console window on Windows
-        logging.info(f"Successfully triggered {script_path} (background) for report ID {report_id}")
+        logging.info(f"Attempting to trigger detailed analysis for report ID {report_id} via background thread.")
+        
+        # Instantiate the processor.
+        processor = LLMAnalysisEndProcessor() 
+        
+        # Schedule the run method in a background thread.
+        # processor.run expects a list of strings for report_ids.
+        processor.schedule_run_in_background(report_ids=[str(report_id)])
+        
+        # The task_done_callback is removed as it's specific to asyncio.Task.
+        # The background thread will log its own completion/errors.
+        # The Streamlit app relies on polling the database for status updates.
+        
+        logging.info(f"Successfully scheduled detailed analysis (background thread) for report ID {report_id}")
         return True
+    except ValueError as ve: 
+        error_msg = language_manager.get_text("detailed_analysis_init_error", st.session_state.get("language", "en"))
+        logging.error(f"Failed to initialize LLMAnalysisEndProcessor for report ID {report_id}: {ve} - {error_msg}")
+        st.error(error_msg)
+        return False
+    except RuntimeError as re: 
+        error_msg = language_manager.get_text("detailed_analysis_runtime_error", st.session_state.get("language", "en"))
+        logging.error(f"Runtime error during LLMAnalysisEndProcessor initialization for report ID {report_id}: {re} - {error_msg}")
+        st.error(error_msg)
+        return False
     except Exception as e:
-        logging.error(f"Failed to run {script_path} in background: {e}")
-        st.error(language_manager.get_text("detailed_analysis_trigger_error", st.session_state.get("language", "en")))
+        error_msg = language_manager.get_text("detailed_analysis_trigger_error", st.session_state.get("language", "en"))
+        logging.error(f"Failed to trigger detailed analysis for report ID {report_id} via background thread: {e} - {error_msg}", exc_info=True)
+        st.error(error_msg)
         return False
 
 async def process_url(url, lang="en"):
@@ -75,7 +89,6 @@ async def process_url(url, lang="en"):
         normalized_url = normalize_url(url)
         logging.info(f"Starting process_url for {normalized_url}")
         
-        # Initialize with status
         st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
 
         with st.spinner(language_manager.get_text("analyzing_website", lang)):
@@ -90,14 +103,15 @@ async def process_url(url, lang="en"):
                 logging.info(f"Found existing report for {normalized_url}")
                 
                 report_response = await asyncio.to_thread(
-                    supabase.table('seo_reports').select('id, llm_analysis_all_completed, llm_analysis_all_error')
-                    .eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute
+                    lambda: supabase.table('seo_reports').select('id, llm_analysis_all_completed, llm_analysis_all_error')
+                    .eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
                 )
                 
                 if report_response.data:
-                    report_id_for_detailed_analysis = report_response.data[0]['id']
-                    llm_analysis_completed = report_response.data[0].get('llm_analysis_all_completed', False)
-                    llm_analysis_error = report_response.data[0].get('llm_analysis_all_error')
+                    report_data = report_response.data[0]
+                    report_id_for_detailed_analysis = report_data['id'] # This is an int
+                    llm_analysis_completed = report_data.get('llm_analysis_all_completed', False)
+                    llm_analysis_error = report_data.get('llm_analysis_all_error')
                     logging.info(f"Existing report ID: {report_id_for_detailed_analysis}, completed: {llm_analysis_completed}, error: {llm_analysis_error}")
                     
                     if llm_analysis_error:
@@ -115,9 +129,10 @@ async def process_url(url, lang="en"):
                             "status_message": language_manager.get_text("detailed_analysis_inprogress", lang),
                             "status": "in_progress"
                         }
-                        if not await trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
-                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
-                    else:  # Already completed
+                        # Call the synchronous version, no await
+                        if not trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
+                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} 
+                    else: 
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
                             "url": normalized_url,
@@ -137,10 +152,10 @@ async def process_url(url, lang="en"):
                     logging.info("New analysis successfully generated")
                     
                     report_response = await asyncio.to_thread(
-                        supabase.table('seo_reports').select('id').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute
+                        lambda: supabase.table('seo_reports').select('id').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
                     )
                     if report_response.data:
-                        report_id_for_detailed_analysis = report_response.data[0]['id']
+                        report_id_for_detailed_analysis = report_response.data[0]['id'] # This is an int
                         logging.info(f"New report ID: {report_id_for_detailed_analysis}. Triggering detailed analysis background process.")
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
@@ -148,14 +163,15 @@ async def process_url(url, lang="en"):
                             "status_message": language_manager.get_text("detailed_analysis_inprogress", lang),
                             "status": "in_progress"
                         }
-                        if not await trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
+                        # Call the synchronous version, no await
+                        if not trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
                             st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
                     else:
                         logging.warning(f"Could not find report ID for new analysis {normalized_url} to trigger detailed analysis.")
                 else:
                     st.error(language_manager.get_text("failed_to_analyze", lang))
                     logging.error(f"Analysis failed for {normalized_url}")
-                    return
+                    return 
             
             if text_report and full_report:
                 logging.info(f"Displaying initial report for {normalized_url}")
@@ -166,9 +182,10 @@ async def process_url(url, lang="en"):
     
     except Exception as e:
         error_message = f"Error in process_url: {str(e)}"
-        st.error(error_message)
+        st.error(error_message) 
         logging.error(error_message, exc_info=True)
 
+# ... (rest of main.py remains the same, including run_main_app, etc.) ...
 
 def run_main_app():
     st.set_page_config(
@@ -184,16 +201,16 @@ def run_main_app():
     )
 
     st.title("Se10 Web Servies")
-    init_shared_session_state()
+    init_shared_session_state() #
 
     if "language" not in st.session_state:
-        st.session_state.language = "en"
+        st.session_state.language = "en" #
     lang = st.session_state.language
 
     if "analysis_complete" not in st.session_state:
-        st.session_state.analysis_complete = False
+        st.session_state.analysis_complete = False #
     if "detailed_analysis_info" not in st.session_state: 
-        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
+        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} #
 
 
     for config_name, config_value in {
@@ -208,7 +225,7 @@ def run_main_app():
         st.error(language_manager.get_text("no_ai_model", lang))
         st.stop()
 
-    if not st.session_state.authenticated:
+    if not st.session_state.authenticated: #
         st.markdown(language_manager.get_text("welcome_seo", lang))
         st.markdown(language_manager.get_text("enter_api_key", lang))
         
@@ -224,7 +241,6 @@ def run_main_app():
         
         if selected_language != st.session_state.language:
             st.session_state.language = selected_language
-             
             st.rerun()
         
         with st.form("login_form"):
@@ -234,19 +250,17 @@ def run_main_app():
             if submit_button:
                 is_authenticated, username = authenticate_user(api_key)
                 if is_authenticated:
-                    st.session_state.authenticated = True
-                    st.session_state.username = username
-                    # Pass username as a positional argument for formatting
+                    st.session_state.authenticated = True #
+                    st.session_state.username = username #
                     welcome_msg = language_manager.get_text("welcome_authenticated", lang, username) 
-                    st.session_state.messages = [{"role": "assistant", "content": welcome_msg}]
+                    st.session_state.messages = [{"role": "assistant", "content": welcome_msg}] #
                     st.rerun()
                 else:
                     st.error(language_manager.get_text("login_failed", lang))
     else:
-        # Pass username as a positional argument for formatting
         st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
 
-        if st.session_state.analysis_complete and hasattr(st.session_state, 'text_report') and st.session_state.text_report and hasattr(st.session_state, 'url') and st.session_state.url:
+        if st.session_state.analysis_complete and hasattr(st.session_state, 'text_report') and st.session_state.text_report and hasattr(st.session_state, 'url') and st.session_state.url: #
             
             st.success(language_manager.get_text("analysis_complete_message", lang)) 
             st.markdown(f"### {language_manager.get_text('next_steps', lang)}")
@@ -267,40 +281,41 @@ def run_main_app():
                 if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True):
                     st.switch_page("pages/3_Product_Writer.py")
 
-            detailed_info = st.session_state.detailed_analysis_info
-            if detailed_info.get("report_id") and detailed_info.get("url") == st.session_state.url:
-                st.info(detailed_info["status_message"])
-                # Show button only if status is "in_progress"
-                if detailed_info.get("status") == "in_progress":
+            detailed_info = st.session_state.detailed_analysis_info #
+            if detailed_info.get("report_id") and detailed_info.get("url") == st.session_state.url: #
+                st.info(detailed_info["status_message"]) #
+
+                if detailed_info.get("status") == "in_progress": #
                     if st.button(language_manager.get_text("check_report_update_button", lang), key="check_update_button"):
-                        report_id_to_check = detailed_info["report_id"]
+                        report_id_to_check = detailed_info["report_id"] #
                         
-                        completion_check_response = supabase.table('seo_reports').select('llm_analysis_all_completed, text_report, report, llm_analysis_all_error').eq('id', report_id_to_check).single().execute()
+                        completion_check_response = asyncio.run(asyncio.to_thread(
+                            lambda: supabase.table('seo_reports').select('llm_analysis_all_completed, text_report, report, llm_analysis_all_error').eq('id', report_id_to_check).single().execute()
+                        ))
+
 
                         if completion_check_response.data:
-                            llm_all_completed = completion_check_response.data.get('llm_analysis_all_completed')
-                            llm_all_error = completion_check_response.data.get('llm_analysis_all_error')
+                            data = completion_check_response.data
+                            llm_all_completed = data.get('llm_analysis_all_completed')
+                            llm_all_error = data.get('llm_analysis_all_error')
 
                             if llm_all_error:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_error_status", lang, llm_all_error)
-                                st.session_state.detailed_analysis_info["status"] = "error"
+                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_error_status", lang, llm_all_error) #
+                                st.session_state.detailed_analysis_info["status"] = "error" #
                             elif llm_all_completed:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("full_site_analysis_complete", lang)
-                                st.session_state.detailed_analysis_info["status"] = "complete"
-                                st.session_state.text_report = completion_check_response.data.get('text_report')
-                                st.session_state.full_report = completion_check_response.data.get('report')
-                                st.session_state.analysis_complete = True
+                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("full_site_analysis_complete", lang) #
+                                st.session_state.detailed_analysis_info["status"] = "complete" #
+                                st.session_state.text_report = data.get('text_report') #
+                                st.session_state.full_report = data.get('report') #
                                 st.success(language_manager.get_text("full_site_analysis_complete", lang))
                             else:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_still_inprogress", lang)
-                                st.session_state.detailed_analysis_info["status"] = "in_progress"
+                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_still_inprogress", lang) #
                             st.rerun()
                         else:
                             st.error(language_manager.get_text("error_checking_report_status", lang))
             
-            # Pass URL as a positional argument for formatting
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, st.session_state.url))
-            st.text_area(language_manager.get_text("seo_report_label", lang), st.session_state.text_report, height=300)
+            st.text_area(language_manager.get_text("seo_report_label", lang), st.session_state.text_report, height=300) #
                   
         else: 
             st.markdown(f"""
@@ -315,26 +330,26 @@ def run_main_app():
                 analyze_button = st.form_submit_button(language_manager.get_text("analyze_button", lang))
         
                 if analyze_button and website_url:
-                    asyncio.run(process_url(website_url, lang))
+                    asyncio.run(process_url(website_url, lang)) 
             
             st.markdown(f"### {language_manager.get_text('analyze_with_ai', lang)}")
             if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"): 
                 st.switch_page("pages/1_SEO_Helper.py")
         
         if st.sidebar.button(language_manager.get_text("logout_button", lang), key="logout_button_main"): 
-            st.session_state.authenticated = False
-            st.session_state.username = None
-            st.session_state.messages = []
+            st.session_state.authenticated = False #
+            st.session_state.username = None #
+            st.session_state.messages = [] #
             if 'page_history' in st.session_state:
-                st.session_state.page_history = {}
-            st.session_state.analysis_complete = False
-            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
+                st.session_state.page_history = {} #
+            st.session_state.analysis_complete = False #
+            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} #
             for key_to_del in ['text_report', 'full_report', 'url', 'main_page_analysis', 'other_pages_analysis']: 
                 if key_to_del in st.session_state:
                     del st.session_state[key_to_del]
             st.rerun()
                 
-        common_sidebar()
+        common_sidebar() #
 
 if __name__ == "__main__":
     run_main_app()

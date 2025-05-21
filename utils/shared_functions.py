@@ -179,7 +179,7 @@ async def analyze_website(url: str, supabase: Client):
             normalized_url = normalize_url(url)
             existing_report = supabase.table('seo_reports').select('text_report, report').eq('url', normalized_url).execute()
             if existing_report.data and len(existing_report.data) > 0:
-                logging.info(f"Report already exists for {url}.")
+                logging.info(f"Report succesfully created for {url}.")
                 text_report = existing_report.data[0].get('text_report', "Text report not available.")
                 full_report = existing_report.data[0].get('report')
                 return text_report, full_report

@@ -1,5 +1,3 @@
-
-
 import logging
 import asyncio
 import os
@@ -8,14 +6,11 @@ from supabase import create_client, Client
 from urllib.parse import urlparse, urlunparse
 from analyzer.methods import get_formatted_datetime, get_current_user
 import analyzer.config as config
-# Removed: from analyzer.llm_analysis_start import llm_analysis_start 
-# import subprocess # If you re-enable, uncomment
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-# GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') # Not directly used here anymore
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables or .env file.")
 
@@ -36,7 +31,6 @@ class SEOReportSaver:
         return standardized
 
     def format_analysis_results(self, analysis):
-        # ... (this method remains unchanged)
         if not analysis:
             return "Analysis failed or no results available."
 
@@ -53,29 +47,29 @@ class SEOReportSaver:
         if analysis.get('sitemap_found'):
             output.append("SITEMAP INFORMATION:")
             output.append(f"- Sitemap Found: Yes")
-            output.append(f"- Number of Sitemap URLs: {analysis.get('sitemap_urls_count', 0)}") # Ensure this key exists or use .get('sitemap_urls_discovered_count')
-            output.append(f"- Number of Pages in Sitemap: {analysis.get('sitemap_pages_count', 0)}") # Ensure this key exists or use .get('sitemap_pages_processed_count')
+            output.append(f"- Number of Sitemap URLs: {analysis.get('sitemap_urls_discovered_count', 0)}")
+            output.append(f"- Number of Pages in Sitemap: {analysis.get('sitemap_pages_processed_count', 0)}")
         else:
             output.append("SITEMAP INFORMATION:")
             output.append(f"- Sitemap Found: No")
             output.append("\n" + "-"*50 + "\n")
 
         crawled_count = analysis.get('crawled_internal_pages_count', 0)
-        # Adjust link counting if 'links' structure changed
-        # discovered_links = len(analysis.get('links', {}).get('internal_links', [])) if 'links' in analysis else 0
         output.append(f"CRAWLING STATS:")
         output.append(f"- Pages Analyzed: {crawled_count}")
-        # output.append(f"- Internal Links Discovered: {discovered_links}") # Comment out if not easily available
 
-        output.append(f"DETAILS FOR START PAGE: {analysis.get('url', 'Unknown URL')}")
-        start_stats = analysis.get('page_statistics', {}).get(analysis.get('url'), {})
+        # Main URL Details section - now using llm_analysis directly to avoid duplication
+        main_url = analysis.get('url', 'Unknown URL')
+        output.append(f"DETAILS FOR START PAGE: {main_url}")
         
-        cleaned = start_stats.get('cleaned_text', '')
-        output.append("\nCLEANED TEXT (First 500 chars):") # Adjusted length
-        if cleaned:
-            output.append(f"- {cleaned[:500]}{'...' if len(cleaned) > 500 else ''}")
+        # We use main page's cleaned text from llm_analysis rather than page_statistics
+        if analysis.get('llm_analysis') and analysis['llm_analysis'].get('cleaned_text'): 
+            cleaned = analysis['llm_analysis'].get('cleaned_text', '')
+            output.append("\nCLEANED TEXT (First 500 chars):")
+            if cleaned:
+                output.append(f"- {cleaned[:500]}{'...' if len(cleaned) > 500 else ''}")
 
-        if analysis.get('llm_analysis'): # This now comes pre-populated from seo.py
+        if analysis.get('llm_analysis'): 
             llm_data = analysis.get('llm_analysis', {})
             output.append("\nLLM ANALYSIS (MAIN PAGE):")
             if llm_data.get("error"):
@@ -101,7 +95,7 @@ class SEOReportSaver:
             if footer_snippets:
                  output.append(f"- Identified Footer Snippets: {', '.join(footer_snippets[:5])}{'...' if len(footer_snippets) > 5 else ''}")
 
-        output.append("\n\nINDIVIDUAL INTERNAL PAGE DETAILS Will be Aviable after Full Analysis (if enabled).")
+        output.append("\n\nINDIVIDUAL INTERNAL PAGE DETAILS Will be Available after Full Analysis (if enabled).")
         output.append("This is the Main page report. Please Wait Until Full Analyze Finishes for sitewide details.")
 
         if analysis.get('crawled_urls'):
@@ -126,6 +120,11 @@ class SEOReportSaver:
             standardized_url = self.standardize_url(original_url)
             logging.info(f"Standardized URL for {original_url}: {standardized_url}")
 
+            # Ensure the main URL is not duplicated in both llm_analysis and page_statistics
+            if 'page_statistics' in analysis and analysis['url'] in analysis['page_statistics']:
+                logging.info(f"Removing main URL {analysis['url']} from page_statistics to avoid duplication")
+                del analysis['page_statistics'][analysis['url']]
+
             existing = await asyncio.to_thread(
                 self.supabase.table('seo_reports').select('id').eq('url', standardized_url).execute
             )
@@ -134,23 +133,21 @@ class SEOReportSaver:
                 logging.info(f"Report for {standardized_url} already exists with ID {report_id}.")
                 return {"success": True, "report_id": report_id, "existing": True}
 
-            # LLM analysis for the main page is now expected to be pre-computed in 'analysis' object
-            # and passed as analysis['llm_analysis']
-            llm_analysis_for_db_column = analysis.get('llm_analysis')
-
-            if not llm_analysis_for_db_column:
-                logging.warning(f"LLM analysis for main page {standardized_url} was not found in the provided analysis object. Storing with default/error LLM data.")
-                llm_analysis_for_db_column = {
+            # Ensure LLM analysis is properly included in the report JSONB
+            llm_analysis_data = analysis.get('llm_analysis')
+            if not llm_analysis_data:
+                logging.warning(f"LLM analysis for main page {standardized_url} was not found in the provided analysis object. Adding default LLM data.")
+                llm_analysis_data = {
                     "url": standardized_url,
                     "error": "LLM analysis not available or failed during initial processing in seo.py.",
                     "keywords": [], "content_summary": "", "other_information_and_contacts": [], 
                     "suggested_keywords_for_seo": [], "header": [], "footer": []
                 }
-                analysis['llm_analysis'] = llm_analysis_for_db_column # Ensure the main report also reflects this default
-            elif llm_analysis_for_db_column.get("error"):
-                 logging.error(f"Pre-computed LLM analysis for {standardized_url} (from seo.py) contains an error: {llm_analysis_for_db_column.get('error')}")
+                analysis['llm_analysis'] = llm_analysis_data
+            elif llm_analysis_data.get("error"):
+                logging.error(f"Pre-computed LLM analysis for {standardized_url} contains an error: {llm_analysis_data.get('error')}")
             else:
-                logging.info(f"Using pre-computed LLM analysis for {standardized_url} from seo.py.")
+                logging.info(f"Using pre-computed LLM analysis for {standardized_url} from seo.py")
             
             try:
                 text_report = self.format_analysis_results(analysis)
@@ -161,9 +158,9 @@ class SEOReportSaver:
             data = {
                 'url': standardized_url,
                 'timestamp': analysis['timestamp'],
-                'report': analysis,  # This 'analysis' object now contains the correct 'llm_analysis' for the main page
+                'report': analysis,  # This already contains 'llm_analysis'
                 'text_report': text_report,
-                'llm_analysis': llm_analysis_for_db_column, # For the dedicated 'llm_analysis' JSONB column
+                # No separate llm_analysis field - we use the one embedded in 'report'
             }
 
             response = await asyncio.to_thread(
@@ -176,15 +173,6 @@ class SEOReportSaver:
             elif hasattr(response, 'data') and response.data:
                 report_id = response.data[0]['id']
                 logging.info(f"Reports saved to Supabase for {standardized_url} with ID {report_id}")
-                # Trigger llm_analysis_end.py (ensure this path is correct if re-enabled)
-                # try:
-                #     subprocess.run(['python', 'analyzer/llm_analysis_end.py', str(report_id)], check=True, cwd=os.path.dirname(os.path.abspath(__file__)))
-                #     logging.info(f"Successfully triggered llm_analysis_end.py for report ID {report_id}")
-                # except subprocess.CalledProcessError as e:
-                #     logging.error(f"Failed to run llm_analysis_end.py: {e}")
-                # except FileNotFoundError:
-                #     logging.error(f"llm_analysis_end.py not found. Ensure the path is correct.")
-
                 return {"success": True, "report_id": report_id, "existing": False}
             else:
                 logging.warning(f"Report saving status uncertain for {standardized_url}. Response: {response}")

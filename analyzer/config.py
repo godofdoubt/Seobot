@@ -5,8 +5,8 @@ analyzer/config.py
 '''
 
 # Crawling and Analysis Limits
-MAX_PAGES_TO_ANALYZE = 15
-MAX_LINKS_TO_DISCOVER = 50
+MAX_PAGES_TO_ANALYZE = 30
+MAX_LINKS_TO_DISCOVER = 900
 PAGE_TIMEOUT = 20000  # milliseconds
 
 #MAX_CATEGORY_PAGES_TO_SCAN = 25

@@ -18,18 +18,27 @@ class LanguageSupport:
                 "generate_product_description": "Generate Product Description",
                 "check_report_update_button": "🔄 Check for Full Report / Refresh",
                 "go_to_login":"Please Login First",
-
+                # newly added
+                "detailed_analysis_init_error": "Error initializing detailed analysis processor. Please check logs or contact support.",
+                "detailed_analysis_runtime_error": "Runtime error during detailed analysis processor setup. Please check logs or contact support.",
+                "detailed_analysis_trigger_error": "Failed to start the detailed site-wide analysis. Please try again or contact support.",
+                "detailed_analysis_error_status": "Detailed analysis for this report encountered an error: {0}. Please check logs or contact support.", # {0} is for the error message
+                "full_site_analysis_complete": "Full site-wide LLM analysis is complete!",
+                "detailed_analysis_inprogress": "Detailed site-wide LLM analysis is in progress. You can check the status later.",
+                "detailed_analysis_still_inprogress": "Detailed site-wide LLM analysis is still in progress. Please check back again.",
+                "check_report_update_button": "🔄 Check for Full Site Analysis Update",
+                "error_checking_report_status": "Error checking report status. Please try again.",
 
                 # Messages
                 "welcome_message": "Welcome to SE10 Web Services!",
                 "welcome_seo": "Welcome to SE10 Web Services Beta!",
                 "welcome_authenticated": "Welcome, {0}!",
                 "logged_in_as": "Logged in as: **{0}**",
-                "analysis_complete": "Analysis for your URL is complete.",
+                "analysis_complete_message": "✅ Analysis for your URL is complete.",
                 "analyzing_website": "Analyzing your website, please wait...",
                 "found_existing_report": "Found an existing report for this URL.",
                 "analysis_failed": "Failed to analyze the website. Please try again.",
-                "analysis_results": "Analysis Results for: {0}",
+                "analysis_results_for_url": "Analysis Results for: {0}",
                 "authentication_required": "You need to log in first to use this service.",
                 "login_failed": "Authentication failed. Please check your API key.",
                 "enter_api_key_label": "Please enter your API key to continue:",
@@ -113,6 +122,18 @@ class LanguageSupport:
             },
 
             "tr": {
+
+
+                # newly added 1.1
+                "detailed_analysis_init_error": "Detaylı analiz işlemcisi başlatılırken hata oluştu. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
+                "detailed_analysis_runtime_error": "Detaylı analiz işlemcisi kurulumu sırasında çalışma zamanı hatası. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
+                "detailed_analysis_trigger_error": "Detaylı site genelinde analiz başlatılamadı. Lütfen tekrar deneyin veya destek ile iletişime geçin.",
+                "detailed_analysis_error_status": "Bu rapor için detaylı analizde bir hata oluştu: {0}. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
+                "full_site_analysis_complete": "Tam site genelinde LLM analizi tamamlandı!",
+                "detailed_analysis_inprogress": "Detaylı site genelinde LLM analizi devam ediyor. Durumu daha sonra kontrol edebilirsiniz.",
+                "detailed_analysis_still_inprogress": "Detaylı site genelinde LLM analizi hala devam ediyor. Lütfen tekrar kontrol edin.",
+                "check_report_update_button": "🔄 Tam Site Analizi Güncellemesini Kontrol Et",
+                "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
                 # Buttons
                 "login_button": "Giriş",
                 "logout_button": "Çıkış",
@@ -131,11 +152,11 @@ class LanguageSupport:
                 "welcome_seo": "SE10 Web Servisleri Beta'ya Hoş Geldiniz!",
                 "welcome_authenticated": "Hoş geldiniz, {0}!",
                 "logged_in_as": "Giriş yapıldı: **{0}**",
-                "analysis_complete": "URL'niz için analiz tamamlandı.",
+                "analysis_complete_message": "✅URL'niz için analiz tamamlandı.",
                 "analyzing_website": "Web siteniz analiz ediliyor, lütfen bekleyin...",
                 "found_existing_report": "Bu URL için mevcut bir rapor bulundu.",
                 "analysis_failed": "Web sitesi analizi başarısız oldu. Lütfen tekrar deneyin.",
-                "analysis_results": "Şunun için analiz sonuçları: {0}",
+                "analysis_results_for_url": "Şunun için analiz sonuçları: {0}",
                 "authentication_required": "Bu hizmeti kullanmak için önce giriş yapmanız gerekiyor.",
                 "login_failed": "Kimlik doğrulama başarısız oldu. Lütfen API anahtarınızı kontrol edin.",
                 "enter_api_key_label": "Devam etmek için lütfen API anahtarınızı girin:",
