@@ -128,8 +128,8 @@ class LLMAnalysisEndProcessor:
         * Example: ["Email: contact@example.com", "Phone: (555) 123-4567", "Main Office: 123 Innovation Drive, Tech City", "Product: Alpha Suite", "Twitter: https://twitter.com/example"]
         * If no such information is found, return an empty list []."""
         detailed_instructions_seo_keywords = """4. **"suggested_keywords_for_seo"**:
-        * Based on the page content and its main topics, suggest 5-7 additional keywords or key phrases that could be targeted for low competitive SEO. Make sure these some long-tail and alternative but relevant keywords.
-        * These should be relevant variations, long-tail keywords, or related topics not already dominant but with potential.
+        * Based on the page content and its main topics, suggest 3-5 additional keywords or key phrases that could be targeted for low competitive SEO.
+        * Plus to those suggest 3-5 more should be relevant variations, related topics or potential long-tail and alternatives but relevant keywords. Dont use alternative region , city names if its not in the content.
         * Consider user intent (informational, transactional, navigational). Example: ["benefits of data analysis", "best cloud providers for small business", "custom enterprise software development"]
         * If no strong distinct suggestions can be made, return an empty list []."""
         prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
@@ -275,7 +275,7 @@ class LLMAnalysisEndProcessor:
                     all_subpage_keywords.extend(k for k in keywords if k)
                 seo_keywords = page_analysis_item.get('suggested_keywords_for_seo', [])
                 if seo_keywords:
-                    report_sections.append(f"**SEO Suggestions**: {', '.join(sk for sk in seo_keywords if sk)}")
+                    report_sections.append(f"**SEO Keyword Suggestions**: {', '.join(sk for sk in seo_keywords if sk)}")
                     all_subpage_seo_keywords.extend(sk for sk in seo_keywords if sk)
                 report_sections.append("")
             if all_subpage_keywords:
