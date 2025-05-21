@@ -53,79 +53,75 @@ async def _call_gemini_api(prompt_text: str) -> str:
 
 async def llm_analysis_start(report_data: dict) -> dict:
     """
-    Analyzes the report data for a SINGLE page using Google's Gemini LLM and generates a structured JSON report.
-    The LLM will extract header and footer content from the cleaned_text.
+    Analyzes report data for a SINGLE page using Google's Gemini LLM.
+    Primarily used to extract header/footer content from cleaned_text for an initial page analysis,
+    but can also perform broader content analysis.
 
     Args:
-        report_data: A dictionary containing the report data for a single page.
-                     Expected structure based on seoreportsaver.py:
+        report_data: A dictionary containing data for a single page.
+                     It expects 'url', 'cleaned_text', and 'headings' keys directly.
+                     Example for initial page analysis (e.g., from seo.py):
                      {
-                         'url': 'https://example.com/page', // Main URL of the analysis context
-                         'timestamp': '...',
-                         'page_statistics': {
-                             'https://example.com/page': { // Actual page data for this URL
-                                 'url': 'https://example.com/page',
-                                 'cleaned_text': 'Full cleaned text of the page...',
-                                 'headings': {'h1': ['Main Title'], 'h2': ['Subtitle 1']},
-                             }
-                         },
-                         // ... other top-level analysis fields ...
+                         'url': 'https://example.com/page',
+                         'cleaned_text': 'Full cleaned text of the page...',
+                         'headings': {} // Or populated headings if available
                      }
-                     Alternatively, can accept a flatter structure if `report_data` directly contains
-                     'url', 'cleaned_text', 'headings'
+                     Alternatively, for compatibility or other use cases, it can extract
+                     'cleaned_text' and 'headings' from a nested 'page_statistics' entry
+                     if `report_data.get('page_statistics', {}).get(report_data.get('url'))` exists.
 
     Returns:
         A dictionary formatted according to the specified JSON structure,
-        or an empty dictionary if analysis fails or input data is insufficient.
+        or an error dictionary if analysis fails or input data is insufficient.
     """
     if not model:
         logging.error("Gemini model not configured. Cannot perform LLM analysis.")
-        return {}
+        return {"error": "Gemini model not configured."} # Ensure a dict is returned
 
     if not report_data or not isinstance(report_data, dict):
         logging.warning("llm_analysis_start received empty or invalid report_data (not a dict).")
-        return {}
+        return {"error": "Invalid report_data: must be a dictionary."}
 
-    # Determine the actual URL and page-specific data
     page_url_from_report = report_data.get('url')
     if not page_url_from_report:
         logging.warning("llm_analysis_start received report_data without a top-level 'url' field.")
-        return {}
+        return {"error": "Missing 'url' in report_data."}
     
     logging.info(f"Starting LLM analysis for URL: {page_url_from_report}")
 
-    # Extract page-specific statistics
-    # Case 1: Data is nested as per seoreportsaver structure
-    page_specific_stats = report_data.get('page_statistics', {}).get(page_url_from_report)
+    cleaned_text = None
+    headings_data = None
 
-    # Case 2: Data is flat (report_data *is* the page_specific_stats)
-    if not page_specific_stats and 'cleaned_text' in report_data and 'headings' in report_data:
-        page_specific_stats = report_data
+    # Priority 1: Direct flat structure (common for initial page analysis from seo.py)
+    if 'cleaned_text' in report_data and 'headings' in report_data:
+        cleaned_text = report_data.get('cleaned_text', '')
+        headings_data = report_data.get('headings', {})
+        logging.debug(f"Using direct cleaned_text and headings from report_data for {page_url_from_report}")
+    # Priority 2: Nested structure (fallback or alternative use cases)
+    elif 'page_statistics' in report_data and page_url_from_report in report_data.get('page_statistics', {}):
+        page_data_from_stats = report_data['page_statistics'][page_url_from_report]
+        cleaned_text = page_data_from_stats.get('cleaned_text', '')
+        headings_data = page_data_from_stats.get('headings', {})
+        logging.debug(f"Using cleaned_text and headings from page_statistics for {page_url_from_report}")
     
-    if not page_specific_stats:
-        logging.warning(f"No 'page_statistics' or direct page data found for URL {page_url_from_report} within the provided report_data.")
+    # Check if data was successfully extracted by either method
+    if cleaned_text is None or headings_data is None:
+        logging.warning(f"Could not extract 'cleaned_text' and 'headings' for URL {page_url_from_report} from report_data using available methods.")
         return {
             "url": page_url_from_report,
-            "keywords": [],
-            "content_summary": "Essential page statistics (cleaned_text, headings) not found for analysis.",
-            "other_information_and_contacts": [],
-            "suggested_keywords_for_seo": [],
-            "header": [],
-            "footer": []
+            "error": "Essential page data (cleaned_text, headings) not found for analysis.",
+            "keywords": [], "content_summary": "", "other_information_and_contacts": [],
+            "suggested_keywords_for_seo": [], "header": [], "footer": []
         }
 
-    cleaned_text = page_specific_stats.get('cleaned_text', '')
-    headings_data = page_specific_stats.get('headings', {})
-    
     # Note: header_text_from_crawl and footer_text_from_crawl are no longer used directly.
     # The LLM is tasked with extracting this information from cleaned_text.
 
-    if not cleaned_text and not headings_data:
+    if not cleaned_text and not headings_data: # e.g. cleaned_text is "" and headings_data is {}
         logging.warning(f"No cleaned_text or headings_data found for URL {page_url_from_report}. LLM analysis might be ineffective.")
-        # Even if cleaned_text is minimal, LLM might still find something or return empty as instructed.
-        # If truly no text, a more specific message can be given or an empty result with defaults.
         return {
             "url": page_url_from_report,
+            "error": "No content (cleaned_text or headings) available for analysis.",
             "keywords": [],
             "content_summary": "No content (cleaned_text or headings) available for analysis.",
             "other_information_and_contacts": [],
@@ -258,5 +254,3 @@ Ensure your entire response is ONLY a valid JSON object.
             "keywords": [], "content_summary": "", "other_information_and_contacts": [], 
             "suggested_keywords_for_seo": [], "header": [], "footer": []
         }
-
-
