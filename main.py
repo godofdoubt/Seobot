@@ -47,6 +47,8 @@ def display_report(text_report, full_report, normalized_url):
     st.session_state.full_report = full_report
     st.session_state.url = normalized_url
     st.session_state.analysis_complete = True
+    st.session_state.analysis_in_progress = False  # Clear the in-progress flag
+    st.session_state.url_being_analyzed = None     # Clear the URL being analyzed
     st.rerun() # This can now stay
 
 # Changed to a synchronous function
@@ -85,6 +87,8 @@ def trigger_detailed_analysis_background_process(report_id: int): # report_id is
         return False
 
 async def process_url(url, lang="en"):
+    st.session_state.analysis_in_progress = True
+    st.session_state.url_being_analyzed = url  # Store the URL being analyzed
     try:
         normalized_url = normalize_url(url)
         logging.info(f"Starting process_url for {normalized_url}")
@@ -175,15 +179,21 @@ async def process_url(url, lang="en"):
             
             if text_report and full_report:
                 logging.info(f"Displaying initial report for {normalized_url}")
+                st.session_state.analysis_in_progress = False # Reset on successful completion (before display)
+                st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
                 display_report(text_report, full_report, normalized_url)
             else:
                 st.error(language_manager.get_text("report_data_unavailable", lang))
                 logging.error(f"Report data (text_report or full_report) is None for {normalized_url} before display_report call.")
+                st.session_state.analysis_in_progress = False # Reset if report data is unexpectedly unavailable
+                st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
     
     except Exception as e:
         error_message = f"Error in process_url: {str(e)}"
         st.error(error_message) 
         logging.error(error_message, exc_info=True)
+        st.session_state.analysis_in_progress = False # Reset on any exception
+        st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
 
 # ... (rest of main.py remains the same, including run_main_app, etc.) ...
 
@@ -326,11 +336,28 @@ def run_main_app():
             """)
             
             with st.form("url_form"):
-                website_url = st.text_input(language_manager.get_text("enter_url_placeholder", lang), placeholder="https://example.com")
-                analyze_button = st.form_submit_button(language_manager.get_text("analyze_button", lang))
-        
-                if analyze_button and website_url:
-                    asyncio.run(process_url(website_url, lang)) 
+                # If analysis is in progress, show the URL being analyzed
+                if st.session_state.analysis_in_progress and st.session_state.url_being_analyzed:
+                    website_url = st.text_input(
+                        language_manager.get_text("enter_url_placeholder", lang),
+                        value=st.session_state.url_being_analyzed,
+                        placeholder="https://example.com",
+                        disabled=True  # Disable while analysis is running
+                    )
+                    st.info(language_manager.get_text("analyzing_website", lang))  # Show analyzing message
+                    analyze_button = st.form_submit_button(
+                        language_manager.get_text("analyze_button", lang),
+                        disabled=True  # Disable button while analysis is running
+                    )
+                else:
+                    website_url = st.text_input(
+                        language_manager.get_text("enter_url_placeholder", lang),
+                        placeholder="https://example.com"
+                    )
+                    analyze_button = st.form_submit_button(language_manager.get_text("analyze_button", lang))
+            
+                if analyze_button and website_url and not st.session_state.analysis_in_progress:
+                    asyncio.run(process_url(website_url, lang))
             
             st.markdown(f"### {language_manager.get_text('analyze_with_ai', lang)}")
             if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"): 

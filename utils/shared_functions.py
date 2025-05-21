@@ -37,9 +37,14 @@ def init_shared_session_state():
      # Initialize language if not set
     if "language" not in st.session_state:
         st.session_state.language = "en"
-     # For tracking background detailed analysis
+    # For tracking background detailed analysis
     if "detailed_analysis_info" not in st.session_state:
-        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}            
+        st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": ""}
+    # For keeping track of URL being analyzed even when switching pages
+    if "url_being_analyzed" not in st.session_state:
+        st.session_state.url_being_analyzed = None
+    if "analysis_in_progress" not in st.session_state:
+        st.session_state.analysis_in_progress = False
 
 def update_page_history(page_name):
     """Store the current page's message history"""
@@ -94,49 +99,11 @@ def common_sidebar():
     """Common sidebar content across all pages"""
     st.sidebar.title(" Main Settings:")
     
-   # # Navigation buttons
-    #st.sidebar.markdown("## Navigation")
-    #col1, col2, col3 = st.sidebar.columns(3)
-    
-    #with col1:
-     #   if st.button("SEO Helper"):
-      #      update_page_history("seo")
-       #     st.switch_page("pages/1_SEO_Helper.py")
-    
-    #with col2:
-     #   if st.button("Article Writer"):
-      #      update_page_history("article")
-       #     st.switch_page("pages/2_Article_Writer.py")
-    
-    #with col3:
-     #   if st.button("Product Writer"):
-      #      update_page_history("product")
-       #     st.switch_page("pages/3_Product_Writer.py")
 
     # Get current language
     lang = st.session_state.get("language", "en")
     
-    # Add navigation buttons
-   # st.sidebar.markdown("### Navigation")
-    
-    # Home button
-    #if st.sidebar.button(language_manager.get_text("welcome_message", lang), key="home_button"):
-    #    st.switch_page("main.py")
-    
-    # SEO Helper button
-    #if st.sidebar.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_sidebar"):
-     #   update_page_history("seo")
-      #  st.switch_page("pages/1_SEO_Helper.py")
-    
-    # Article Writer button
-    #if st.sidebar.button(language_manager.get_text("article_writer_button", lang), key="article_writer_sidebar"):
-     #   update_page_history("article")
-      #  st.switch_page("pages/2_Article_Writer.py")
-    
-    # Product Writer button
-    #if st.sidebar.button(language_manager.get_text("product_writer_button", lang), key="product_writer_sidebar"):
-     #   update_page_history("product")
-      #  st.switch_page("pages/3_Product_Writer.py")
+
     
     # Language selector
     languages = language_manager.get_available_languages()
@@ -179,7 +146,7 @@ async def analyze_website(url: str, supabase: Client):
             normalized_url = normalize_url(url)
             existing_report = supabase.table('seo_reports').select('text_report, report').eq('url', normalized_url).execute()
             if existing_report.data and len(existing_report.data) > 0:
-                logging.info(f"Report succesfully created for {url}.")
+                logging.info(f"Report succesfully created {url}.")
                 text_report = existing_report.data[0].get('text_report', "Text report not available.")
                 full_report = existing_report.data[0].get('report')
                 return text_report, full_report
