@@ -58,8 +58,8 @@ async def main_seo_helper(): # Renamed to avoid conflict if main.py's main is im
         st.info(language_manager.get_text("analysis_in_progress_for", lang, st.session_state.url_being_analyzed))
     
     # Optional: Add a refresh button to check analysis progress
-    if st.button(language_manager.get_text("refresh_analysis_status", lang)):
-        st.rerun()  # Simple refresh to check status
+    #if st.button(language_manager.get_text("refresh_analysis_status", lang)):
+     #   st.rerun()  # Simple refresh to check status
     # Sidebar button for SEO suggestions
     if st.session_state.get("full_report") and st.session_state.get("url"): # Use .get for safety
         from buttons.generate_seo_suggestions import generate_seo_suggestions

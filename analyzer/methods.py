@@ -1,14 +1,16 @@
 import re
-from collections import Counter
+#from collections import Counter
 import logging
 from datetime import datetime
 import getpass
 import os
 from urllib.parse import urlparse
-import analyzer.config as config 
+#import analyzer.config as config 
 from typing import List, Optional  # For type hinting
-#text i intial page content olarak değiştirebiliriz
-# analyzer/methods.py
+
+# Module-level logger for better log organization
+logger = logging.getLogger(__name__)
+logger.debug(f"DEBUG LOGGING TEST FROM TOP OF methods.py. Effective level: {logger.getEffectiveLevel()}") # NEW TEST LINE
 
 
 
@@ -67,29 +69,48 @@ def normalize_turkish_text(text: str) -> str:
     
     return text.strip()
 
+# In analyzer/methods.py
 
-
+# ... (other imports, logger definition) ...
 
 def _remove_snippets_from_text_internal(text: str, snippets_to_remove: Optional[List[str]]) -> str:
     """
     Internal helper to remove a list of text snippets from a larger text string.
-    Uses case-insensitive, whole-word matching.
+    Uses case-insensitive matching, ensuring snippets are not part of larger words.
     """
     modified_text = text
-    if not snippets_to_remove or not text or not any(s and s.strip() for s in snippets_to_remove):
+    if not snippets_to_remove or not text:
+        logger.debug("In _remove_snippets_from_text_internal: No snippets or no text, returning early.")
+        return text
+    
+    # Check if any snippet in the list is actually non-empty after stripping
+    actual_snippets_to_process = [s for s in snippets_to_remove if s and s.strip()]
+    if not actual_snippets_to_process:
+        logger.debug(f"In _remove_snippets_from_text_internal: Snippets list provided, but all are empty/whitespace. Original snippets: {snippets_to_remove}")
         return text
         
-    for snippet in snippets_to_remove:
-        if snippet and snippet.strip(): # Ensure snippet is not None and not just whitespace
-            try:
-                # Using regex for case-insensitive, whole-word replacement
-                # re.escape handles any special regex characters in the snippet
-                pattern = r'\b' + re.escape(snippet.strip()) + r'\b'
-                modified_text = re.sub(pattern, '', modified_text, flags=re.IGNORECASE | re.UNICODE)
-            except re.error as e:
-                # Log this error if you have logging configured for methods.py
-                logging.warning(f"Regex error while trying to remove snippet '{snippet[:50]}...': {e}")
-                pass # Continue with other snippets
+    for snippet_content in actual_snippets_to_process:
+        # snippet_content is already stripped and verified non-empty here
+        try:
+            # Using lookarounds to ensure the snippet is not part of a larger "word"
+            # (?<!\w) - not preceded by a word character (allows start of string or punctuation/space before)
+            # (?!\w) - not followed by a word character (allows end of string or punctuation/space after)
+            escaped_snippet = re.escape(snippet_content) # No .strip() needed here, done above
+            pattern = r'(?<!\w)' + escaped_snippet + r'(?!\w)'
+            
+            # Log the pattern being used for this specific snippet
+            logger.debug(f"Attempting to remove snippet with pattern: {pattern} (from original: '{snippet_content[:50]}...')")
+
+            original_len_before_sub = len(modified_text)
+            modified_text = re.sub(pattern, '', modified_text, flags=re.IGNORECASE | re.UNICODE)
+            if len(modified_text) != original_len_before_sub:
+                logger.debug(f"Snippet '{snippet_content[:50]}...' REMOVED. Text length change: {original_len_before_sub} -> {len(modified_text)}")
+            else:
+                logger.debug(f"Snippet '{snippet_content[:50]}...' NOT found/removed with pattern '{pattern}'.")
+
+        except re.error as e:
+            logger.warning(f"Regex error while trying to remove snippet '{snippet_content[:50]}...': {e}")
+            pass 
     
     # Clean up multiple spaces that might result from removals and trim
     modified_text = re.sub(r'\s{2,}', ' ', modified_text).strip()
@@ -100,40 +121,40 @@ def extract_text(text: str,
                  footer_snippets: Optional[List[str]] = None) -> str:
     """
     Extracts and cleans text. Optionally removes provided header and footer snippets
-    after initial cleaning.
-    The original function snippet showed: return (cleaned_text ) which implies a string.
+    after initial normalization but before aggressive character stripping.
     """
-    import re # Ensure re is imported if not at module level
-    # from collections import Counter # Not used if only returning cleaned_text
-    
-    if not text or len(text.strip()) < 10: # Basic check for meaningful content
+    logger.debug(f"extract_text CALLED. Has headers: {bool(header_snippets)}, Has footers: {bool(footer_snippets)}")
+    if header_snippets: logger.debug(f"Header snippets received: {header_snippets}")
+    if footer_snippets: logger.debug(f"Footer snippets received: {footer_snippets}")
+
+    if not text or len(text.strip()) < 10: 
         return "" 
     
-    # 1. Normalize text (e.g., Turkish character normalization)
-    #    Your snippet included normalize_turkish_text, so we'll assume it's available
     processed_text = normalize_turkish_text(text)
-    
-    # 2. Date pattern adjustment (from your provided snippet)
     processed_text = re.sub(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})(?=\d{1,2}[/.-])', r'\1 ', processed_text)
     
-    # 3. Initial cleaning: remove non-alphanumeric (but keep specific chars), multiple spaces
-    #    Keeping ' - and Turkish characters as per your snippet
-    cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', processed_text)
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip() # This is the line you mentioned
-    
-    # 4. Remove header snippets if provided
-    #if header_snippets:
-        # logging.debug(f"Attempting to remove headers. Text length before: {len(cleaned_text)}")
-    cleaned_text = _remove_snippets_from_text_internal(cleaned_text, header_snippets)
-        # logging.debug(f"Text length after header removal: {len(cleaned_text)}")
+    text_for_hf_removal = processed_text
+    original_length_for_debug = len(text_for_hf_removal)
+
+    if header_snippets:
+        logger.debug(f"Attempting to remove headers. Text length before: {len(text_for_hf_removal)}")
+        text_for_hf_removal = _remove_snippets_from_text_internal(text_for_hf_removal, header_snippets)
+        logger.debug(f"Text length after header removal: {len(text_for_hf_removal)}")
         
-    # 5. Remove footer snippets if provided
-    #if footer_snippets:
-        # logging.debug(f"Attempting to remove footers. Text length before: {len(cleaned_text)}")
-    cleaned_text = _remove_snippets_from_text_internal(cleaned_text, footer_snippets)
-        # logging.debug(f"Text length after footer removal: {len(cleaned_text)}")
+    if footer_snippets:
+        logger.debug(f"Attempting to remove footers. Text length before: {len(text_for_hf_removal)}")
+        text_for_hf_removal = _remove_snippets_from_text_internal(text_for_hf_removal, footer_snippets)
+        logger.debug(f"Text length after footer removal: {len(text_for_hf_removal)}")
         
-    # 6. Final clean-up of spaces that might have been introduced or left by removals
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    if (header_snippets or footer_snippets) and logger.isEnabledFor(logging.DEBUG):
+        if original_length_for_debug != len(text_for_hf_removal):
+            logger.debug(f"Overall text length changed by H/F removal: {original_length_for_debug} -> {len(text_for_hf_removal)}")
+        elif any(s and s.strip() for s in (header_snippets or [])) or \
+             any(s and s.strip() for s in (footer_snippets or [])):
+            logger.debug(f"Text length ({original_length_for_debug}) not changed by H/F removal, though non-empty snippets were provided (may indicate no matches, or snippets were all empty).")
+
+    cleaned_text = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', text_for_hf_removal) 
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip() 
     
     return cleaned_text
+

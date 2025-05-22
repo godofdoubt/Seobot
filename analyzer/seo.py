@@ -15,8 +15,24 @@ from analyzer.sitemap import discover_sitemap_urls, fetch_all_pages_from_sitemap
 from analyzer.llm_analysis_start import llm_analysis_start
 from urllib.parse import urlparse, urljoin, urlunparse
 
+
+# Make sure this format string includes %(name)s to see which logger is active
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Explicitly set levels for potentially problematic loggers
+logging.getLogger('analyzer.methods').setLevel(logging.DEBUG)
+logging.getLogger('analyzer').setLevel(logging.DEBUG) # Set parent as well
+# For extreme debugging, ensure root is also DEBUG after basicConfig, though basicConfig should handle this
+# logging.getLogger().setLevel(logging.DEBUG)
+
+logging.info("Root logger level: %s", logging.getLogger().getEffectiveLevel())
+logging.info("analyzer logger level: %s", logging.getLogger('analyzer').getEffectiveLevel())
+logging.info("analyzer.methods logger level: %s", logging.getLogger('analyzer.methods').getEffectiveLevel())
+
+
+
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 class SEOAnalyzer:
     def __init__(self):
