@@ -17,11 +17,11 @@ from urllib.parse import urlparse, urljoin, urlunparse
 
 
 # Make sure this format string includes %(name)s to see which logger is active
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Explicitly set levels for potentially problematic loggers
-logging.getLogger('analyzer.methods').setLevel(logging.DEBUG)
-logging.getLogger('analyzer').setLevel(logging.DEBUG) # Set parent as well
+#logging.getLogger('analyzer.methods').setLevel(logging.DEBUG)
+#logging.getLogger('analyzer').setLevel(logging.DEBUG) # Set parent as well
 # For extreme debugging, ensure root is also DEBUG after basicConfig, though basicConfig should handle this
 # logging.getLogger().setLevel(logging.DEBUG)
 

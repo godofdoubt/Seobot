@@ -80,13 +80,13 @@ def _remove_snippets_from_text_internal(text: str, snippets_to_remove: Optional[
     """
     modified_text = text
     if not snippets_to_remove or not text:
-        logger.debug("In _remove_snippets_from_text_internal: No snippets or no text, returning early.")
+        #logger.debug("In _remove_snippets_from_text_internal: No snippets or no text, returning early.")
         return text
     
     # Check if any snippet in the list is actually non-empty after stripping
     actual_snippets_to_process = [s for s in snippets_to_remove if s and s.strip()]
     if not actual_snippets_to_process:
-        logger.debug(f"In _remove_snippets_from_text_internal: Snippets list provided, but all are empty/whitespace. Original snippets: {snippets_to_remove}")
+        #logger.debug(f"In _remove_snippets_from_text_internal: Snippets list provided, but all are empty/whitespace. Original snippets: {snippets_to_remove}")
         return text
         
     for snippet_content in actual_snippets_to_process:
@@ -99,14 +99,18 @@ def _remove_snippets_from_text_internal(text: str, snippets_to_remove: Optional[
             pattern = r'(?<!\w)' + escaped_snippet + r'(?!\w)'
             
             # Log the pattern being used for this specific snippet
-            logger.debug(f"Attempting to remove snippet with pattern: {pattern} (from original: '{snippet_content[:50]}...')")
+            #logger.debug(f"Attempting to remove snippet with pattern: {pattern} (from original: '{snippet_content[:50]}...')")
 
+            # Store length BEFORE modification for optional logging
             original_len_before_sub = len(modified_text)
+
+            # Perform the actual modification 
             modified_text = re.sub(pattern, '', modified_text, flags=re.IGNORECASE | re.UNICODE)
-            if len(modified_text) != original_len_before_sub:
-                logger.debug(f"Snippet '{snippet_content[:50]}...' REMOVED. Text length change: {original_len_before_sub} -> {len(modified_text)}")
-            else:
-                logger.debug(f"Snippet '{snippet_content[:50]}...' NOT found/removed with pattern '{pattern}'.")
+
+            #if len(modified_text) != original_len_before_sub:
+              #  logger.debug(f"Snippet '{snippet_content[:50]}...' REMOVED. Text length change: {original_len_before_sub} -> {len(modified_text)}")
+            #else:
+             #   logger.debug(f"Snippet '{snippet_content[:50]}...' NOT found/removed with pattern '{pattern}'.")
 
         except re.error as e:
             logger.warning(f"Regex error while trying to remove snippet '{snippet_content[:50]}...': {e}")
