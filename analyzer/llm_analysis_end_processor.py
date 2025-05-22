@@ -46,9 +46,7 @@ class LLMAnalysisEndProcessor:
              # Depending on strictness, could raise RuntimeError here.
              # For now, allow instantiation but log error. API calls will fail gracefully.
 
-    # ... (keep _call_gemini_api, _analyze_single_page, _generate_comprehensive_text_report, _process_seo_report, _mark_report_as_error, _process_pending_reports as they are) ...
-
-    async def _call_gemini_api(self, prompt_text: str) -> str: # Existing method
+    async def _call_gemini_api(self, prompt_text: str) -> str:
         if not self.model:
             self.logger.error("Gemini model not initialized. Cannot make API call.")
             return ""
@@ -78,13 +76,16 @@ class LLMAnalysisEndProcessor:
                 self.logger.error(f"Error during Gemini API call: {e}", exc_info=True)
             return ""
 
-    async def _analyze_single_page(self, page_url: str, page_data: dict, is_main_page: bool = False) -> dict: # Existing method
+    async def _analyze_single_page(self, page_url: str, page_data: dict, is_main_page: bool = False) -> dict:
         base_result = {
             "url": page_url,
             "keywords": [],
             "content_summary": "",
             "other_information_and_contacts": [],
-            "suggested_keywords_for_seo": []
+            "suggested_keywords_for_seo": [],
+            "overall_tone": "",  # New field
+            "target_audience": [], # New field
+            "topic_categories": []  # New field
         }
         if is_main_page:
             base_result.update({"header": [], "footer": []})
@@ -102,7 +103,10 @@ class LLMAnalysisEndProcessor:
             "keywords": ["string"],
             "content_summary": "string",
             "other_information_and_contacts": ["string"],
-            "suggested_keywords_for_seo": ["string"]
+            "suggested_keywords_for_seo": ["string"],
+            "overall_tone": "string", # New field
+            "target_audience": ["string"], # New field
+            "topic_categories": ["string"]  # New field
         }
         if is_main_page:
             json_structure_for_llm.update({
@@ -110,7 +114,7 @@ class LLMAnalysisEndProcessor:
                 "footer": ["string"]
             })
         detailed_instructions_keywords = """1. **"keywords"**:
-        * Identify and list the top 5-7 most relevant and frequently occurring keywords or key phrases from the page content and headings.
+        * Identify and list the top 7-10 most relevant and frequently occurring keywords or key phrases from the page content and headings.
         * These should accurately represent the main topics and themes of the page.
         * Prioritize multi-word phrases if they are more descriptive. Example: ["data analysis solutions", "cloud computing services", "enterprise software"]
         * Return as a list of strings. If no distinct keywords are found, return an empty list []."""
@@ -123,8 +127,8 @@ class LLMAnalysisEndProcessor:
         * Extract any explicit contact information: email addresses, phone numbers, physical addresses.
         * Identify specific company names, key product names and prices, or important service names mentioned.
         * List social media profile URLs if clearly present.
-        * If the page mentions specific individuals (e.g., team members, authors), list their names and roles if available. 
-        * Format each piece of information as a descriptive string in a list.
+        * If the page mentions specific individuals (e.g., team members, authors), list their names and roles if available. Turkish names and surnames can be longer.
+        * Format each piece of information as a descriptive string in a list. Put the relevant information next to each other.
         * Example: ["Email: contact@example.com", "Phone: (555) 123-4567", "Main Office: 123 Innovation Drive, Tech City", "Product: Alpha Suite", "Twitter: https://twitter.com/example"]
         * If no such information is found, return an empty list []."""
         detailed_instructions_seo_keywords = """4. **"suggested_keywords_for_seo"**:
@@ -132,6 +136,18 @@ class LLMAnalysisEndProcessor:
         * Plus to those suggest 3-5 more should be relevant variations, related topics or potential long-tail and alternatives but relevant keywords. Dont use alternative region , city names if its not in the content.
         * Consider user intent (informational, transactional, navigational). Example: ["benefits of data analysis", "best cloud providers for small business", "custom enterprise software development"]
         * If no strong distinct suggestions can be made, return an empty list []."""
+        detailed_instructions_overall_tone = """5. **"overall_tone"**:
+        * Describe the general tone or style of the content on the page (e.g., formal, informal, professional, casual, authoritative, promotional, educational, humorous, technical).
+        * Provide a single, concise descriptive word or short phrase. Example: "professional and informative", "casual and engaging"."""
+        detailed_instructions_target_audience = """6. **"target_audience"**:
+        * Identify the primary target audience(s) for the content on this page. Consider who the content is intended for (e.g., businesses, consumers, technical professionals, students, specific demographics).
+        * List 1-3 distinct groups as strings. Example: ["small business owners", "software developers", "parents"]
+        * If not clearly discernible, return an empty list []."""
+        detailed_instructions_topic_categories = """7. **"topic_categories"**:
+        * Categorize the main topics or themes covered on the page into 2-4 broad categories. Think of general industry or subject areas.
+        * Example: ["Software Development", "Digital Marketing", "Financial Services", "Health & Wellness"]
+        * If no clear categories, return an empty list []."""
+        
         prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
     --
     Analyze the following web page content for the URL: {page_url}
@@ -152,15 +168,18 @@ class LLMAnalysisEndProcessor:
     {detailed_instructions_summary}
     {detailed_instructions_contacts}
     {detailed_instructions_seo_keywords}
+    {detailed_instructions_overall_tone}
+    {detailed_instructions_target_audience}
+    {detailed_instructions_topic_categories}
     """
         if is_main_page:
-            detailed_instructions_header = """5. **"header"**:
+            detailed_instructions_header = """8. **"header"**:
         * From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main header.
         * This typically includes site navigation links (e.g., "Home", "About Us", "Services", "Contact"), site branding text (e.g., company name if prominently in header), or a primary tagline.
         * Provide these as a list of strings. Each string can be a distinct link text or a phrase from the header.
         * If no clear header text is discernible, return an empty list [].
         * Example: ["Home", "Products", "Blog", "Login", "Site Title Example Inc."]"""
-            detailed_instructions_footer = """6. **"footer"**:
+            detailed_instructions_footer = """9. **"footer"**:
         * From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main footer.
         * This typically includes copyright notices, links to privacy policy, terms of service, sitemap, contact information repeated in the footer, or social media links.
         * Provide these as a list of strings. Each string can be a distinct link text or a phrase from the footer.
@@ -195,6 +214,9 @@ class LLMAnalysisEndProcessor:
                 "content_summary": llm_data.get("content_summary", base_result["content_summary"]),
                 "other_information_and_contacts": llm_data.get("other_information_and_contacts", base_result["other_information_and_contacts"]),
                 "suggested_keywords_for_seo": llm_data.get("suggested_keywords_for_seo", base_result["suggested_keywords_for_seo"]),
+                "overall_tone": llm_data.get("overall_tone", base_result["overall_tone"]),
+                "target_audience": llm_data.get("target_audience", base_result["target_audience"]),
+                "topic_categories": llm_data.get("topic_categories", base_result["topic_categories"])
             }
             if is_main_page:
                 analysis_result.update({
@@ -207,44 +229,70 @@ class LLMAnalysisEndProcessor:
             self.logger.error(f"Unexpected error during LLM analysis processing for URL {page_url}: {e}", exc_info=True)
             return {**base_result, "error": f"An unexpected error occurred: {str(e)}"}
 
-    async def _generate_comprehensive_text_report(self, llm_analysis_all: dict) -> str: # Existing method
+    async def _generate_comprehensive_text_report(self, llm_analysis_all: dict) -> str:
         main_page_analysis = llm_analysis_all.get('main_page', {})
         other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page'}
         report_sections = []
         report_sections.append("# COMPREHENSIVE SEO ANALYSIS REPORT")
         report_sections.append("Generated: " + time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
         report_sections.append("")
+        
         if main_page_analysis:
             main_url_display = main_page_analysis.get('url', 'Main Page Analysis (URL not found in analysis data)')
             report_sections.append(f"## Main Page Analysis: {main_url_display}")
             if main_page_analysis.get("error"):
                  report_sections.append(f"**Note:** Main page analysis encountered an error: {main_page_analysis['error']}")
+            
+            # New sections for main page - moved to the top for better visibility
+            overall_tone = main_page_analysis.get('overall_tone', '')
+            if overall_tone:
+                report_sections.append(f"### Overall Content Tone")
+                report_sections.append(overall_tone)
+                report_sections.append("")
+
+            target_audience = main_page_analysis.get('target_audience', [])
+            if target_audience:
+                report_sections.append(f"### Identified Target Audience")
+                report_sections.append(", ".join(ta for ta in target_audience if ta))
+                report_sections.append("")
+
+            topic_categories = main_page_analysis.get('topic_categories', [])
+            if topic_categories:
+                report_sections.append(f"### Main Topic Categories")
+                report_sections.append(", ".join(tc for tc in topic_categories if tc))
+                report_sections.append("")
+            
             content_summary = main_page_analysis.get('content_summary', '')
             if content_summary:
                 report_sections.append(f"### Content Summary")
                 report_sections.append(content_summary)
                 report_sections.append("")
+                
             keywords = main_page_analysis.get('keywords', [])
             if keywords:
                 report_sections.append(f"### Primary Keywords")
                 report_sections.append(", ".join(k for k in keywords if k))
                 report_sections.append("")
+                
             seo_keywords = main_page_analysis.get('suggested_keywords_for_seo', [])
             if seo_keywords:
                 report_sections.append(f"### Suggested SEO Keywords")
                 report_sections.append(", ".join(sk for sk in seo_keywords if sk))
                 report_sections.append("")
+                
             contacts = main_page_analysis.get('other_information_and_contacts', [])
             if contacts:
                 report_sections.append(f"### Contact Information & Key Mentions")
                 for contact in contacts:
                     if contact: report_sections.append(f"- {contact}")
                 report_sections.append("")
+                
             header = main_page_analysis.get('header', [])
             if header:
                 report_sections.append(f"### Header Elements")
                 report_sections.append(", ".join(h for h in header if h) if any(h for h in header) else "No distinct header elements identified.")
                 report_sections.append("")
+                
             footer = main_page_analysis.get('footer', [])
             if footer:
                 report_sections.append(f"### Footer Elements")
@@ -254,30 +302,60 @@ class LLMAnalysisEndProcessor:
             report_sections.append("## Main Page Analysis")
             report_sections.append("Main page analysis data was not available or incomplete in llm_analysis_all.")
             report_sections.append("")
+            
         if other_pages:
             report_sections.append("## Subpage Analysis")
             report_sections.append(f"Number of additional pages analyzed: {len(other_pages)}")
             report_sections.append("")
+            
             all_subpage_keywords = []
             all_subpage_seo_keywords = []
+            all_subpage_topic_categories = []
+            all_subpage_target_audiences = []
+            all_subpage_tones = []
+            
             for page_key, page_analysis_item in other_pages.items():
                 page_url_display = page_analysis_item.get('url', page_key)
                 report_sections.append(f"### {page_url_display}")
+                
                 if page_analysis_item.get("error"):
                     report_sections.append(f"**Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
+                
+                # Content summary first
                 content_summary = page_analysis_item.get('content_summary', '')
                 if content_summary:
                     report_sections.append(content_summary)
                     report_sections.append("")
+                
+                # New subpage sections - organized better
+                subpage_overall_tone = page_analysis_item.get('overall_tone', '')
+                if subpage_overall_tone:
+                    report_sections.append(f"**Overall Tone**: {subpage_overall_tone}")
+                    all_subpage_tones.append(subpage_overall_tone)
+                
+                subpage_target_audience = page_analysis_item.get('target_audience', [])
+                if subpage_target_audience:
+                    report_sections.append(f"**Target Audience**: {', '.join(subpage_target_audience)}")
+                    all_subpage_target_audiences.extend(ta for ta in subpage_target_audience if ta)
+
+                subpage_topic_categories = page_analysis_item.get('topic_categories', [])
+                if subpage_topic_categories:
+                    report_sections.append(f"**Topic Categories**: {', '.join(subpage_topic_categories)}")
+                    all_subpage_topic_categories.extend(tc for tc in subpage_topic_categories if tc)
+                
                 keywords = page_analysis_item.get('keywords', [])
                 if keywords:
                     report_sections.append(f"**Keywords**: {', '.join(k for k in keywords if k)}")
                     all_subpage_keywords.extend(k for k in keywords if k)
+                    
                 seo_keywords = page_analysis_item.get('suggested_keywords_for_seo', [])
                 if seo_keywords:
                     report_sections.append(f"**SEO Keyword Suggestions**: {', '.join(sk for sk in seo_keywords if sk)}")
                     all_subpage_seo_keywords.extend(sk for sk in seo_keywords if sk)
+
                 report_sections.append("")
+            
+            # Site-wide analysis sections
             if all_subpage_keywords:
                 keyword_count = {}
                 for keyword_item in all_subpage_keywords:
@@ -288,6 +366,7 @@ class LLMAnalysisEndProcessor:
                 for kw, count in sorted_keywords[:15]:
                     report_sections.append(f"- {kw} (found in {count} subpages)")
                 report_sections.append("")
+                
             if all_subpage_seo_keywords:
                 seo_keyword_count = {}
                 for keyword_item in all_subpage_seo_keywords:
@@ -298,16 +377,70 @@ class LLMAnalysisEndProcessor:
                 for kw, count in sorted_seo_keywords[:10]:
                     report_sections.append(f"- {kw} (suggested for {count} subpages)")
                 report_sections.append("")
-        report_sections.append("## General Recommendations")
+            
+            # New site-wide analysis sections for the new fields
+            if all_subpage_topic_categories:
+                topic_category_count = {}
+                for tc_item in all_subpage_topic_categories:
+                    topic_category_count[tc_item] = topic_category_count.get(tc_item, 0) + 1
+                sorted_topic_categories = sorted(topic_category_count.items(), key=lambda x: x[1], reverse=True)
+                report_sections.append("## Site-Wide Topic Categories Analysis")
+                report_sections.append("Most common topic categories across analyzed subpages (top 10):")
+                for tc, count in sorted_topic_categories[:10]:
+                    report_sections.append(f"- {tc} (found in {count} subpages)")
+                report_sections.append("")
+
+            if all_subpage_target_audiences:
+                target_audience_count = {}
+                for ta_item in all_subpage_target_audiences:
+                    target_audience_count[ta_item] = target_audience_count.get(ta_item, 0) + 1
+                sorted_target_audiences = sorted(target_audience_count.items(), key=lambda x: x[1], reverse=True)
+                report_sections.append("## Site-Wide Target Audience Analysis")
+                report_sections.append("Most common target audiences across analyzed subpages (top 8):")
+                for ta, count in sorted_target_audiences[:8]:
+                    report_sections.append(f"- {ta} (identified in {count} subpages)")
+                report_sections.append("")
+
+            if all_subpage_tones:
+                tone_count = {}
+                for tone_item in all_subpage_tones:
+                    tone_count[tone_item] = tone_count.get(tone_item, 0) + 1
+                sorted_tones = sorted(tone_count.items(), key=lambda x: x[1], reverse=True)
+                report_sections.append("## Site-Wide Content Tone Analysis")
+                report_sections.append("Most common content tones across analyzed subpages:")
+                for tone, count in sorted_tones:
+                    report_sections.append(f"- {tone} (found in {count} subpages)")
+                report_sections.append("")
+
+        # Enhanced recommendations section
+        report_sections.append("## Strategic Recommendations")
+        report_sections.append("### SEO & Content Optimization")
         report_sections.append("1. Focus on creating high-quality, relevant content aligned with your primary and suggested SEO keywords identified for both main and subpages.")
         report_sections.append("2. Ensure consistent branding and navigation (header/footer elements) across the site, as identified in the main page analysis. Verify these elements are user-friendly and effective on all page types.")
         report_sections.append("3. Optimize on-page SEO elements (title tags, meta descriptions, heading structure) for all important pages, incorporating identified keywords naturally and contextually.")
         report_sections.append("4. Strengthen internal linking between relevant pages to distribute link equity and improve site navigation for users and search engines. Link from authoritative pages to those needing a boost.")
         report_sections.append("5. Regularly review and update content to maintain accuracy and relevance. Consider creating new content clusters or cornerstone pieces targeting high-potential suggested SEO keywords.")
-        report_sections.append("6. Monitor key SEO metrics (rankings, organic traffic, user engagement, conversion rates for target keywords) to assess the impact of optimizations and identify further opportunities for growth.")
+        report_sections.append("")
+        
+        # Enhanced recommendations based on new analysis fields
+        report_sections.append("### Content Strategy & Audience Alignment")
+        if main_page_analysis.get('overall_tone') or any(page.get('overall_tone') for page in other_pages.values()):
+            report_sections.append("6. **Content Tone Consistency**: Review the identified content tones across your site. Ensure consistency with your brand voice and adjust where necessary to maintain a cohesive user experience. Consider if the tone appropriately matches your target audience's expectations.")
+        
+        if main_page_analysis.get('target_audience') or any(page.get('target_audience') for page in other_pages.values()):
+            report_sections.append("7. **Audience-Centric Content**: Leverage the identified target audiences to refine your content strategy. Ensure that language, examples, and messaging are tailored to resonate with these specific groups. Consider creating dedicated landing pages or content sections for different audience segments.")
+        
+        if main_page_analysis.get('topic_categories') or any(page.get('topic_categories') for page in other_pages.values()):
+            report_sections.append("8. **Topic Authority Building**: Use the identified topic categories to develop comprehensive content hubs. Create in-depth, authoritative content around each major category to establish topical expertise and improve search engine authority in these areas.")
+        
+        report_sections.append("")
+        report_sections.append("### Performance Monitoring")
+        report_sections.append("9. Monitor key SEO metrics (rankings, organic traffic, user engagement, conversion rates for target keywords) to assess the impact of optimizations and identify further opportunities for growth.")
+        report_sections.append("10. Track audience engagement metrics to validate that your content effectively reaches and resonates with the identified target audiences. Adjust content strategy based on performance data.")
+        
         return "\n".join(report_sections)
 
-    async def _process_seo_report(self, report_id: int): # Existing method
+    async def _process_seo_report(self, report_id: int):
         self.logger.info(f"++++ ENTERING _process_seo_report for ID: {report_id} ++++")
         try:
             db_response = await asyncio.to_thread(
@@ -341,6 +474,7 @@ class LLMAnalysisEndProcessor:
                 initial_llm_analysis_from_blob and
                 normalized_url_from_llm_blob == normalized_db_main_url
             )
+            
             if is_valid_and_matches_main_url:
                 self.logger.info(f"Using pre-existing 'llm_analysis' from report_json_blob for main page: {normalized_db_main_url} (Report ID: {report_id})")
                 llm_analysis_all['main_page'] = {
@@ -349,6 +483,9 @@ class LLMAnalysisEndProcessor:
                     "content_summary": initial_llm_analysis_from_blob.get("content_summary", ""),
                     "other_information_and_contacts": initial_llm_analysis_from_blob.get("other_information_and_contacts", []),
                     "suggested_keywords_for_seo": initial_llm_analysis_from_blob.get("suggested_keywords_for_seo", []),
+                    "overall_tone": initial_llm_analysis_from_blob.get("overall_tone", ""),  # New field
+                    "target_audience": initial_llm_analysis_from_blob.get("target_audience", []),  # New field
+                    "topic_categories": initial_llm_analysis_from_blob.get("topic_categories", []),  # New field
                     "header": initial_llm_analysis_from_blob.get("header", []),
                     "footer": initial_llm_analysis_from_blob.get("footer", [])
                 }
@@ -372,9 +509,18 @@ class LLMAnalysisEndProcessor:
                 llm_analysis_all['main_page'] = {
                     "url": main_report_url_original,
                     "error": error_reason,
-                    "keywords": [], "content_summary": "", "other_information_and_contacts": [],
-                    "suggested_keywords_for_seo": [], "header": [], "footer": []
+                    "keywords": [], 
+                    "content_summary": "", 
+                    "other_information_and_contacts": [],
+                    "suggested_keywords_for_seo": [], 
+                    "overall_tone": "",  # New field
+                    "target_audience": [],  # New field
+                    "topic_categories": [],  # New field
+                    "header": [], 
+                    "footer": []
                 }
+            
+            # Process subpages from page_statistics
             pages_to_analyze_data = []
             for page_url_key, page_content_item in page_statistics.items():
                 normalized_page_url_key = page_url_key.rstrip('/')
@@ -387,19 +533,31 @@ class LLMAnalysisEndProcessor:
                 if not page_content_item or not (page_content_item.get('cleaned_text') or page_content_item.get('headings')):
                     self.logger.warning(f"Skipping subpage {page_url_key} due to missing cleaned_text or headings. (Report ID: {report_id})")
                     llm_analysis_all[page_url_key] = {
-                        "url": page_url_key, "error": "Content data (cleaned_text/headings) missing in page_statistics.",
-                        "keywords": [], "content_summary": "", "other_information_and_contacts": [], "suggested_keywords_for_seo": []
+                        "url": page_url_key, 
+                        "error": "Content data (cleaned_text/headings) missing in page_statistics.",
+                        "keywords": [], 
+                        "content_summary": "", 
+                        "other_information_and_contacts": [], 
+                        "suggested_keywords_for_seo": [],
+                        "overall_tone": "",  # New field
+                        "target_audience": [],  # New field
+                        "topic_categories": []  # New field
                     }
                     continue
                 pages_to_analyze_data.append((page_url_key, page_content_item))
+            
             if not pages_to_analyze_data:
                 self.logger.info(f"No additional subpages found in page_statistics to analyze for report ID {report_id} (after potentially skipping main page).")
             else:
                 self.logger.info(f"Found {len(pages_to_analyze_data)} subpages from page_statistics to analyze for report ID {report_id}")
-                batch_size = 5; max_retries = 3; delay_between_batches = 2
+                batch_size = 5
+                max_retries = 3
+                delay_between_batches = 2
+                
                 for i in range(0, len(pages_to_analyze_data), batch_size):
                     batch = pages_to_analyze_data[i:i+batch_size]
                     batch_tasks = []
+                    
                     async def analyze_with_retry(p_url, p_data):
                         for retry_attempt in range(max_retries):
                             analysis_result = await self._analyze_single_page(p_url, p_data, is_main_page=False)
@@ -412,20 +570,27 @@ class LLMAnalysisEndProcessor:
                                 self.logger.error(f"Failed to analyze page {p_url} after {max_retries} attempts. Final error: {analysis_result.get('error')}")
                                 return analysis_result
                         return None
+                    
                     for p_url_item, p_data_item in batch:
                         batch_tasks.append(analyze_with_retry(p_url_item, p_data_item))
+                    
                     results_for_batch = await asyncio.gather(*batch_tasks)
                     for result in results_for_batch:
                         if result and result.get("url"):
                             llm_analysis_all[result["url"]] = result
                         elif result:
                             self.logger.warning(f"Malformed or URL-less analysis result in batch for report {report_id}: {str(result)[:200]}")
+                    
                     self.logger.info(f"Processed batch {i//batch_size + 1}/{(len(pages_to_analyze_data) + batch_size - 1)//batch_size} for report {report_id}")
-                    if i + batch_size < len(pages_to_analyze_data): await asyncio.sleep(delay_between_batches)
+                    if i + batch_size < len(pages_to_analyze_data): 
+                        await asyncio.sleep(delay_between_batches)
+                        
             self.logger.info(f"Report ID {report_id}: After all page analyses, llm_analysis_all contains {len(llm_analysis_all)} entries. Keys: {list(llm_analysis_all.keys())}")
             self.logger.debug(f"Report ID {report_id}: llm_analysis_all content preview: {json.dumps({k: (v.get('error') if v.get('error') else 'OK') for k, v in llm_analysis_all.items()}, indent=2)}")
+            
             comprehensive_text_report = await self._generate_comprehensive_text_report(llm_analysis_all)
             self.logger.info(f"Report ID {report_id}: Generated comprehensive text report. Length: {len(comprehensive_text_report)} chars.")
+            
             current_timestamp_utc = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
             update_data = {
                 'llm_analysis_all': llm_analysis_all,
@@ -436,6 +601,7 @@ class LLMAnalysisEndProcessor:
             }
             if llm_analysis_all.get('main_page', {}).get('error'):
                 update_data['llm_analysis_all_error'] = f"Main page LLM data error: {llm_analysis_all['main_page']['error'][:350]}"
+            
             self.logger.info(f"Report ID {report_id}: Preparing to update Supabase. update_data keys: {list(update_data.keys())}")
             update_response = await asyncio.to_thread(
                 self.supabase.table('seo_reports').update(update_data).eq('id', report_id).execute
@@ -444,6 +610,7 @@ class LLMAnalysisEndProcessor:
                 self.logger.error(f"Failed to update report ID {report_id} in Supabase: {update_response.error}")
                 await self._mark_report_as_error(report_id, f"Supabase update failed: {str(update_response.error)[:400]}")
                 return False
+            
             self.logger.info(f"Successfully processed and updated report ID {report_id} with all page analyses and comprehensive text_report.")
             return True
         except Exception as e:
@@ -451,7 +618,7 @@ class LLMAnalysisEndProcessor:
             await self._mark_report_as_error(report_id, f"Processor Critical Error: {str(e)[:450]}")
             return False
 
-    async def _mark_report_as_error(self, report_id: int, error_message: str): # Existing method
+    async def _mark_report_as_error(self, report_id: int, error_message: str):
         try:
             error_timestamp = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
             await asyncio.to_thread(
@@ -465,7 +632,7 @@ class LLMAnalysisEndProcessor:
         except Exception as sup_e:
             self.logger.error(f"Failed to update error status for report {report_id} in Supabase: {sup_e}")
 
-    async def _process_pending_reports(self, limit=10): # Existing method
+    async def _process_pending_reports(self, limit=10):
         try:
             pending_reports_response = await asyncio.to_thread(
                 self.supabase.table('seo_reports')
@@ -499,21 +666,16 @@ class LLMAnalysisEndProcessor:
         except Exception as e:
             self.logger.error(f"General error in _process_pending_reports scheduler: {e}", exc_info=True)
 
-    def _run_async_wrapper(self, report_ids_str_list): # New method
+    def _run_async_wrapper(self, report_ids_str_list):
         """Internal wrapper to run the async 'run' method in a new event loop."""
         try:
             self.logger.info(f"Background thread's event loop started for report IDs: {report_ids_str_list}.")
-            asyncio.run(self.run(report_ids=report_ids_str_list, process_pending=False)) # Explicitly call 'run'
+            asyncio.run(self.run(report_ids=report_ids_str_list, process_pending=False))
             self.logger.info(f"Background thread's event loop completed for report IDs: {report_ids_str_list}.")
         except Exception as e:
             self.logger.error(f"Exception in threaded _run_async_wrapper for report_ids {report_ids_str_list}: {e}", exc_info=True)
-            # If critical, consider updating DB error status for these reports, if self.run() didn't do it.
-            # For example, iterate report_ids_str_list and call self._mark_report_as_error if appropriate.
-            # This depends on how self.run() and its sub-methods handle their own errors.
-            # Given self._process_seo_report calls _mark_report_as_error, this might be redundant here
-            # unless _run_async_wrapper itself fails before or after calling self.run.
 
-    def schedule_run_in_background(self, report_ids): # New method
+    def schedule_run_in_background(self, report_ids):
         """Schedules the .run() method to execute in a new background thread
            with its own asyncio event loop."""
         if not isinstance(report_ids, list):
@@ -525,12 +687,11 @@ class LLMAnalysisEndProcessor:
 
         self.logger.info(f"Scheduling LLMAnalysisEndProcessor.run for report IDs {report_ids_str_list} in a background thread.")
         thread = threading.Thread(target=self._run_async_wrapper, args=(report_ids_str_list,))
-        thread.daemon = True  # Allows main program to exit even if thread is running
+        thread.daemon = True
         thread.start()
         self.logger.info(f"Background thread for report IDs {report_ids_str_list} has been started.")
 
-
-    async def run(self, report_ids=None, process_pending=False, batch_size=10): # Existing method - minor adjustment for clarity if called by wrapper
+    async def run(self, report_ids=None, process_pending=False, batch_size=10):
         """Main entry point for the processor's operations."""
         if not self.supabase or not self.model:
             self.logger.error("Processor not fully initialized (Supabase client or Gemini model missing). Aborting run.")
@@ -543,30 +704,24 @@ class LLMAnalysisEndProcessor:
             for report_id_input in report_ids:
                 try:
                     parsed_id = int(report_id_input)
-                    await self._process_seo_report(parsed_id) # This already logs its own success/failure
+                    await self._process_seo_report(parsed_id)
                 except ValueError:
                     self.logger.warning(f"Invalid report_id format: '{report_id_input}'. Must be an integer. Skipping.")
                 except Exception as e:
                     self.logger.error(f"Unexpected error processing report_id '{report_id_input}': {e}", exc_info=True)
-                    # Optionally mark this specific ID as error if _process_seo_report didn't catch it.
                     try:
                         await self._mark_report_as_error(int(report_id_input), f"Outer run error: {str(e)[:450]}")
-                    except ValueError: # if report_id_input wasn't even an int
+                    except ValueError:
                         pass
 
-
-        elif process_pending: # This branch will be used by the scheduler, not direct calls with report_ids from main.py
+        elif process_pending:
             self.logger.info(f"Processing pending reports, batch limit: {batch_size}")
             await self._process_pending_reports(limit=batch_size)
         else:
-            # Default behavior if called with no args from scheduler, but our wrapper specifies report_ids.
-            # If run is called with process_pending=False and no report_ids, it does nothing.
-            # This is fine as schedule_run_in_background always provides report_ids.
             self.logger.info(f"LLMAnalysisEndProcessor.run called with no specific report IDs and process_pending=False. No action taken by default.")
         
         self.logger.info(f"LLMAnalysisEndProcessor run method finished for report_ids: {report_ids if report_ids else 'pending processing'}.")
 
-# ... (keep if __name__ == '__main__': block as is for testing) ...
 if __name__ == '__main__':
     async def main_test_runner():
         logging.basicConfig(
@@ -580,14 +735,7 @@ if __name__ == '__main__':
         processor = None
         try:
             processor = LLMAnalysisEndProcessor()
-            # To test the new threading approach from a sync context (similar to how Streamlit would call it):
-            # processor.schedule_run_in_background(report_ids=[278])
-            # logger.info("Scheduled job in background. Main thread will wait a bit for demo purposes.")
-            # time.sleep(60) # Wait for the background thread to do some work
-
-            # Or test the async run directly (as before)
             await processor.run(report_ids=[278])
-
             logger.info("Standalone test run finished successfully.")
         except ValueError as ve_init:
             logger.error(f"LLMAnalysisEndProcessor initialization failed: {ve_init}", exc_info=True)
@@ -596,13 +744,5 @@ if __name__ == '__main__':
         finally:
              if processor:
                  pass
-    # If testing schedule_run_in_background, you don't need asyncio.run here for the main_test_runner itself.
-    # asyncio.run(main_test_runner())
-    # For testing schedule_run_in_background:
-    # main_test_runner_sync():
-    #    ...
-    #    processor.schedule_run_in_background(report_ids=[278])
-    #    time.sleep(X) # wait for thread
-    # main_test_runner_sync()
-    # For testing await processor.run():
+    
     asyncio.run(main_test_runner())
