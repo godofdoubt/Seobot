@@ -12,7 +12,7 @@ import threading # Added import
 class LLMAnalysisEndProcessor:
     def __init__(self):
         # Configure logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - Line %(lineno)d - %(message)s')
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Load environment variables
@@ -158,7 +158,7 @@ class LLMAnalysisEndProcessor:
     ---
     **Page Headings (JSON format):**
     ---
-    {json.dumps(headings_data, indent=2)}
+    {json.dumps(headings_data, indent=2, ensure_ascii=False)}
     ---
     Based on the provided text and headings, generate a JSON object strictly adhering to the following structure.
     Output ONLY the JSON object. Do NOT include any explanatory text, markdown formatting, or anything else outside the JSON object itself.
@@ -229,9 +229,187 @@ class LLMAnalysisEndProcessor:
             self.logger.error(f"Unexpected error during LLM analysis processing for URL {page_url}: {e}", exc_info=True)
             return {**base_result, "error": f"An unexpected error occurred: {str(e)}"}
 
+    async def _generate_ai_recommendations(self, llm_analysis_all: dict) -> str:
+        """Generate AI-powered recommendations based on the complete website analysis."""
+        if not self.model:
+            self.logger.error("Gemini model not initialized. Cannot generate AI recommendations.")
+            return "AI recommendations could not be generated due to model initialization issues."
+        
+        try:
+            # Prepare comprehensive data summary for AI analysis
+            main_page_analysis = llm_analysis_all.get('main_page', {})
+            other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page' and data} # Ensure data exists
+            
+            # Collect all data for analysis
+            all_keywords = []
+            all_seo_keywords = []
+            all_topic_categories = []
+            all_target_audiences = []
+            all_tones = []
+            all_summaries = []
+            
+            # Main page data
+            if main_page_analysis and not main_page_analysis.get('error'):
+                all_keywords.extend(k for k in main_page_analysis.get('keywords', []) if k)
+                all_seo_keywords.extend(sk for sk in main_page_analysis.get('suggested_keywords_for_seo', []) if sk)
+                all_topic_categories.extend(tc for tc in main_page_analysis.get('topic_categories', []) if tc)
+                all_target_audiences.extend(ta for ta in main_page_analysis.get('target_audience', []) if ta)
+                if main_page_analysis.get('overall_tone'):
+                    all_tones.append(main_page_analysis.get('overall_tone'))
+                if main_page_analysis.get('content_summary'):
+                    all_summaries.append(f"Main Page ({main_page_analysis.get('url', 'N/A')}): {main_page_analysis.get('content_summary')}")
+            
+            # Subpage data
+            for page_url, page_data in other_pages.items():
+                if page_data and not page_data.get('error'): # Check if page_data exists
+                    all_keywords.extend(k for k in page_data.get('keywords', []) if k)
+                    all_seo_keywords.extend(sk for sk in page_data.get('suggested_keywords_for_seo', []) if sk)
+                    all_topic_categories.extend(tc for tc in page_data.get('topic_categories', []) if tc)
+                    all_target_audiences.extend(ta for ta in page_data.get('target_audience', []) if ta)
+                    if page_data.get('overall_tone'):
+                        all_tones.append(page_data.get('overall_tone'))
+                    if page_data.get('content_summary'):
+                        all_summaries.append(f"{page_url}: {page_data.get('content_summary')}")
+            
+            # Create data summary for AI
+            website_data_summary = {
+                "total_pages_analyzed": len([p for p_url, p in llm_analysis_all.items() if p and not p.get('error')]),
+                "main_page_url": main_page_analysis.get('url', 'Unknown'),
+                "all_keywords": list(set(all_keywords)),
+                "all_seo_keywords": list(set(all_seo_keywords)),
+                "all_topic_categories": list(set(all_topic_categories)),
+                "all_target_audiences": list(set(all_target_audiences)),
+                "all_content_tones": list(set(all_tones)),
+                "content_summaries_sample": all_summaries[:10],
+                "main_page_header_elements": main_page_analysis.get('header', []),
+                "main_page_footer_elements": main_page_analysis.get('footer', [])
+            }
+            
+            prompt = f"""
+Based on the comprehensive SEO and content analysis of this website, provide strategic recommendations and actionable SEO optimization suggestions.
+
+WEBSITE ANALYSIS DATA:
+{json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
+
+Generate recommendations in the following JSON structure:
+{{
+    "strategic_recommendations": [
+        {{
+            "category": "string (e.g., 'SEO Optimization', 'Content Strategy', 'Technical SEO', 'User Experience')",
+            "title": "string (brief title for the recommendation)",
+            "description": "string (detailed explanation and actionable steps)",
+            "priority": "string (High/Medium/Low)",
+            "implementation_difficulty": "string (Easy/Medium/Hard)"
+        }}
+    ],
+    "seo_content_optimization": [
+        {{
+            "focus_area": "string (e.g., 'Keyword Strategy', 'Content Gaps', 'Internal Linking', 'Meta Optimization')",
+            "recommendation": "string (specific actionable recommendation)",
+            "expected_impact": "string (what improvement to expect)"
+        }}
+    ],
+    "content_strategy_insights": [
+        {{
+            "insight": "string (key insight about content strategy)",
+            "action_items": ["string", "string"] 
+        }}
+    ]
+}}
+
+REQUIREMENTS:
+1. Provide 3-5 strategic recommendations covering different aspects (SEO, content, technical, UX).
+2. Include 4-6 specific SEO & content optimization suggestions.
+3. Give 2-4 content strategy insights with actionable items.
+4. Base all recommendations on the actual website data provided. Be specific and actionable, not generic.
+5. Consider the identified target audiences, topic categories, and content tones.
+6. Address any content gaps or opportunities you identify from the summaries and keyword data.
+7. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish. Otherwise, respond in English.
+8. Ensure the language of your response matches the predominant language of the website content.
+
+Output ONLY the JSON object with no additional text or formatting.
+"""
+            
+            self.logger.info(f"Generating AI-powered recommendations for main URL: {website_data_summary['main_page_url']}")
+            ai_response_str = await self._call_gemini_api(prompt)
+            
+            if not ai_response_str:
+                self.logger.error("AI recommendations generation failed - empty response from LLM")
+                return "AI recommendations could not be generated due to API response issues."
+            
+            try:
+                cleaned_response = ai_response_str.strip()
+                if cleaned_response.startswith("```json"):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.endswith("```"):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+                
+                recommendations_data = json.loads(cleaned_response)
+                
+                formatted_recommendations = []
+                
+                strategic_recs = recommendations_data.get('strategic_recommendations', [])
+                if strategic_recs:
+                    formatted_recommendations.append("### Strategic Recommendations")
+                    for i, rec in enumerate(strategic_recs, 1):
+                        category = rec.get('category', 'General')
+                        title = rec.get('title', 'Recommendation')
+                        description = rec.get('description', '')
+                        priority = rec.get('priority', 'Medium')
+                        difficulty = rec.get('implementation_difficulty', 'Medium')
+                        
+                        formatted_recommendations.append(f"#### {i}. {title} ({category})")
+                        formatted_recommendations.append(f"**Priority**: {priority} | **Implementation**: {difficulty}")
+                        formatted_recommendations.append(description)
+                        formatted_recommendations.append("")
+                
+                seo_recs = recommendations_data.get('seo_content_optimization', [])
+                if seo_recs:
+                    formatted_recommendations.append("### SEO & Content Optimization")
+                    for rec in seo_recs:
+                        focus_area = rec.get('focus_area', 'SEO Suggestion')
+                        recommendation = rec.get('recommendation', '')
+                        expected_impact = rec.get('expected_impact', '')
+                        
+                        formatted_recommendations.append(f"#### {focus_area}")
+                        formatted_recommendations.append(f"**Recommendation**: {recommendation}")
+                        if expected_impact:
+                            formatted_recommendations.append(f"**Expected Impact**: {expected_impact}")
+                        formatted_recommendations.append("")
+                
+                content_insights = recommendations_data.get('content_strategy_insights', [])
+                if content_insights:
+                    formatted_recommendations.append("### Content Strategy Insights")
+                    for i, insight_data in enumerate(content_insights, 1):
+                        insight = insight_data.get('insight', '')
+                        action_items = insight_data.get('action_items', [])
+                        
+                        formatted_recommendations.append(f"#### Insight {i}: {insight}")
+                        if action_items:
+                            formatted_recommendations.append("**Action Items:**")
+                            for item in action_items:
+                                formatted_recommendations.append(f"- {item}")
+                        formatted_recommendations.append("")
+                
+                if not formatted_recommendations:
+                    self.logger.warning("AI generated data, but no specific recommendation sections were populated.")
+                    return "AI generated data, but it was not in the expected format or was empty."
+
+                self.logger.info("Successfully generated and formatted AI-powered recommendations.")
+                return "\n".join(formatted_recommendations)
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse AI recommendations JSON: {e}. Raw response: '{ai_response_str[:500]}'")
+                return f"AI recommendations were generated but could not be parsed properly. Raw response (first 500 chars): {ai_response_str[:500]}..."
+                
+        except Exception as e:
+            self.logger.error(f"Error generating AI recommendations: {e}", exc_info=True)
+            return f"An error occurred while generating AI recommendations: {str(e)}"
+
     async def _generate_comprehensive_text_report(self, llm_analysis_all: dict) -> str:
         main_page_analysis = llm_analysis_all.get('main_page', {})
-        other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page'}
+        other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page' and data}
         report_sections = []
         report_sections.append("# COMPREHENSIVE SEO ANALYSIS REPORT")
         report_sections.append("Generated: " + time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
@@ -243,7 +421,6 @@ class LLMAnalysisEndProcessor:
             if main_page_analysis.get("error"):
                  report_sections.append(f"**Note:** Main page analysis encountered an error: {main_page_analysis['error']}")
             
-            # New sections for main page - moved to the top for better visibility
             overall_tone = main_page_analysis.get('overall_tone', '')
             if overall_tone:
                 report_sections.append(f"### Overall Content Tone")
@@ -251,16 +428,20 @@ class LLMAnalysisEndProcessor:
                 report_sections.append("")
 
             target_audience = main_page_analysis.get('target_audience', [])
-            if target_audience:
-                report_sections.append(f"### Identified Target Audience")
-                report_sections.append(", ".join(ta for ta in target_audience if ta))
-                report_sections.append("")
+            if target_audience: # Ensure list is not empty
+                audiences_str = ", ".join(ta for ta in target_audience if ta)
+                if audiences_str: # Ensure result is not empty string
+                    report_sections.append(f"### Identified Target Audience")
+                    report_sections.append(audiences_str)
+                    report_sections.append("")
 
             topic_categories = main_page_analysis.get('topic_categories', [])
             if topic_categories:
-                report_sections.append(f"### Main Topic Categories")
-                report_sections.append(", ".join(tc for tc in topic_categories if tc))
-                report_sections.append("")
+                categories_str = ", ".join(tc for tc in topic_categories if tc)
+                if categories_str:
+                    report_sections.append(f"### Main Topic Categories")
+                    report_sections.append(categories_str)
+                    report_sections.append("")
             
             content_summary = main_page_analysis.get('content_summary', '')
             if content_summary:
@@ -270,33 +451,44 @@ class LLMAnalysisEndProcessor:
                 
             keywords = main_page_analysis.get('keywords', [])
             if keywords:
-                report_sections.append(f"### Primary Keywords")
-                report_sections.append(", ".join(k for k in keywords if k))
-                report_sections.append("")
+                keywords_str = ", ".join(k for k in keywords if k)
+                if keywords_str:
+                    report_sections.append(f"### Primary Keywords")
+                    report_sections.append(keywords_str)
+                    report_sections.append("")
                 
             seo_keywords = main_page_analysis.get('suggested_keywords_for_seo', [])
             if seo_keywords:
-                report_sections.append(f"### Suggested SEO Keywords")
-                report_sections.append(", ".join(sk for sk in seo_keywords if sk))
-                report_sections.append("")
+                seo_keywords_str = ", ".join(sk for sk in seo_keywords if sk)
+                if seo_keywords_str:
+                    report_sections.append(f"### Suggested SEO Keywords")
+                    report_sections.append(seo_keywords_str)
+                    report_sections.append("")
                 
             contacts = main_page_analysis.get('other_information_and_contacts', [])
             if contacts:
                 report_sections.append(f"### Contact Information & Key Mentions")
+                has_contacts = False
                 for contact in contacts:
-                    if contact: report_sections.append(f"- {contact}")
+                    if contact: 
+                        report_sections.append(f"- {contact}")
+                        has_contacts = True
+                if not has_contacts:
+                    report_sections.append("No specific contact information or key mentions identified.")
                 report_sections.append("")
                 
             header = main_page_analysis.get('header', [])
             if header:
+                header_str = ", ".join(h for h in header if h)
                 report_sections.append(f"### Header Elements")
-                report_sections.append(", ".join(h for h in header if h) if any(h for h in header) else "No distinct header elements identified.")
+                report_sections.append(header_str if header_str else "No distinct header elements identified.")
                 report_sections.append("")
                 
             footer = main_page_analysis.get('footer', [])
             if footer:
+                footer_str = ", ".join(f for f in footer if f)
                 report_sections.append(f"### Footer Elements")
-                report_sections.append(", ".join(f for f in footer if f) if any(f for f in footer) else "No distinct footer elements identified.")
+                report_sections.append(footer_str if footer_str else "No distinct footer elements identified.")
                 report_sections.append("")
         else:
             report_sections.append("## Main Page Analysis")
@@ -304,7 +496,7 @@ class LLMAnalysisEndProcessor:
             report_sections.append("")
             
         if other_pages:
-            report_sections.append("## Subpage Analysis")
+            report_sections.append("## Subpage Analysis Overview")
             report_sections.append(f"Number of additional pages analyzed: {len(other_pages)}")
             report_sections.append("")
             
@@ -314,129 +506,107 @@ class LLMAnalysisEndProcessor:
             all_subpage_target_audiences = []
             all_subpage_tones = []
             
+            report_sections.append("### Individual Subpage Highlights")
             for page_key, page_analysis_item in other_pages.items():
                 page_url_display = page_analysis_item.get('url', page_key)
-                report_sections.append(f"### {page_url_display}")
+                report_sections.append(f"#### Page: {page_url_display}")
                 
                 if page_analysis_item.get("error"):
-                    report_sections.append(f"**Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
+                    report_sections.append(f"  **Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
                 
-                # Content summary first
                 content_summary = page_analysis_item.get('content_summary', '')
-                if content_summary:
-                    report_sections.append(content_summary)
-                    report_sections.append("")
+                if content_summary: report_sections.append(f"  **Summary**: {content_summary}")
                 
-                # New subpage sections - organized better
                 subpage_overall_tone = page_analysis_item.get('overall_tone', '')
                 if subpage_overall_tone:
-                    report_sections.append(f"**Overall Tone**: {subpage_overall_tone}")
+                    report_sections.append(f"  **Overall Tone**: {subpage_overall_tone}")
                     all_subpage_tones.append(subpage_overall_tone)
                 
                 subpage_target_audience = page_analysis_item.get('target_audience', [])
                 if subpage_target_audience:
-                    report_sections.append(f"**Target Audience**: {', '.join(subpage_target_audience)}")
+                    audiences_str = ", ".join(ta for ta in subpage_target_audience if ta)
+                    if audiences_str: report_sections.append(f"  **Target Audience**: {audiences_str}")
                     all_subpage_target_audiences.extend(ta for ta in subpage_target_audience if ta)
 
                 subpage_topic_categories = page_analysis_item.get('topic_categories', [])
                 if subpage_topic_categories:
-                    report_sections.append(f"**Topic Categories**: {', '.join(subpage_topic_categories)}")
+                    categories_str = ", ".join(tc for tc in subpage_topic_categories if tc)
+                    if categories_str: report_sections.append(f"  **Topic Categories**: {categories_str}")
                     all_subpage_topic_categories.extend(tc for tc in subpage_topic_categories if tc)
                 
                 keywords = page_analysis_item.get('keywords', [])
                 if keywords:
-                    report_sections.append(f"**Keywords**: {', '.join(k for k in keywords if k)}")
+                    keywords_str = ", ".join(k for k in keywords if k)
+                    if keywords_str: report_sections.append(f"  **Keywords**: {keywords_str}")
                     all_subpage_keywords.extend(k for k in keywords if k)
                     
                 seo_keywords = page_analysis_item.get('suggested_keywords_for_seo', [])
                 if seo_keywords:
-                    report_sections.append(f"**SEO Keyword Suggestions**: {', '.join(sk for sk in seo_keywords if sk)}")
+                    seo_keywords_str = ", ".join(sk for sk in seo_keywords if sk)
+                    if seo_keywords_str: report_sections.append(f"  **SEO Keyword Suggestions**: {seo_keywords_str}")
                     all_subpage_seo_keywords.extend(sk for sk in seo_keywords if sk)
-
                 report_sections.append("")
             
-            # Site-wide analysis sections
             if all_subpage_keywords:
-                keyword_count = {}
-                for keyword_item in all_subpage_keywords:
-                    keyword_count[keyword_item] = keyword_count.get(keyword_item, 0) + 1
+                keyword_count = {k: all_subpage_keywords.count(k) for k in set(all_subpage_keywords) if k}
                 sorted_keywords = sorted(keyword_count.items(), key=lambda x: x[1], reverse=True)
-                report_sections.append("## Site-Wide Subpage Keyword Analysis")
-                report_sections.append("Most common keywords across analyzed subpages (top 15):")
-                for kw, count in sorted_keywords[:15]:
-                    report_sections.append(f"- {kw} (found in {count} subpages)")
-                report_sections.append("")
+                if sorted_keywords:
+                    report_sections.append("## Site-Wide Subpage Keyword Analysis")
+                    report_sections.append("Most common keywords across analyzed subpages (top 15):")
+                    for kw, count in sorted_keywords[:15]: report_sections.append(f"- {kw} (found in {count} subpages)")
+                    report_sections.append("")
                 
             if all_subpage_seo_keywords:
-                seo_keyword_count = {}
-                for keyword_item in all_subpage_seo_keywords:
-                    seo_keyword_count[keyword_item] = seo_keyword_count.get(keyword_item, 0) + 1
+                seo_keyword_count = {k: all_subpage_seo_keywords.count(k) for k in set(all_subpage_seo_keywords) if k}
                 sorted_seo_keywords = sorted(seo_keyword_count.items(), key=lambda x: x[1], reverse=True)
-                report_sections.append("## Site-Wide Subpage SEO Suggestions")
-                report_sections.append("Most frequently suggested SEO keywords for subpages (top 10):")
-                for kw, count in sorted_seo_keywords[:10]:
-                    report_sections.append(f"- {kw} (suggested for {count} subpages)")
-                report_sections.append("")
+                if sorted_seo_keywords:
+                    report_sections.append("## Site-Wide Subpage SEO Suggestions")
+                    report_sections.append("Most frequently suggested SEO keywords for subpages (top 10):")
+                    for kw, count in sorted_seo_keywords[:10]: report_sections.append(f"- {kw} (suggested for {count} subpages)")
+                    report_sections.append("")
             
-            # New site-wide analysis sections for the new fields
             if all_subpage_topic_categories:
-                topic_category_count = {}
-                for tc_item in all_subpage_topic_categories:
-                    topic_category_count[tc_item] = topic_category_count.get(tc_item, 0) + 1
+                topic_category_count = {k: all_subpage_topic_categories.count(k) for k in set(all_subpage_topic_categories) if k}
                 sorted_topic_categories = sorted(topic_category_count.items(), key=lambda x: x[1], reverse=True)
-                report_sections.append("## Site-Wide Topic Categories Analysis")
-                report_sections.append("Most common topic categories across analyzed subpages (top 10):")
-                for tc, count in sorted_topic_categories[:10]:
-                    report_sections.append(f"- {tc} (found in {count} subpages)")
-                report_sections.append("")
+                if sorted_topic_categories:
+                    report_sections.append("## Site-Wide Topic Categories Analysis (Subpages)")
+                    report_sections.append("Most common topic categories across analyzed subpages (top 10):")
+                    for tc, count in sorted_topic_categories[:10]: report_sections.append(f"- {tc} (found in {count} subpages)")
+                    report_sections.append("")
 
             if all_subpage_target_audiences:
-                target_audience_count = {}
-                for ta_item in all_subpage_target_audiences:
-                    target_audience_count[ta_item] = target_audience_count.get(ta_item, 0) + 1
+                target_audience_count = {k: all_subpage_target_audiences.count(k) for k in set(all_subpage_target_audiences) if k}
                 sorted_target_audiences = sorted(target_audience_count.items(), key=lambda x: x[1], reverse=True)
-                report_sections.append("## Site-Wide Target Audience Analysis")
-                report_sections.append("Most common target audiences across analyzed subpages (top 8):")
-                for ta, count in sorted_target_audiences[:8]:
-                    report_sections.append(f"- {ta} (identified in {count} subpages)")
-                report_sections.append("")
+                if sorted_target_audiences:
+                    report_sections.append("## Site-Wide Target Audience Analysis (Subpages)")
+                    report_sections.append("Most common target audiences across analyzed subpages (top 8):")
+                    for ta, count in sorted_target_audiences[:8]: report_sections.append(f"- {ta} (identified in {count} subpages)")
+                    report_sections.append("")
 
             if all_subpage_tones:
-                tone_count = {}
-                for tone_item in all_subpage_tones:
-                    tone_count[tone_item] = tone_count.get(tone_item, 0) + 1
+                tone_count = {k: all_subpage_tones.count(k) for k in set(all_subpage_tones) if k}
                 sorted_tones = sorted(tone_count.items(), key=lambda x: x[1], reverse=True)
-                report_sections.append("## Site-Wide Content Tone Analysis")
-                report_sections.append("Most common content tones across analyzed subpages:")
-                for tone, count in sorted_tones:
-                    report_sections.append(f"- {tone} (found in {count} subpages)")
-                report_sections.append("")
+                if sorted_tones:
+                    report_sections.append("## Site-Wide Content Tone Analysis (Subpages)")
+                    report_sections.append("Most common content tones across analyzed subpages:")
+                    for tone, count in sorted_tones: report_sections.append(f"- {tone} (found in {count} subpages)")
+                    report_sections.append("")
 
-        # Enhanced recommendations section
-        report_sections.append("## Strategic Recommendations")
-        report_sections.append("### SEO & Content Optimization")
-        report_sections.append("1. Focus on creating high-quality, relevant content aligned with your primary and suggested SEO keywords identified for both main and subpages.")
-        report_sections.append("2. Ensure consistent branding and navigation (header/footer elements) across the site, as identified in the main page analysis. Verify these elements are user-friendly and effective on all page types.")
-        report_sections.append("3. Optimize on-page SEO elements (title tags, meta descriptions, heading structure) for all important pages, incorporating identified keywords naturally and contextually.")
-        report_sections.append("4. Strengthen internal linking between relevant pages to distribute link equity and improve site navigation for users and search engines. Link from authoritative pages to those needing a boost.")
-        report_sections.append("5. Regularly review and update content to maintain accuracy and relevance. Consider creating new content clusters or cornerstone pieces targeting high-potential suggested SEO keywords.")
+        report_sections.append("## AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS")
+        try:
+            ai_recommendations_text = await self._generate_ai_recommendations(llm_analysis_all)
+            report_sections.append(ai_recommendations_text)
+        except Exception as ai_exc:
+            self.logger.error(f"Failed to generate or append AI recommendations: {ai_exc}", exc_info=True)
+            report_sections.append("An error occurred while generating AI-powered recommendations. Please check logs.")
         report_sections.append("")
         
-        # Enhanced recommendations based on new analysis fields
-        report_sections.append("### Content Strategy & Audience Alignment")
-        if main_page_analysis.get('overall_tone') or any(page.get('overall_tone') for page in other_pages.values()):
-            report_sections.append("6. **Content Tone Consistency**: Review the identified content tones across your site. Ensure consistency with your brand voice and adjust where necessary to maintain a cohesive user experience. Consider if the tone appropriately matches your target audience's expectations.")
-        
-        if main_page_analysis.get('target_audience') or any(page.get('target_audience') for page in other_pages.values()):
-            report_sections.append("7. **Audience-Centric Content**: Leverage the identified target audiences to refine your content strategy. Ensure that language, examples, and messaging are tailored to resonate with these specific groups. Consider creating dedicated landing pages or content sections for different audience segments.")
-        
-        if main_page_analysis.get('topic_categories') or any(page.get('topic_categories') for page in other_pages.values()):
-            report_sections.append("8. **Topic Authority Building**: Use the identified topic categories to develop comprehensive content hubs. Create in-depth, authoritative content around each major category to establish topical expertise and improve search engine authority in these areas.")
-        
-        report_sections.append("")
-        report_sections.append("### Performance Monitoring")
-        report_sections.append("9. Monitor key SEO metrics (rankings, organic traffic, user engagement, conversion rates for target keywords) to assess the impact of optimizations and identify further opportunities for growth.")
-        report_sections.append("10. Track audience engagement metrics to validate that your content effectively reaches and resonates with the identified target audiences. Adjust content strategy based on performance data.")
+        report_sections.append("## Performance Monitoring & Next Steps")
+        report_sections.append("1. **Implement Recommendations**: Prioritize and implement the strategic and SEO recommendations provided. Start with high-priority, easy-to-implement items for quick wins.")
+        report_sections.append("2. **Monitor Key Metrics**: Track rankings for target keywords, organic traffic, user engagement (bounce rate, time on page), and conversion rates. Use tools like Google Analytics and Google Search Console.")
+        report_sections.append("3. **Audience Engagement**: Validate that content resonates with identified target audiences. Monitor social shares, comments, and feedback. Adjust content strategy based on performance data.")
+        report_sections.append("4. **Regular Audits**: Conduct periodic SEO and content audits (e.g., quarterly or bi-annually) to identify new opportunities and ensure the site remains optimized.")
+        report_sections.append("5. **Stay Updated**: SEO is dynamic. Keep abreast of search engine algorithm updates and industry best practices.")
         
         return "\n".join(report_sections)
 
@@ -472,6 +642,7 @@ class LLMAnalysisEndProcessor:
             normalized_url_from_llm_blob = url_from_llm_blob_original.rstrip('/')
             is_valid_and_matches_main_url = (
                 initial_llm_analysis_from_blob and
+                initial_llm_analysis_from_blob.get('keywords') is not None and # Check a key field for structure
                 normalized_url_from_llm_blob == normalized_db_main_url
             )
             
@@ -483,110 +654,89 @@ class LLMAnalysisEndProcessor:
                     "content_summary": initial_llm_analysis_from_blob.get("content_summary", ""),
                     "other_information_and_contacts": initial_llm_analysis_from_blob.get("other_information_and_contacts", []),
                     "suggested_keywords_for_seo": initial_llm_analysis_from_blob.get("suggested_keywords_for_seo", []),
-                    "overall_tone": initial_llm_analysis_from_blob.get("overall_tone", ""),  # New field
-                    "target_audience": initial_llm_analysis_from_blob.get("target_audience", []),  # New field
-                    "topic_categories": initial_llm_analysis_from_blob.get("topic_categories", []),  # New field
+                    "overall_tone": initial_llm_analysis_from_blob.get("overall_tone", ""),
+                    "target_audience": initial_llm_analysis_from_blob.get("target_audience", []),
+                    "topic_categories": initial_llm_analysis_from_blob.get("topic_categories", []),
                     "header": initial_llm_analysis_from_blob.get("header", []),
                     "footer": initial_llm_analysis_from_blob.get("footer", [])
                 }
                 if initial_llm_analysis_from_blob.get("error"):
                      llm_analysis_all['main_page']['error'] = initial_llm_analysis_from_blob.get("error")
                      self.logger.warning(f"Pre-existing 'llm_analysis' for main page {normalized_db_main_url} contains an error field: {llm_analysis_all['main_page']['error']}")
-                if not llm_analysis_all['main_page'].get('header') and not llm_analysis_all['main_page'].get('footer') and not llm_analysis_all['main_page'].get('error'):
-                    self.logger.warning(f"Pre-existing 'llm_analysis' for main page {normalized_db_main_url} is valid but missing header/footer snippets.")
             else:
-                error_reason = "Pre-computed LLM analysis for main page was missing, for a different URL, or structurally absent."
+                error_reason = "Pre-computed LLM analysis for main page was missing, for a different URL, or structurally inadequate."
                 if not initial_llm_analysis_from_blob:
                     error_reason = "Pre-computed LLM analysis (llm_analysis field) was not found in report_json_blob."
                 elif normalized_url_from_llm_blob != normalized_db_main_url:
                     error_reason = (f"Pre-computed LLM analysis URL ('{url_from_llm_blob_original}') "
                                     f"does not match main report URL ('{main_report_url_original}').")
-                self.logger.error(
+                self.logger.warning(
                     f"{error_reason} (Report ID: {report_id}). "
                     "Main page LLM data in 'llm_analysis_all' will be an error placeholder. "
                     "It will NOT be re-processed from page_statistics by this processor."
                 )
                 llm_analysis_all['main_page'] = {
-                    "url": main_report_url_original,
-                    "error": error_reason,
-                    "keywords": [], 
-                    "content_summary": "", 
-                    "other_information_and_contacts": [],
-                    "suggested_keywords_for_seo": [], 
-                    "overall_tone": "",  # New field
-                    "target_audience": [],  # New field
-                    "topic_categories": [],  # New field
-                    "header": [], 
-                    "footer": []
+                    "url": main_report_url_original, "error": error_reason,
+                    "keywords": [], "content_summary": "", "other_information_and_contacts": [],
+                    "suggested_keywords_for_seo": [], "overall_tone": "", "target_audience": [],
+                    "topic_categories": [], "header": [], "footer": []
                 }
             
-            # Process subpages from page_statistics
             pages_to_analyze_data = []
+            subpages_llm_analysis = {} # Store subpage results temporarily
             for page_url_key, page_content_item in page_statistics.items():
                 normalized_page_url_key = page_url_key.rstrip('/')
                 if normalized_page_url_key == normalized_db_main_url:
-                    self.logger.info(f"Skipping page_statistics entry '{page_url_key}' (normalized to '{normalized_page_url_key}') as it matches the normalized main DB URL '{normalized_db_main_url}'. (Report ID: {report_id})")
+                    self.logger.info(f"Skipping page_statistics entry '{page_url_key}' as it matches the main DB URL. (Report ID: {report_id})")
                     continue
                 if not page_url_key:
                     self.logger.warning(f"Skipping page_statistics entry with empty/null URL key (Report ID: {report_id})")
                     continue
                 if not page_content_item or not (page_content_item.get('cleaned_text') or page_content_item.get('headings')):
-                    self.logger.warning(f"Skipping subpage {page_url_key} due to missing cleaned_text or headings. (Report ID: {report_id})")
-                    llm_analysis_all[page_url_key] = {
-                        "url": page_url_key, 
-                        "error": "Content data (cleaned_text/headings) missing in page_statistics.",
-                        "keywords": [], 
-                        "content_summary": "", 
-                        "other_information_and_contacts": [], 
-                        "suggested_keywords_for_seo": [],
-                        "overall_tone": "",  # New field
-                        "target_audience": [],  # New field
-                        "topic_categories": []  # New field
+                    self.logger.warning(f"Skipping subpage {page_url_key} due to missing content data. (Report ID: {report_id})")
+                    subpages_llm_analysis[page_url_key] = {
+                        "url": page_url_key, "error": "Content data missing in page_statistics.",
+                        "keywords": [], "content_summary": "", "other_information_and_contacts": [],
+                        "suggested_keywords_for_seo": [], "overall_tone": "", "target_audience": [], "topic_categories": []
                     }
                     continue
                 pages_to_analyze_data.append((page_url_key, page_content_item))
             
             if not pages_to_analyze_data:
-                self.logger.info(f"No additional subpages found in page_statistics to analyze for report ID {report_id} (after potentially skipping main page).")
+                self.logger.info(f"No additional subpages in page_statistics to analyze for report ID {report_id}.")
             else:
                 self.logger.info(f"Found {len(pages_to_analyze_data)} subpages from page_statistics to analyze for report ID {report_id}")
-                batch_size = 5
-                max_retries = 3
-                delay_between_batches = 2
+                batch_size = 5; max_retries = 3; delay_between_batches = 2
                 
                 for i in range(0, len(pages_to_analyze_data), batch_size):
                     batch = pages_to_analyze_data[i:i+batch_size]
                     batch_tasks = []
                     
                     async def analyze_with_retry(p_url, p_data):
+                        last_error_result = None
                         for retry_attempt in range(max_retries):
                             analysis_result = await self._analyze_single_page(p_url, p_data, is_main_page=False)
-                            if "error" not in analysis_result or not analysis_result["error"]:
+                            last_error_result = analysis_result # Keep track of last result
+                            if "error" not in analysis_result or not analysis_result.get("error"):
                                 return analysis_result
                             self.logger.warning(f"Error analyzing page {p_url} (attempt {retry_attempt+1}/{max_retries}): {analysis_result.get('error')}")
-                            if retry_attempt < max_retries - 1:
-                                await asyncio.sleep(1 + retry_attempt)
-                            else:
-                                self.logger.error(f"Failed to analyze page {p_url} after {max_retries} attempts. Final error: {analysis_result.get('error')}")
-                                return analysis_result
-                        return None
-                    
-                    for p_url_item, p_data_item in batch:
-                        batch_tasks.append(analyze_with_retry(p_url_item, p_data_item))
-                    
+                            if retry_attempt < max_retries - 1: await asyncio.sleep(1 + retry_attempt)
+                        self.logger.error(f"Failed to analyze page {p_url} after {max_retries} attempts. Final error: {last_error_result.get('error') if last_error_result else 'Unknown'}")
+                        return last_error_result # Return the result from the last attempt (will contain error)
+
+                    for p_url_item, p_data_item in batch: batch_tasks.append(analyze_with_retry(p_url_item, p_data_item))
                     results_for_batch = await asyncio.gather(*batch_tasks)
+
                     for result in results_for_batch:
-                        if result and result.get("url"):
-                            llm_analysis_all[result["url"]] = result
-                        elif result:
-                            self.logger.warning(f"Malformed or URL-less analysis result in batch for report {report_id}: {str(result)[:200]}")
+                        if result and result.get("url"): subpages_llm_analysis[result["url"]] = result
+                        elif result: self.logger.warning(f"Malformed/URL-less analysis result in batch for report {report_id}: {str(result)[:200]}")
                     
                     self.logger.info(f"Processed batch {i//batch_size + 1}/{(len(pages_to_analyze_data) + batch_size - 1)//batch_size} for report {report_id}")
-                    if i + batch_size < len(pages_to_analyze_data): 
-                        await asyncio.sleep(delay_between_batches)
+                    if i + batch_size < len(pages_to_analyze_data): await asyncio.sleep(delay_between_batches)
+            
+            llm_analysis_all.update(subpages_llm_analysis) # Add processed subpages to the main dict
                         
-            self.logger.info(f"Report ID {report_id}: After all page analyses, llm_analysis_all contains {len(llm_analysis_all)} entries. Keys: {list(llm_analysis_all.keys())}")
-            self.logger.debug(f"Report ID {report_id}: llm_analysis_all content preview: {json.dumps({k: (v.get('error') if v.get('error') else 'OK') for k, v in llm_analysis_all.items()}, indent=2)}")
+            self.logger.info(f"Report ID {report_id}: llm_analysis_all contains {len(llm_analysis_all)} entries. Keys: {list(llm_analysis_all.keys())}")
             
             comprehensive_text_report = await self._generate_comprehensive_text_report(llm_analysis_all)
             self.logger.info(f"Report ID {report_id}: Generated comprehensive text report. Length: {len(comprehensive_text_report)} chars.")
@@ -599,10 +749,20 @@ class LLMAnalysisEndProcessor:
                 'text_report': comprehensive_text_report,
                 'llm_analysis_all_error': None
             }
-            if llm_analysis_all.get('main_page', {}).get('error'):
-                update_data['llm_analysis_all_error'] = f"Main page LLM data error: {llm_analysis_all['main_page']['error'][:350]}"
             
-            self.logger.info(f"Report ID {report_id}: Preparing to update Supabase. update_data keys: {list(update_data.keys())}")
+            error_messages = []
+            if llm_analysis_all.get('main_page', {}).get('error'):
+                error_messages.append(f"Main page: {llm_analysis_all['main_page']['error'][:150]}")
+            for page_url, page_data in subpages_llm_analysis.items():
+                if page_data.get('error'):
+                    error_messages.append(f"Subpage ({page_url[:50]}...): {page_data['error'][:100]}")
+                    if len(error_messages) > 3: error_messages.append("...and more subpage errors."); break
+            
+            if error_messages:
+                update_data['llm_analysis_all_error'] = "; ".join(error_messages)[:450]
+                self.logger.warning(f"Report ID {report_id} has errors in LLM analysis: {update_data['llm_analysis_all_error']}")
+            
+            self.logger.info(f"Report ID {report_id}: Preparing to update Supabase.")
             update_response = await asyncio.to_thread(
                 self.supabase.table('seo_reports').update(update_data).eq('id', report_id).execute
             )
@@ -610,8 +770,16 @@ class LLMAnalysisEndProcessor:
                 self.logger.error(f"Failed to update report ID {report_id} in Supabase: {update_response.error}")
                 await self._mark_report_as_error(report_id, f"Supabase update failed: {str(update_response.error)[:400]}")
                 return False
-            
-            self.logger.info(f"Successfully processed and updated report ID {report_id} with all page analyses and comprehensive text_report.")
+            #if not (200 <= update_response.status_code < 300):
+             #    self.logger.error(f"Failed to update report ID {report_id} in Supabase. Status: {update_response.status_code}, Response: {update_response.data}")
+            #     await self._mark_report_as_error(report_id, f"Supabase update failed. Status: {update_response.status_code}, Details: {str(update_response.data)[:350]}")
+              #   return False
+            if hasattr(update_response, 'error') and update_response.error:
+                self.logger.error(f"Failed to update report ID {report_id} in Supabase: {update_response.error}")
+                await self._mark_report_as_error(report_id, f"Supabase update failed: {str(update_response.error)[:400]}")
+                return False  
+
+            self.logger.info(f"Successfully processed and updated report ID {report_id}.")
             return True
         except Exception as e:
             self.logger.error(f"Critical error processing report ID {report_id}: {e}", exc_info=True)
@@ -625,7 +793,7 @@ class LLMAnalysisEndProcessor:
                 self.supabase.table('seo_reports').update({
                     'llm_analysis_all_completed': False,
                     'llm_analysis_all_timestamp': error_timestamp,
-                    'llm_analysis_all_error': error_message
+                    'llm_analysis_all_error': error_message[:500] 
                 }).eq('id', report_id).execute
             )
             self.logger.info(f"Marked report ID {report_id} with error: {error_message}")
@@ -641,6 +809,7 @@ class LLMAnalysisEndProcessor:
                     .is_('llm_analysis_all_error', 'null')
                     .not_('report', 'is', 'null')
                     .limit(limit)
+                    .order('id', desc=False) 
                     .execute
             )
             if hasattr(pending_reports_response, 'error') and pending_reports_response.error:
@@ -662,12 +831,11 @@ class LLMAnalysisEndProcessor:
                 if success:
                     self.logger.info(f"Successfully completed llm_analysis_all for report ID {report_id}")
                 else:
-                    self.logger.error(f"Failed to complete llm_analysis_all for report ID {report_id}. Check previous logs and DB for error details.")
+                    self.logger.error(f"Failed to complete llm_analysis_all for report ID {report_id}. See logs/DB for errors.")
         except Exception as e:
-            self.logger.error(f"General error in _process_pending_reports scheduler: {e}", exc_info=True)
+            self.logger.error(f"General error in _process_pending_reports: {e}", exc_info=True)
 
     def _run_async_wrapper(self, report_ids_str_list):
-        """Internal wrapper to run the async 'run' method in a new event loop."""
         try:
             self.logger.info(f"Background thread's event loop started for report IDs: {report_ids_str_list}.")
             asyncio.run(self.run(report_ids=report_ids_str_list, process_pending=False))
@@ -676,14 +844,15 @@ class LLMAnalysisEndProcessor:
             self.logger.error(f"Exception in threaded _run_async_wrapper for report_ids {report_ids_str_list}: {e}", exc_info=True)
 
     def schedule_run_in_background(self, report_ids):
-        """Schedules the .run() method to execute in a new background thread
-           with its own asyncio event loop."""
-        if not isinstance(report_ids, list):
-            report_ids_list = [report_ids]
-        else:
-            report_ids_list = report_ids
-
-        report_ids_str_list = [str(rid) for rid in report_ids_list]
+        if not isinstance(report_ids, list): report_ids_list = [report_ids]
+        else: report_ids_list = report_ids
+        report_ids_str_list = []
+        for rid in report_ids_list:
+            try: report_ids_str_list.append(str(int(rid)))
+            except ValueError: self.logger.warning(f"Invalid report ID '{rid}' for background scheduling. Skipping.")
+        if not report_ids_str_list:
+            self.logger.warning("No valid report IDs to schedule for background processing.")
+            return
 
         self.logger.info(f"Scheduling LLMAnalysisEndProcessor.run for report IDs {report_ids_str_list} in a background thread.")
         thread = threading.Thread(target=self._run_async_wrapper, args=(report_ids_str_list,))
@@ -692,40 +861,37 @@ class LLMAnalysisEndProcessor:
         self.logger.info(f"Background thread for report IDs {report_ids_str_list} has been started.")
 
     async def run(self, report_ids=None, process_pending=False, batch_size=10):
-        """Main entry point for the processor's operations."""
         if not self.supabase or not self.model:
-            self.logger.error("Processor not fully initialized (Supabase client or Gemini model missing). Aborting run.")
+            self.logger.error("Processor not fully initialized. Aborting run.")
             return
 
         if report_ids:
-            if not isinstance(report_ids, list):
-                report_ids = [report_ids]
-            self.logger.info(f"Processing specific report IDs: {report_ids}")
-            for report_id_input in report_ids:
-                try:
-                    parsed_id = int(report_id_input)
-                    await self._process_seo_report(parsed_id)
-                except ValueError:
-                    self.logger.warning(f"Invalid report_id format: '{report_id_input}'. Must be an integer. Skipping.")
-                except Exception as e:
-                    self.logger.error(f"Unexpected error processing report_id '{report_id_input}': {e}", exc_info=True)
-                    try:
-                        await self._mark_report_as_error(int(report_id_input), f"Outer run error: {str(e)[:450]}")
-                    except ValueError:
-                        pass
-
+            if not isinstance(report_ids, list): report_ids = [report_ids]
+            valid_ids_to_process = []
+            for rid_input in report_ids:
+                try: valid_ids_to_process.append(int(rid_input))
+                except ValueError: self.logger.warning(f"Invalid report_id format: '{rid_input}'. Skipping.")
+            
+            if not valid_ids_to_process: self.logger.info("No valid report IDs provided.")
+            else:
+                self.logger.info(f"Processing specific report IDs: {valid_ids_to_process}")
+                for pid in valid_ids_to_process:
+                    try: await self._process_seo_report(pid)
+                    except Exception as e:
+                        self.logger.error(f"Error processing report_id '{pid}': {e}", exc_info=True)
+                        await self._mark_report_as_error(pid, f"Outer run error: {str(e)[:450]}")
         elif process_pending:
             self.logger.info(f"Processing pending reports, batch limit: {batch_size}")
             await self._process_pending_reports(limit=batch_size)
         else:
-            self.logger.info(f"LLMAnalysisEndProcessor.run called with no specific report IDs and process_pending=False. No action taken by default.")
+            self.logger.info(f"LLMAnalysisEndProcessor.run called with no specific actions requested.")
         
-        self.logger.info(f"LLMAnalysisEndProcessor run method finished for report_ids: {report_ids if report_ids else 'pending processing'}.")
+        self.logger.info(f"LLMAnalysisEndProcessor run method finished operation.")
 
 if __name__ == '__main__':
     async def main_test_runner():
         logging.basicConfig(
-            level=logging.INFO, 
+            level=logging.DEBUG, 
             format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - Line %(lineno)d - %(message)s',
             handlers=[logging.StreamHandler()]
         )
@@ -735,14 +901,25 @@ if __name__ == '__main__':
         processor = None
         try:
             processor = LLMAnalysisEndProcessor()
-            await processor.run(report_ids=[278])
-            logger.info("Standalone test run finished successfully.")
+            
+            # Test processing specific report IDs (replace with valid IDs from your DB)
+            # await processor.run(report_ids=[278, "invalid_id", 279]) 
+            
+            # Test processing pending reports
+            await processor.run(process_pending=True, batch_size=2)
+
+            # Test scheduling in background (main_test_runner might finish before thread does)
+            # processor.schedule_run_in_background(report_ids=[280])
+            # logger.info("Scheduled background processing. Main test might exit before completion.")
+            # await asyncio.sleep(20) # Give some time for thread to work
+
+            logger.info("Standalone test run operations initiated.")
         except ValueError as ve_init:
             logger.error(f"LLMAnalysisEndProcessor initialization failed: {ve_init}", exc_info=True)
         except Exception as e:
             logger.error(f"Error during standalone test run: {e}", exc_info=True)
         finally:
              if processor:
-                 pass
+                 logger.info("Processor instance existed.")
     
     asyncio.run(main_test_runner())
