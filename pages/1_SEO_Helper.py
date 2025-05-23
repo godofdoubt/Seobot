@@ -7,7 +7,7 @@ st.set_page_config(
     page_title="SEO Helper",
     page_icon="🚀",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 # Hide Streamlit's default "/pages" sidebar nav
 hide_pages_nav = """

@@ -205,7 +205,7 @@ def run_main_app():
         page_title="SE10 Web Services Beta",
         page_icon="👋",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="collapsed",
         menu_items={
             'Get Help': 'https://www.seo1.com/help',
             'Report a bug': "https://www.se10.com/bug",
