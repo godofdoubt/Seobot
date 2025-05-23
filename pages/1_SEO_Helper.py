@@ -63,11 +63,43 @@ async def main_seo_helper(): # Renamed to avoid conflict if main.py's main is im
     # Set current page to seo and update history
     if st.session_state.current_page != "seo":
         update_page_history("seo") # This will set the welcome message or restore history
+     # --- START: Update for SEO Helper Welcome Message ---
+    # This logic ensures the correct welcome message for the SEO Helper page,
+    # especially after a URL is processed within this page or navigating with existing analysis.
+    # It mirrors the fix implemented in 2_Article_Writer.py
+    lang = st.session_state.language # Ensure lang is current
+    
+    target_welcome_message_seo = ""
+    if st.session_state.get("url") and st.session_state.get("text_report"):
+        # Uses the language key "welcome_seo_helper_analyzed" from shared_functions
+        target_welcome_message_seo = language_manager.get_text(
+            "welcome_seo_helper_analyzed",
+            lang,
+            st.session_state.url, # Pass URL as an argument
+            fallback=f"Welcome to the SEO Helper. Analysis for **{st.session_state.url}** is available. How can I assist you further?"
+        )
+    else:
+        # Uses the language key "welcome_authenticated" from shared_functions
+        target_welcome_message_seo = language_manager.get_text(
+            "welcome_authenticated", 
+            lang,
+            st.session_state.username, # Pass username
+            fallback=f"Welcome, {st.session_state.username}! Enter a URL to analyze or ask an SEO question."
+        )
+
+    if "messages" not in st.session_state or not st.session_state.messages:
+        st.session_state.messages = [{"role": "assistant", "content": target_welcome_message_seo}]
+    elif st.session_state.messages and st.session_state.messages[0].get("role") == "assistant":
+        # Update the first message if it's an assistant message and not the current target welcome message.
+        if st.session_state.messages[0].get("content") != target_welcome_message_seo:
+            st.session_state.messages[0]["content"] = target_welcome_message_seo
+    # --- END: Update for SEO Helper Welcome Message ---    
     
     check_auth() # Authentication check
     # Add after checking authentication but before displaying the chat interface
     if st.session_state.analysis_in_progress and st.session_state.url_being_analyzed:
         st.info(language_manager.get_text("analysis_in_progress_for", lang, st.session_state.url_being_analyzed))
+
     
     # Optional: Add a refresh button to check analysis progress
     #if st.button(language_manager.get_text("refresh_analysis_status", lang)):
