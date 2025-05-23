@@ -184,7 +184,7 @@ class LLMAnalysisEndProcessor:
         * This typically includes copyright notices, links to privacy policy, terms of service, sitemap, contact information repeated in the footer, or social media links.
         * Provide these as a list of strings. Each string can be a distinct link text or a phrase from the footer.
         * If no clear footer text is discernible, return an empty list [].
-        * Example: ["© 2024 Company Name", "Privacy Policy", "Terms of Use", "Contact Us", "Follow us on Twitter"]"""
+        * Example: ["© 2024 Company Name", "Privacy Policy", "Terms of Use", "Contact Us", "Follow us on Twitter" , "Bizi Arayın : (555) 123-4567"]"""
             prompt += f"""
     {detailed_instructions_header}
     {detailed_instructions_footer}"""
@@ -287,7 +287,8 @@ class LLMAnalysisEndProcessor:
             
             prompt = f"""
 Based on the comprehensive SEO and content analysis of this website, provide strategic recommendations and actionable SEO optimization suggestions.
-
+Language: Turkish if the content is primarily in Turkish, otherwise English.
+The analysis includes:
 WEBSITE ANALYSIS DATA:
 {json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
 
@@ -324,8 +325,8 @@ REQUIREMENTS:
 4. Base all recommendations on the actual website data provided. Be specific and actionable, not generic.
 5. Consider the identified target audiences, topic categories, and content tones.
 6. Address any content gaps or opportunities you identify from the summaries and keyword data.
-7. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish. Otherwise, respond in English.
-8. Ensure the language of your response matches the predominant language of the website content.
+7. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish.
+
 
 Output ONLY the JSON object with no additional text or formatting.
 """
@@ -428,9 +429,9 @@ Output ONLY the JSON object with no additional text or formatting.
                 report_sections.append("")
 
             target_audience = main_page_analysis.get('target_audience', [])
-            if target_audience: # Ensure list is not empty
+            if target_audience: 
                 audiences_str = ", ".join(ta for ta in target_audience if ta)
-                if audiences_str: # Ensure result is not empty string
+                if audiences_str: 
                     report_sections.append(f"### Identified Target Audience")
                     report_sections.append(audiences_str)
                     report_sections.append("")
@@ -469,9 +470,9 @@ Output ONLY the JSON object with no additional text or formatting.
             if contacts:
                 report_sections.append(f"### Contact Information & Key Mentions")
                 has_contacts = False
-                for contact in contacts:
-                    if contact: 
-                        report_sections.append(f"- {contact}")
+                for contact_item in contacts: # Renamed variable to avoid conflict
+                    if contact_item: 
+                        report_sections.append(f"- {contact_item}")
                         has_contacts = True
                 if not has_contacts:
                     report_sections.append("No specific contact information or key mentions identified.")
@@ -486,7 +487,7 @@ Output ONLY the JSON object with no additional text or formatting.
                 
             footer = main_page_analysis.get('footer', [])
             if footer:
-                footer_str = ", ".join(f for f in footer if f)
+                footer_str = ", ".join(f_item for f_item in footer if f_item) # Renamed variable
                 report_sections.append(f"### Footer Elements")
                 report_sections.append(footer_str if footer_str else "No distinct footer elements identified.")
                 report_sections.append("")
@@ -514,8 +515,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if page_analysis_item.get("error"):
                     report_sections.append(f"  **Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
                 
-                content_summary = page_analysis_item.get('content_summary', '')
-                if content_summary: report_sections.append(f"  **Summary**: {content_summary}")
+                content_summary_sub = page_analysis_item.get('content_summary', '') # Renamed variable
+                if content_summary_sub: report_sections.append(f"  **Summary**: {content_summary_sub}")
                 
                 subpage_overall_tone = page_analysis_item.get('overall_tone', '')
                 if subpage_overall_tone:
@@ -524,28 +525,41 @@ Output ONLY the JSON object with no additional text or formatting.
                 
                 subpage_target_audience = page_analysis_item.get('target_audience', [])
                 if subpage_target_audience:
-                    audiences_str = ", ".join(ta for ta in subpage_target_audience if ta)
-                    if audiences_str: report_sections.append(f"  **Target Audience**: {audiences_str}")
+                    audiences_str_sub = ", ".join(ta for ta in subpage_target_audience if ta) # Renamed
+                    if audiences_str_sub: report_sections.append(f"  **Target Audience**: {audiences_str_sub}")
                     all_subpage_target_audiences.extend(ta for ta in subpage_target_audience if ta)
 
                 subpage_topic_categories = page_analysis_item.get('topic_categories', [])
                 if subpage_topic_categories:
-                    categories_str = ", ".join(tc for tc in subpage_topic_categories if tc)
-                    if categories_str: report_sections.append(f"  **Topic Categories**: {categories_str}")
+                    categories_str_sub = ", ".join(tc for tc in subpage_topic_categories if tc) # Renamed
+                    if categories_str_sub: report_sections.append(f"  **Topic Categories**: {categories_str_sub}")
                     all_subpage_topic_categories.extend(tc for tc in subpage_topic_categories if tc)
                 
-                keywords = page_analysis_item.get('keywords', [])
-                if keywords:
-                    keywords_str = ", ".join(k for k in keywords if k)
-                    if keywords_str: report_sections.append(f"  **Keywords**: {keywords_str}")
-                    all_subpage_keywords.extend(k for k in keywords if k)
+                keywords_sub = page_analysis_item.get('keywords', []) # Renamed
+                if keywords_sub:
+                    keywords_str_sub = ", ".join(k for k in keywords_sub if k) # Renamed
+                    if keywords_str_sub: report_sections.append(f"  **Keywords**: {keywords_str_sub}")
+                    all_subpage_keywords.extend(k for k in keywords_sub if k)
                     
-                seo_keywords = page_analysis_item.get('suggested_keywords_for_seo', [])
-                if seo_keywords:
-                    seo_keywords_str = ", ".join(sk for sk in seo_keywords if sk)
-                    if seo_keywords_str: report_sections.append(f"  **SEO Keyword Suggestions**: {seo_keywords_str}")
-                    all_subpage_seo_keywords.extend(sk for sk in seo_keywords if sk)
-                report_sections.append("")
+                seo_keywords_sub = page_analysis_item.get('suggested_keywords_for_seo', []) # Renamed
+                if seo_keywords_sub:
+                    seo_keywords_str_sub = ", ".join(sk for sk in seo_keywords_sub if sk) # Renamed
+                    if seo_keywords_str_sub: report_sections.append(f"  **SEO Keyword Suggestions**: {seo_keywords_str_sub}")
+                    all_subpage_seo_keywords.extend(sk for sk in seo_keywords_sub if sk)
+
+                # MODIFICATION: Add 'other_information_and_contacts' for subpages
+                contacts_sub = page_analysis_item.get('other_information_and_contacts', []) # Renamed
+                if contacts_sub:
+                    report_sections.append(f"  **Contact Information & Key Mentions**:")
+                    has_sub_contacts = False
+                    for contact_item_sub in contacts_sub: # Renamed
+                        if contact_item_sub:
+                            report_sections.append(f"    - {contact_item_sub}")
+                            has_sub_contacts = True
+                    if not has_sub_contacts:
+                         report_sections.append("    No specific contact information or key mentions identified on this subpage.")
+                # END MODIFICATION
+                report_sections.append("") # Add a blank line for separation between subpage entries
             
             if all_subpage_keywords:
                 keyword_count = {k: all_subpage_keywords.count(k) for k in set(all_subpage_keywords) if k}
@@ -774,7 +788,7 @@ Output ONLY the JSON object with no additional text or formatting.
              #    self.logger.error(f"Failed to update report ID {report_id} in Supabase. Status: {update_response.status_code}, Response: {update_response.data}")
             #     await self._mark_report_as_error(report_id, f"Supabase update failed. Status: {update_response.status_code}, Details: {str(update_response.data)[:350]}")
               #   return False
-            if hasattr(update_response, 'error') and update_response.error:
+            if hasattr(update_response, 'error') and update_response.error: # Duplicate check, but safe
                 self.logger.error(f"Failed to update report ID {report_id} in Supabase: {update_response.error}")
                 await self._mark_report_as_error(report_id, f"Supabase update failed: {str(update_response.error)[:400]}")
                 return False  
