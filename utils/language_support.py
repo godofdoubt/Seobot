@@ -31,7 +31,7 @@ class LanguageSupport:
                 "check_report_update_button": "🔄 Check for Full Site Analysis Update",
                 "error_checking_report_status": "Error checking report status. Please try again.",
 
-                "main_settings_title": "Navigation:",
+                "main_settings_title": " Panel: Aç/Kapa '<' ",
                 "home_page_label": " 👋 Home",
                 "language_select_label": "Language / Dil",
                  "select_ai_model_label": "Select AI Model:",
@@ -44,8 +44,8 @@ class LanguageSupport:
                  "logout_button": "Logout" ,
 
                 # Messages
-                "welcome_message": "Welcome to SE10 Web Services!",
-                "welcome_seo": "Welcome to SE10 Web Services Beta!",
+                "welcome_message": "Welcome nevaR Web Services!",
+                "welcome_seo": "Welcome nevaE Web Services Beta!",
                 "welcome_authenticated": "Welcome, {0}!",
                 "logged_in_as": "Logged in as: **{0}**",
                 "analysis_complete_message": "✅ Analysis for your URL is complete.",
@@ -86,7 +86,7 @@ class LanguageSupport:
                 "article_prompt": "What kind of article would you like to write?",
                 "getting_started": "Getting Started",
                 "begin_by_analyzing": "Begin by entering your website URL below to get an SEO analysis report.",
-                "platform_description": "This platform provides tools to analyze your website's SEO, generate SEO suggestions, and create optimized content.",
+                "platform_description": "This platform provides tools to analyze your website's SEO, generate SEO suggestions, and create optimized content. Side bar panel open/close from the top left corner. '<'",
                 "need_to_login": "You need to log in first to use this service.",
                 "login_required": "You need to log in first to use this service.",
                 "generating_product_description": "Generating product description...",
@@ -156,7 +156,7 @@ class LanguageSupport:
                 "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
 
                 # newly added 1.2
-                "main_settings_title": "Navigasyon:",
+                "main_settings_title": " Panel: Open/Close '<' ",
                 "home_page_label": "👋 Ana Sayfa",
                 "language_select_label": "Dil / Language",
                 "select_ai_model_label": "AI Modelini Seçin:",
@@ -183,8 +183,8 @@ class LanguageSupport:
                 "go_to_login":"Lütfen Giriş Yapın.",
 
                 # Messages
-                "welcome_message": "SE10 Web Servislerine Hoş Geldiniz!",
-                "welcome_seo": "SE10 Web Servisleri Beta'ya Hoş Geldiniz!",
+                "welcome_message": "nevaR Web Servislerine Hoş Geldiniz!",
+                "welcome_seo": "nevaR Beta'ya Hoş Geldiniz!",
                 "welcome_authenticated": "Hoş geldiniz, {0}!",
                 "logged_in_as": "Giriş yapıldı: **{0}**",
                 "analysis_complete_message": "✅URL'niz için analiz tamamlandı.",
@@ -224,7 +224,7 @@ class LanguageSupport:
                 "article_prompt": "Ne tür bir makale yazmak istersiniz?",
                 "getting_started": "Başlarken",
                 "begin_by_analyzing": "Aşağıya web sitenizin URL'sini girerek bir SEO analiz raporu alın.",
-                "platform_description": "Bu platform, web sitenizin SEO'sunu analiz etmek, SEO önerileri oluşturmak ve optimize edilmiş içerik üretmek için araçlar sunar.",
+                "platform_description": "Bu platform, web sitenizin SEO'sunu analiz etmek, SEO önerileri oluşturmak ve optimize edilmiş içerik üretmek için araçlar sunar. Panel ağma kapama tüşü sol üst köşededir. '<' ",
                 "need_to_login": "Bu hizmeti kullanmak için önce giriş yapmalısınız.",
                 "login_required": "Bu hizmeti kullanmak için önce giriş yapmalısınız.",
                 "generating_product_description": "Ürün açıklaması oluşturuluyor...",
