@@ -9,6 +9,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# Hide Streamlit's default "/pages" sidebar nav
+hide_pages_nav = """
+<style>
+  /* hides the page navigation menu in the sidebar */
+  div[data-testid="stSidebarNav"] { 
+    display: none !important; 
+  }
+</style>
+"""
+st.markdown(hide_pages_nav, unsafe_allow_html=True)
 
 import asyncio
 import os

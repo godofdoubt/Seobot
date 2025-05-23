@@ -19,12 +19,25 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# Hide Streamlit's default "/pages" sidebar nav
+hide_pages_nav = """
+<style>
+  /* hides the page navigation menu in the sidebar */
+  div[data-testid="stSidebarNav"] { 
+    display: none !important; 
+  }
+</style>
+"""
+st.markdown(hide_pages_nav, unsafe_allow_html=True)
 
 def check_auth():
     """Check if user is authenticated"""
     lang = st.session_state.language if "language" in st.session_state else "en"
     if not st.session_state.authenticated:
         st.warning(language_manager.get_text("authentication_required", lang))
+        
+        if st.button(language_manager.get_text("go_to_login", lang)): # Added a button to go to main
+            st.switch_page("main.py")
         st.stop()
 
 async def main():

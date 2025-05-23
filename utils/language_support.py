@@ -18,7 +18,8 @@ class LanguageSupport:
                 "generate_product_description": "Generate Product Description",
                 "check_report_update_button": "🔄 Check for Full Report / Refresh",
                 "refresh_analysis_status": "🔄 Just a sec.../ Refresh",
-                "go_to_login":"Please Login First",
+                "refresh_comprehensive_report": "🔄 Rehresh Comprehensive Report",
+                "go_to_login":"ℹ️Please Login First",
                 # newly added
                 "detailed_analysis_init_error": "Error initializing detailed analysis processor. Please check logs or contact support.",
                 "detailed_analysis_runtime_error": "Runtime error during detailed analysis processor setup. Please check logs or contact support.",
@@ -29,6 +30,18 @@ class LanguageSupport:
                 "detailed_analysis_still_inprogress": "Detailed site-wide LLM analysis is still in progress. Please check back again.",
                 "check_report_update_button": "🔄 Check for Full Site Analysis Update",
                 "error_checking_report_status": "Error checking report status. Please try again.",
+
+                "main_settings_title": "Navigation:",
+                "home_page_label": " 👋 Home",
+                "language_select_label": "Language / Dil",
+                 "select_ai_model_label": "Select AI Model:",
+                 "model_o10": "o10 (Gemini)",
+                 "model_Se10": "Se10 (Mistral)",
+                 "view_seo_report_expander_label": "View SEO Report",
+                 "your_website_report_label": "Report for: {0}",
+                 "no_text_report_available": "No text report available.",
+                 "analysis_running_sidebar_info": "Analysis is in progress. Some controls and navigation links are temporarily disabled.",
+                 "logout_button": "Logout" ,
 
                 # Messages
                 "welcome_message": "Welcome to SE10 Web Services!",
@@ -137,8 +150,24 @@ class LanguageSupport:
                 "detailed_analysis_inprogress": "Detaylı site genelinde LLM analizi devam ediyor. Durumu daha sonra kontrol edebilirsiniz.",
                 "detailed_analysis_still_inprogress": "Detaylı site genelinde LLM analizi hala devam ediyor. Lütfen tekrar kontrol edin.",
                 "check_report_update_button": "🔄 Tam Site Analizi Güncellemesini Kontrol Et",
+                "refresh_comprehensive_report": "🔄  Analizi Yenile",
                 "refresh_analysis_status": "🔄 Lütfen biraz bekleyin.../ Refresh",
                 "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
+
+                # newly added 1.2
+                "main_settings_title": "Navigasyon:",
+                "home_page_label": "👋 Ana Sayfa",
+                "language_select_label": "Dil / Language",
+                "select_ai_model_label": "AI Modelini Seçin:",
+                "model_o10": "o10 (Gemini)",
+                "model_Se10": "Se10 (Mistral)",
+                "view_seo_report_expander_label": "SEO Raporunu Görüntüle",
+                "your_website_report_label": "Rapor: {0}",
+                "no_text_report_available": "Metin raporu mevcut değil.",
+                "analysis_running_sidebar_info": "Analiz devam ediyor. Bazı kontroller ve gezinme bağlantıları geçici olarak devre dışı bırakıldı.",
+                "logout_button": "Çıkış Yap",
+  
+                
                 # Buttons
                 "login_button": "Giriş",
                 "logout_button": "Çıkış",

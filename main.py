@@ -1,14 +1,15 @@
+
+
 #/SeoTree/main.py
 import streamlit as st
 import os
 from dotenv import load_dotenv
 import logging
 import asyncio
-from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar
+from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar , display_detailed_analysis_status_enhanced, trigger_detailed_analysis_background_process_with_callback
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
-
 from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor 
 
 # --- Configuration & Setup ---
@@ -118,14 +119,24 @@ async def process_url(url, lang="en"):
                     llm_analysis_error = report_data.get('llm_analysis_all_error')
                     logging.info(f"Existing report ID: {report_id_for_detailed_analysis}, completed: {llm_analysis_completed}, error: {llm_analysis_error}")
                     
-                    if llm_analysis_error:
+                    # MODIFIED LOGIC: Prioritize llm_analysis_completed
+                    if llm_analysis_completed:
+                        st.session_state.detailed_analysis_info = {
+                            "report_id": report_id_for_detailed_analysis,
+                            "url": normalized_url,
+                            "status_message": language_manager.get_text("full_site_analysis_complete", lang),
+                            "status": "complete"
+                        }
+                        if llm_analysis_error: # Log error if present, but status is still complete
+                             logging.warning(f"Detailed analysis for report ID {report_id_for_detailed_analysis} (URL: {normalized_url}) is complete but has logged errors: {llm_analysis_error}")
+                    elif llm_analysis_error: # This means completed is False and there is an error
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
                             "url": normalized_url,
                             "status_message": language_manager.get_text("detailed_analysis_error_status", lang, llm_analysis_error),
                             "status": "error"
                         }
-                    elif not llm_analysis_completed:
+                    elif not llm_analysis_completed: # Not completed and no error reported yet (implies in progress)
                         logging.info(f"Detailed analysis not complete for report ID {report_id_for_detailed_analysis}, triggering background process.")
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
@@ -134,15 +145,8 @@ async def process_url(url, lang="en"):
                             "status": "in_progress"
                         }
                         # Call the synchronous version, no await
-                        if not trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
-                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} 
-                    else: 
-                        st.session_state.detailed_analysis_info = {
-                            "report_id": report_id_for_detailed_analysis,
-                            "url": normalized_url,
-                            "status_message": language_manager.get_text("full_site_analysis_complete", lang),
-                            "status": "complete"
-                        }
+                        if not trigger_detailed_analysis_background_process_with_callback(report_id_for_detailed_analysis, supabase):
+                            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
                 else:
                     logging.warning(f"Could not find report ID for existing report {normalized_url} to check detailed analysis status.")
             else:
@@ -195,7 +199,7 @@ async def process_url(url, lang="en"):
         st.session_state.analysis_in_progress = False # Reset on any exception
         st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
 
-# ... (rest of main.py remains the same, including run_main_app, etc.) ...
+# --- Main App ---
 
 def run_main_app():
     st.set_page_config(
@@ -209,6 +213,16 @@ def run_main_app():
             'About': "# This is a header. This is an *extremely* cool app!"
         }
     )
+    # Hide Streamlit's default "/pages" sidebar nav
+    hide_pages_nav = """
+    <style>
+      /* hides the page navigation menu in the sidebar */
+      div[data-testid="stSidebarNav"] { 
+        display: none !important; 
+      }
+    </style>
+    """
+    st.markdown(hide_pages_nav, unsafe_allow_html=True)
 
     st.title("Se10 Web Servies")
     init_shared_session_state() #
@@ -291,38 +305,10 @@ def run_main_app():
                 if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True):
                     st.switch_page("pages/3_Product_Writer.py")
 
-            detailed_info = st.session_state.detailed_analysis_info #
-            if detailed_info.get("report_id") and detailed_info.get("url") == st.session_state.url: #
-                st.info(detailed_info["status_message"]) #
-
-                if detailed_info.get("status") == "in_progress": #
-                    if st.button(language_manager.get_text("check_report_update_button", lang), key="check_update_button"):
-                        report_id_to_check = detailed_info["report_id"] #
-                        
-                        completion_check_response = asyncio.run(asyncio.to_thread(
-                            lambda: supabase.table('seo_reports').select('llm_analysis_all_completed, text_report, report, llm_analysis_all_error').eq('id', report_id_to_check).single().execute()
-                        ))
-
-
-                        if completion_check_response.data:
-                            data = completion_check_response.data
-                            llm_all_completed = data.get('llm_analysis_all_completed')
-                            llm_all_error = data.get('llm_analysis_all_error')
-
-                            if llm_all_error:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_error_status", lang, llm_all_error) #
-                                st.session_state.detailed_analysis_info["status"] = "error" #
-                            elif llm_all_completed:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("full_site_analysis_complete", lang) #
-                                st.session_state.detailed_analysis_info["status"] = "complete" #
-                                st.session_state.text_report = data.get('text_report') #
-                                st.session_state.full_report = data.get('report') #
-                                st.success(language_manager.get_text("full_site_analysis_complete", lang))
-                            else:
-                                st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_still_inprogress", lang) #
-                            st.rerun()
-                        else:
-                            st.error(language_manager.get_text("error_checking_report_status", lang))
+               
+                
+                # Replace the entire section above with this single line:
+                display_detailed_analysis_status_enhanced(supabase, lang) 
             
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, st.session_state.url))
             st.text_area(language_manager.get_text("seo_report_label", lang), st.session_state.text_report, height=300) #
@@ -363,20 +349,20 @@ def run_main_app():
             if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"): 
                 st.switch_page("pages/1_SEO_Helper.py")
         
-        if st.sidebar.button(language_manager.get_text("logout_button", lang), key="logout_button_main"): 
-            st.session_state.authenticated = False #
-            st.session_state.username = None #
-            st.session_state.messages = [] #
-            if 'page_history' in st.session_state:
-                st.session_state.page_history = {} #
-            st.session_state.analysis_complete = False #
-            st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} #
-            for key_to_del in ['text_report', 'full_report', 'url', 'main_page_analysis', 'other_pages_analysis']: 
-                if key_to_del in st.session_state:
-                    del st.session_state[key_to_del]
-            st.rerun()
+       # if st.sidebar.button(language_manager.get_text("logout_button", lang), key="logout_button_main"): 
+        #    st.session_state.authenticated = False #
+         #   st.session_state.username = None #
+          #  st.session_state.messages = [] #
+           # if 'page_history' in st.session_state:
+            #    st.session_state.page_history = {} #
+            #st.session_state.analysis_complete = False #
+            #st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None} #
+            #for key_to_del in ['text_report', 'full_report', 'url', 'main_page_analysis', 'other_pages_analysis']: 
+             #   if key_to_del in st.session_state:
+              #      del st.session_state[key_to_del]
+            #st.rerun() we already have a logout button in the sidebar
                 
-        common_sidebar() #
+        common_sidebar() # shared sidebar with all pages.
 
 if __name__ == "__main__":
     run_main_app()

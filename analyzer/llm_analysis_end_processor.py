@@ -840,6 +840,7 @@ Output ONLY the JSON object with no additional text or formatting.
             self.logger.info(f"Background thread's event loop started for report IDs: {report_ids_str_list}.")
             asyncio.run(self.run(report_ids=report_ids_str_list, process_pending=False))
             self.logger.info(f"Background thread's event loop completed for report IDs: {report_ids_str_list}.")
+            
         except Exception as e:
             self.logger.error(f"Exception in threaded _run_async_wrapper for report_ids {report_ids_str_list}: {e}", exc_info=True)
 
