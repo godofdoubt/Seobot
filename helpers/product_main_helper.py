@@ -28,7 +28,7 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
             Question: {prompt}
 
             Please provide a helpful response focused on product descriptions and product writing.
-            Think about how to use the SEO analysis to create effective product copy.
+            Think about how to use web site analysis to create effective product copy.
             """
             response = model.generate_content(full_prompt)
             return response.text

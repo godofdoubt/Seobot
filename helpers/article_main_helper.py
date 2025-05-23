@@ -29,7 +29,7 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
             Question: {prompt}
 
             Please provide a helpful response focused on article writing and content strategy.
-            Consider the SEO analysis when providing guidance about content creation.
+            Consider the analysis report when providing guidance about content creation.
             """
             response = model.generate_content(full_prompt)
             return response.text
@@ -138,7 +138,7 @@ async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str):
                 # Check if the prompt is asking for article generation
                 if any(keyword in prompt.lower() for keyword in ["article", "content", "write", "blog", "post", "generate", "create"]):
                     system_content = f"""{language_instruction}
-You are an expert content writer and SEO specialist. Generate a well-structured, SEO-optimized article based on the provided website analysis.
+You are an expert content writer. Generate a well-structured, SEO-optimized article based on the provided website analysis.
 
 User Information:
 {username_context}
