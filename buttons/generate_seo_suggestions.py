@@ -13,7 +13,7 @@ model = genai.GenerativeModel('gemini-1.5-pro-002') # As per original file
 
 # MODIFIED FUNCTION SIGNATURE
 def generate_seo_suggestions(text_report: str) -> str: # Changed from 'report: dict'
-    """Generates SEO suggestions using Gemini or Mistral based on the full text report.
+    """Generates SEO suggestions and content strategy using Gemini or Mistral based on the full text report.
     Limited to one call per session."""
 
     # Get current language
@@ -36,13 +36,47 @@ def generate_seo_suggestions(text_report: str) -> str: # Changed from 'report: d
     try:
         if use_mistral:
             # Use Mistral API
-            # MODIFIED: Pass text_report directly
             response_text = generate_with_mistral(text_report, mistral_api_key, lang)
         else:
             # Use Gemini API
-            language_instruction = f"Respond in Turkish. " if lang == "tr" else ""
-            # MODIFIED: Use text_report directly instead of json.dumps(report)
-            prompt = f"{language_instruction}Provide SEO suggestions based on this report:\n\n{text_report}"
+            language_instruction = f"Respond in Turkish. " if lang == "tr" else "Respond in English. "
+            
+            # GENERALIZED PROMPT FOR GEMINI
+            prompt = f"""{language_instruction}
+You are an expert SEO strategist and content analyst. You have been provided with a comprehensive SEO analysis report for a website.
+
+The report typically includes:
+- Main Page Analysis (Content Summary, Keywords, Headers, etc.)
+- Detailed Subpage Analysis (Summary, Tone, Audience, Topics, Keywords, SEO Keyword Suggestions for multiple pages)
+- Site-Wide Aggregations (Common Keywords, Suggested SEO Keywords, Topics, Audiences, Tones)
+- Potentially a section with pre-existing suggestions (e.g., 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS').
+
+Your task is to:
+1.  Thoroughly analyze ALL sections of the provided report.
+2.  Based on your deep analysis of the *entire* report (especially the content summaries, keyword lists, site-wide data, and individual page details), generate a NEW and comprehensive set of actionable SEO and content strategy recommendations.
+3.  Critically evaluate the findings. Identify strengths, weaknesses, and untapped opportunities.
+4.  Your recommendations should aim to significantly improve the website's search engine rankings, organic traffic, user engagement, and overall online presence.
+5.  **Crucially, if the report contains a section with pre-existing suggestions, do not merely rephrase or repeat them.** Instead, you should:
+    *   Provide *additional, distinct* recommendations.
+    *   Elaborate on existing points if you can offer significant new depth or a different angle.
+    *   Identify areas that might have been overlooked or underemphasized.
+    *   Offer alternative strategies.
+6.  Organize your suggestions clearly, for example, by categories like:
+    *   On-Page SEO (Meta tags, Content optimization, Internal linking, Keyword usage)
+    *   Technical SEO (Site speed, Mobile-friendliness, Crawlability, Schema markup)
+    *   Content Strategy (Content gaps, New content ideas, Content promotion, E-E-A-T improvement)
+    *   Off-Page SEO (Link building, Local SEO if applicable based on report data)
+    *   User Experience (UX)
+7.  For each suggestion, provide:
+    *   A clear, actionable recommendation.
+    *   A brief rationale explaining *why* it's important, referencing specific findings or patterns from the report.
+    *   Suggested priority (High, Medium, Low).
+
+The goal is to extract maximum value from the raw analytical data in the report and provide fresh, high-quality strategic advice.
+
+Here is the report:
+\n\n{text_report}
+"""
             response = model.generate_content(prompt)
             response_text = response.text
 
@@ -64,31 +98,55 @@ def generate_with_mistral(text_report: str, api_key: str, lang: str = "en") -> s
         "Authorization": f"Bearer {api_key}"
     }
 
-    # Language mapping for Mistral API
     language_names = {"en": "English", "tr": "Turkish"}
-    language_instruction = f"Please respond in {language_names.get(lang, 'English')}. " if lang != "en" else ""
+    mistral_language_instruction = f"Please ensure your entire response is in {language_names.get(lang, 'English')}. "
 
+    # GENERALIZED SYSTEM AND USER PROMPTS FOR MISTRAL
     data = {
-        "model": "mistral-large-latest",  # You can change this to your preferred Mistral model
+        "model": "mistral-large-latest",
         "messages": [
             {
                 "role": "system",
-                "content": f"You are an SEO expert assistant. {language_instruction}Provide helpful SEO suggestions based on the website analysis report."
+                "content": f"You are a world-class SEO strategist and content analyst. Your primary function is to provide expert, actionable, and insightful recommendations based on detailed SEO reports. {mistral_language_instruction} You are analyzing a detailed SEO report for a website. Your advice should be tailored to the information presented in the report and delivered entirely in the requested language."
             },
             {
                 "role": "user",
-                # MODIFIED: Use text_report directly instead of json.dumps(report)
-                "content": f"{language_instruction} , Please analyze this SEO report and provide comprehensive suggestions for improving the website's SEO:\n\n{text_report}"
+                "content": f"""{mistral_language_instruction}
+Please analyze the following comprehensive SEO report for a website.
+
+The report typically contains:
+- Main Page Analysis
+- Detailed Subpage Analysis (summaries, keywords, current SEO suggestions, etc.)
+- Site-Wide Analyses (keywords, topics, audience, tone)
+- Potentially an existing section with suggestions (e.g., 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS').
+
+Your objective is to go beyond any existing recommendations. Based on a thorough examination of ALL the data within the report (especially the raw analysis of content, keywords, and site structure):
+
+1.  Generate a **new set of strategic SEO and content recommendations**. These should be distinct from, or significantly build upon/offer alternatives to, those already present in the report, if any.
+2.  Identify key opportunities for improvement, potential weaknesses, and areas that require more attention based on the data provided.
+3.  Structure your suggestions into logical categories (e.g., On-Page SEO, Technical SEO, Content Strategy, Off-Page SEO/Local SEO if relevant, User Experience).
+4.  For each new suggestion, provide:
+    *   The recommendation itself (actionable).
+    *   The reasoning behind it, linking back to specific data or patterns observed in the report.
+    *   A suggested priority level (High, Medium, Low).
+5.  Focus on delivering high-impact advice that can demonstrably improve the website's SEO performance and user engagement, based on the specifics of the provided report. Do not simply summarize or rehash any pre-existing recommendation section in the input. Provide fresh, expert insights. Ensure your entire response adheres to the specified language.
+
+Here is the SEO report:
+\n\n{text_report}
+"""
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 1500
+        "max_tokens": 2000
     }
 
     response = requests.post(url, headers=headers, json=data)
 
     if response.status_code == 200:
         response_json = response.json()
-        return response_json['choices'][0]['message']['content']
+        if response_json.get('choices') and len(response_json['choices']) > 0 and response_json['choices'][0].get('message'):
+            return response_json['choices'][0]['message']['content']
+        else:
+            raise Exception(f"Mistral API response format error: 'choices' or 'message' structure not as expected. Response: {response.text}")
     else:
         raise Exception(f"Mistral API error: {response.status_code} - {response.text}")
