@@ -45,7 +45,7 @@ class LanguageSupport:
 
                 # Messages
                 "welcome_message": "Welcome nevaR Web Services!",
-                "welcome_seo": "Welcome nevaE Web Services Beta!",
+                "welcome_seo": "Welcome nevaR Web Services Beta!",
                 "welcome_authenticated": "Welcome, {0}!",
                 "logged_in_as": "Logged in as: **{0}**",
                 "analysis_complete_message": "✅ Analysis for your URL is complete.",
