@@ -24,6 +24,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
+# Ensure update_page_history is imported
 from utils.shared_functions import init_shared_session_state, common_sidebar, update_page_history
 from utils.language_support import language_manager
 from helpers.seo_main_helper8 import process_chat_input
@@ -59,8 +60,9 @@ async def main_seo_helper(): # Renamed to avoid conflict if main.py's main is im
     
     st.title(language_manager.get_text("seo_helper_button", lang))
     
+    # Set current page to seo and update history
     if st.session_state.current_page != "seo":
-        update_page_history("seo")
+        update_page_history("seo") # This will set the welcome message or restore history
     
     check_auth() # Authentication check
     # Add after checking authentication but before displaying the chat interface
@@ -86,27 +88,13 @@ async def main_seo_helper(): # Renamed to avoid conflict if main.py's main is im
     
     st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
     
-    key_welcome_default = "welcome_authenticated" # Assuming this is a generic welcome
-    key_welcome_analyzed = "welcome_seo_helper_analyzed"
-
-    if st.session_state.get("url") and st.session_state.get("text_report"):
-        target_welcome_message = language_manager.get_text(key_welcome_analyzed, lang, st.session_state.url)
-    else:
-        target_welcome_message = language_manager.get_text(key_welcome_default, lang, st.session_state.username)
-
-    if not st.session_state.messages:
-        st.session_state.messages = [{"role": "assistant", "content": target_welcome_message}]
-    else:
-        first_message = st.session_state.messages[0]
-        if first_message.get("role") == "assistant":
-            # Only update if the content is different and it's one of the known welcome messages
-            # This prevents overwriting an initial "Report for URL X" message if `main_process_url` adds it.
-            known_welcomes = [
-                language_manager.get_text(key_welcome_default, lang, st.session_state.username),
-                # If an analysis was just run, the welcome might be different, let `main_process_url` handle initial message
-            ]
-            if first_message.get("content") in known_welcomes and first_message.get("content") != target_welcome_message:
-                 st.session_state.messages[0]["content"] = target_welcome_message
+    # --- Welcome Message Logic (Removed, now handled by update_page_history) ---
+    # Removed the block that looked like this:
+    # key_welcome_default = "welcome_authenticated" # Assuming this is a generic welcome
+    # key_welcome_analyzed = "welcome_seo_helper_analyzed"
+    # if st.session_state.get("url") and st.session_state.get("text_report"): ...
+    # if not st.session_state.messages: ...
+    # --- End Welcome Message Logic ---
 
     common_sidebar()
     

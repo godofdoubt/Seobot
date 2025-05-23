@@ -4,6 +4,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
+# Ensure update_page_history is imported
 from utils.shared_functions import init_shared_session_state, common_sidebar, update_page_history, load_saved_report
 from utils.language_support import language_manager
 
@@ -53,11 +54,9 @@ async def main():
     
     st.title(language_manager.get_text("article_writer_button", lang))
 
-    
-    
-    # Set current page to article
+    # Set current page to article and update history
     if st.session_state.current_page != "article":
-        update_page_history("article")
+        update_page_history("article") # This will set the welcome message or restore history
     
     # Initialize Supabase client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -65,19 +64,43 @@ async def main():
     # Check if user is authenticated
     check_auth()
 
-
-    # --- Welcome Message Logic ---
-    if st.session_state.get("url") and st.session_state.get("text_report"):
-        target_welcome_message = language_manager.get_text("welcome_article_writer_analyzed", lang, st.session_state.url)
-    else:
-        target_welcome_message = language_manager.get_text("welcome_article_writer_not_analyzed", lang)
-    if "messages" not in st.session_state or not st.session_state.messages:
-        st.session_state.messages = [{"role": "assistant", "content": target_welcome_message}]
-    else:
-        first_message = st.session_state.messages[0]
-        if first_message.get("role") == "assistant" and first_message.get("content") != target_welcome_message:
-            st.session_state.messages[0]["content"] = target_welcome_message
+    # --- Welcome Message Logic (Removed, now handled by update_page_history) ---
+    # Removed the block that looked like this:
+    # if st.session_state.get("url") and st.session_state.get("text_report"): ...
+    # if "messages" not in st.session_state or not st.session_state.messages: ...
     # --- End Welcome Message Logic ---
+
+    # --- START: Fix for Article Writer Welcome Message ---
+    # This logic ensures the correct welcome message for the Article Writer page,
+    # similar to how Product Writer's welcome message (presumably handled by update_page_history) should appear.
+    # It will set or update the first message in the chat.
+    # This assumes that if update_page_history is supposed to set this message and fails for "article",
+    # this code will correct it.
+    
+    target_welcome_message_article = ""
+    if st.session_state.get("url") and st.session_state.get("text_report"):
+        target_welcome_message_article = language_manager.get_text(
+            "welcome_article_writer_analyzed",  # Assumed new language key
+            lang,
+            st.session_state.url,  # Pass URL as an argument for formatting
+            fallback=f"Welcome to the Article Writer page.\nUsing analysis for: **{st.session_state.url}**"
+        )
+    else:
+        target_welcome_message_article = language_manager.get_text(
+            "welcome_article_writer_not_analyzed", # Assumed new language key
+            lang,
+            fallback="Welcome to the Article Writer page. Please analyze a website in the SEO Helper page first to proceed."
+        )
+
+    if "messages" not in st.session_state or not st.session_state.messages:
+        # If messages list doesn't exist or is empty, initialize with the welcome message.
+        st.session_state.messages = [{"role": "assistant", "content": target_welcome_message_article}]
+    elif st.session_state.messages[0].get("role") == "assistant" and \
+         st.session_state.messages[0].get("content") != target_welcome_message_article:
+        # If the first message is an assistant message but not the correct current welcome message, update it.
+        # This handles cases where the user navigates from another page or the analysis state changes.
+        st.session_state.messages[0]["content"] = target_welcome_message_article
+    # --- END: Fix for Article Writer Welcome Message ---
 
     # --- New Right Sidebar for Article Options ---
     if st.session_state.full_report and st.session_state.url:
@@ -192,10 +215,6 @@ async def main():
     
     # Display username
     st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
-    
-
-
-    
     
     # Display chat messages from shared session state
     if "messages" in st.session_state:

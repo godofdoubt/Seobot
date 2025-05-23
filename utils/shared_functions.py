@@ -9,6 +9,17 @@ from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 
 #1
+# utils/shared_functions.py
+import streamlit as st
+import os
+import logging # Added import
+import time
+from supabase import Client
+from analyzer.seo import SEOAnalyzer
+from utils.s10tools import normalize_url
+from utils.language_support import language_manager
+
+#1
 def init_shared_session_state():
     """Initialize shared session state variables across all pages"""
     if "messages" not in st.session_state:
@@ -28,7 +39,7 @@ def init_shared_session_state():
     if "use_mistral" not in st.session_state:
         st.session_state.use_mistral = False # Default to Gemini (o10)
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "seo" # Or a more generic default like "home"
+        st.session_state.current_page = None # Changed default to None
     if "page_history" not in st.session_state:
         st.session_state.page_history = {}
     # Analysis state
@@ -47,37 +58,59 @@ def init_shared_session_state():
         st.session_state.analysis_in_progress = False
 
 def update_page_history(page_name):
-    """Store the current page's message history"""
-    # Save the current page's state before switching
-    if st.session_state.current_page not in st.session_state.page_history:
-        st.session_state.page_history[st.session_state.current_page] = []
-    
-    # Copy the current messages to the page history
-    st.session_state.page_history[st.session_state.current_page] = st.session_state.messages.copy()
-    
-    # Update current page
+    """Store the current page's message history and load the new page's history."""
+    lang = st.session_state.get("language", "en") # Ensure lang is available
+
+    # 1. Save the current page's state (its chat messages) before switching
+    # Only save if current_page is not None (i.e., not the very first load/app start)
+    # and if the current page is different from the target page (avoid saving to self when rerunning)
+    if st.session_state.current_page and st.session_state.current_page != page_name:
+        st.session_state.page_history[st.session_state.current_page] = st.session_state.messages.copy()
+        logging.info(f"Saved chat history for '{st.session_state.current_page}' (length: {len(st.session_state.messages)})")
+
+    # 2. Update current page tracker
     st.session_state.current_page = page_name
-    
-    # Restore messages from page history if available
+    logging.info(f"Attempting to switch to page: '{page_name}'")
+
+    # 3. Restore messages from page history if available, or initialize
     if page_name in st.session_state.page_history:
         st.session_state.messages = st.session_state.page_history[page_name].copy()
+        logging.info(f"Restored chat history for '{page_name}' (length: {len(st.session_state.messages)})")
     else:
-        # Initialize with welcome message for new page
-        # Ensure language_manager is available or handle gracefully
-        lang = st.session_state.get("language", "en")
-        welcome_base = "Welcome to the {page_name} page."
-        try:
-            # Example: you might want a generic welcome key
-            # welcome_base = language_manager.get_text("generic_page_welcome", lang, page_name=page_name.capitalize())
-            pass # Placeholder if not using language_manager here for generic messages
-        except Exception: # Fallback
-             pass
-        welcome_message = welcome_base.format(page_name=page_name.capitalize())
+        # Initialize with a welcome message for a new page
+        welcome_message = ""
+        if page_name == "seo":
+            if st.session_state.get("url") and st.session_state.get("text_report"):
+                welcome_message = language_manager.get_text("welcome_seo_helper_analyzed", lang, st.session_state.url)
+            else:
+                welcome_message = language_manager.get_text("welcome_authenticated", lang, st.session_state.username)
+        elif page_name == "article":
+            if st.session_state.get("url") and st.session_state.get("text_report"):
+                welcome_message = language_manager.get_text("welcome_article_writer_analyzed", lang, st.session_state.url)
+            else:
+                welcome_message = language_manager.get_text("welcome_article_writer_not_analyzed", lang)
+        elif page_name == "main": # Assuming 'main' is the identifier for main.py
+            if st.session_state.get("authenticated"):
+                welcome_message = language_manager.get_text("welcome_authenticated", lang, st.session_state.username)
+            else:
+                welcome_message = language_manager.get_text("welcome_seo", lang)
+        # Add more `elif` for other pages like "product"
+        elif page_name == "product": # Assuming this exists or will exist
+             if st.session_state.get("url") and st.session_state.get("text_report"):
+                welcome_message = language_manager.get_text("welcome_product_writer_analyzed", lang, st.session_state.url)
+             else:
+                welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang)
+        else:
+            # Generic fallback if page_name not specifically handled
+            # Ensure 'generic_page_welcome' is defined in your language files
+            welcome_message = language_manager.get_text("generic_page_welcome", lang, page_name=page_name.replace('_', ' ').title())
+            if not welcome_message or welcome_message == f"generic_page_welcome (page_name={page_name.replace('_', ' ').title()})": # Fallback if language key isn't found
+                 welcome_message = f"Welcome to the {page_name.replace('_', ' ').title()} page."
 
-        if st.session_state.analysis_complete and st.session_state.url:
-            welcome_message += f"\n\nUsing analysis for: {st.session_state.url}"
-            
         st.session_state.messages = [{"role": "assistant", "content": welcome_message}]
+        logging.info(f"Initialized new chat history for '{page_name}' with welcome message.")
+
+# ... (rest of shared_functions.py remains the same)
 
 
 # Display function for reports

@@ -4,6 +4,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
+# Ensure update_page_history is imported
 from utils.shared_functions import init_shared_session_state, common_sidebar, update_page_history, load_saved_report
 from utils.language_support import language_manager
 # Ensure the generation function is importable
@@ -56,9 +57,9 @@ async def main():
     if "product_description_requested" not in st.session_state:
         st.session_state.product_description_requested = False
 
-    # Set current page to product
+    # Set current page to product and update history - THIS IS THE KEY CALL
     if st.session_state.current_page != "product":
-        update_page_history("product")
+        update_page_history("product") # This will set the welcome message or restore history
 
     # Initialize Supabase client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -66,19 +67,22 @@ async def main():
     # Check if user is authenticated
     check_auth()
 
-    # --- Welcome Message Logic ---
-    if st.session_state.get("url") and st.session_state.get("text_report"):
-        target_welcome_message = language_manager.get_text("welcome_product_writer_analyzed", lang, st.session_state.url, fallback="Welcome to the Product Writer page.\nUsing analysis for: **{}**")
-    else:
-        target_welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang, fallback="Welcome to the Product Writer page. Please analyze a website in the SEO Helper page first to proceed.")
+    # --- Welcome Message Logic (REMOVED - Now handled by update_page_history) ---
+    # The following block is removed as update_page_history now handles setting the initial message
+    # based on the page and whether an analysis has been completed.
+    # if st.session_state.get("url") and st.session_state.get("text_report"):
+    #     target_welcome_message = language_manager.get_text("welcome_product_writer_analyzed", lang, st.session_state.url, fallback="Welcome to the Product Writer page.\nUsing analysis for: **{}**")
+    # else:
+    #     target_welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang, fallback="Welcome to the Product Writer page. Please analyze a website in the SEO Helper page first to proceed.")
+    # --- END REMOVED BLOCK ---
 
-    # Adjust message update logic if needed, maybe move welcome message display after sidebar
-    # For simplicity, keeping it here for now.
 
     # --- NEW Right Sidebar for Product Description Options ---
+    # This entire sidebar block should only appear if analysis is available.
+    # The condition `if st.session_state.full_report and st.session_state.url:` ensures this.
     if st.session_state.full_report and st.session_state.url:
         with st.sidebar:
-            #st.markdown(f"### {language_manager.get_text('product_options_title', lang)}")
+            #st.markdown(f"### {language_manager.get_text('product_options_title', lang)}") # Keeping commented as in original
 
             # Initialize product options in session state if not present
             if "product_options" not in st.session_state:
@@ -199,17 +203,18 @@ async def main():
     # Place this after the product-specific sidebar elements if you want them grouped.
     common_sidebar()
 
-    # --- Display Welcome/Chat Messages ---
-    # Moved welcome message display here to potentially reflect sidebar state better
-    if "messages" not in st.session_state or not st.session_state.messages:
-        st.session_state.messages = [{"role": "assistant", "content": target_welcome_message}]
-    # Update first message if needed (ensure this logic is sound)
-    elif st.session_state.messages and st.session_state.messages[0].get("role") == "assistant":
-         if st.session_state.messages[0].get("content") != target_welcome_message:
-              st.session_state.messages[0]["content"] = target_welcome_message
+    # --- Display Welcome/Chat Messages (REMOVED - Now handled by update_page_history) ---
+    # This logic is now handled by update_page_history when the page is first loaded
+    # or reloaded after a page switch.
+    # if "messages" not in st.session_state or not st.session_state.messages:
+    #     st.session_state.messages = [{"role": "assistant", "content": target_welcome_message}]
+    # elif st.session_state.messages and st.session_state.messages[0].get("role") == "assistant":
+    #      if st.session_state.messages[0].get("content") != target_welcome_message:
+    #           st.session_state.messages[0]["content"] = target_welcome_message
+    # --- END REMOVED BLOCK ---
 
 
-    # Display chat messages from shared session state
+    # Display chat messages from shared session state (This remains)
     if "messages" in st.session_state:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
@@ -247,8 +252,7 @@ async def main():
                 prompt,
                 MISTRAL_API_KEY=st.session_state.MISTRAL_API_KEY,
                 GEMINI_API_KEY=st.session_state.GEMINI_API_KEY,
-                # Pass message list if needed by helper
-                # message_list="messages" # Example if needed
+                message_list="messages" # ADDED: Pass message_list for consistency
             )
 
 if __name__ == "__main__":

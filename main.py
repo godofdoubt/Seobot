@@ -1,12 +1,11 @@
-
-
-#/SeoTree/main.py
+# /SeoTree/main.py
 import streamlit as st
 import os
 from dotenv import load_dotenv
 import logging
 import asyncio
-from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar , display_detailed_analysis_status_enhanced, trigger_detailed_analysis_background_process_with_callback
+# Import update_page_history as well
+from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar , display_detailed_analysis_status_enhanced, trigger_detailed_analysis_background_process_with_callback, update_page_history
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
@@ -231,6 +230,10 @@ def run_main_app():
         st.session_state.language = "en" #
     lang = st.session_state.language
 
+    # Call update_page_history for the main page
+    if st.session_state.current_page != "main":
+        update_page_history("main")
+
     if "analysis_complete" not in st.session_state:
         st.session_state.analysis_complete = False #
     if "detailed_analysis_info" not in st.session_state: 
@@ -276,13 +279,21 @@ def run_main_app():
                 if is_authenticated:
                     st.session_state.authenticated = True #
                     st.session_state.username = username #
-                    welcome_msg = language_manager.get_text("welcome_authenticated", lang, username) 
-                    st.session_state.messages = [{"role": "assistant", "content": welcome_msg}] #
-                    st.rerun()
+                    # Removed: welcome_msg = language_manager.get_text("welcome_authenticated", lang, username) 
+                    # Removed: st.session_state.messages = [{"role": "assistant", "content": welcome_msg}] #
+                    st.rerun() # This will cause a re-run, hitting update_page_history again
                 else:
                     st.error(language_manager.get_text("login_failed", lang))
     else:
+        # Display username (moved outside the login form)
         st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
+
+        # Display chat messages only if authenticated
+        # This loop will now display messages correctly managed by update_page_history
+        if "messages" in st.session_state:
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
         if st.session_state.analysis_complete and hasattr(st.session_state, 'text_report') and st.session_state.text_report and hasattr(st.session_state, 'url') and st.session_state.url: #
             
