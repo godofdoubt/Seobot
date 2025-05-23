@@ -202,7 +202,7 @@ async def process_url(url, lang="en"):
 
 def run_main_app():
     st.set_page_config(
-        page_title="SE10 Web Services Beta",
+        page_title="Raven Web Services Beta",
         page_icon="👋",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -223,7 +223,7 @@ def run_main_app():
     """
     st.markdown(hide_pages_nav, unsafe_allow_html=True)
 
-    st.title("Se10 Web Servies")
+    st.title("Raven Web Servies")
     init_shared_session_state() #
 
     if "language" not in st.session_state:
