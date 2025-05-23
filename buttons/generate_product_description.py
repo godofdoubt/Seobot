@@ -19,7 +19,7 @@ try:
         genai.configure(api_key=gemini_api_key)
         # Check available models, adjust if 'gemini-2.0-flash' is not right or available
         # For example: model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        model = genai.GenerativeModel('gemini-1.5-flash-latest') # Using a potentially more current model
+        model = genai.GenerativeModel('gemini-2.0-flash') # Using a potentially more current model
         logging.info("Gemini API configured.")
     else:
         model = None

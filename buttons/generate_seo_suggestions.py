@@ -9,7 +9,7 @@ from utils.language_support import language_manager
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-1.5-pro-002') # As per original file
+model = genai.GenerativeModel('gemini-2.0-flash') # As per original file
 
 # MODIFIED FUNCTION SIGNATURE
 def generate_seo_suggestions(text_report: str) -> str: # Changed from 'report: dict'

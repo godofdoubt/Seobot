@@ -63,7 +63,7 @@ async def process_with_gemini(prompt: str, GEMINI_API_KEY: str):
     # Initialize tools
     tools = create_tools(GEMINI_API_KEY)
 
-    with st.spinner("Processing your question..."):
+    with st.spinner("Processing your question...🔄"):
         try:
             # Initialize used_tools in session state if it doesn't exist
             if "used_tools" not in st.session_state:

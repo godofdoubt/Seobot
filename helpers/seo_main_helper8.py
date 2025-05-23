@@ -15,7 +15,7 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
     
     # Configure Gemini
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash') # Updated to a generally available model
+    model = genai.GenerativeModel('gemini-2.0-flash') # Updated recent available model
 
     async def process_question(prompt: str, context: str) -> str:
         """Process a question using Gemini.""" # Changed o10 to Gemini for clarity
@@ -24,12 +24,18 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
             username_context = f"Username: {st.session_state.username}\n" if "username" in st.session_state and st.session_state.username else ""
             language_instruction = f"Please respond in {language_names.get(st.session_state.language, 'English')}." if st.session_state.language != "en" else ""
             
+            # Updated full_prompt to guide Gemini on using the potentially rich context
             full_prompt = f"""{language_instruction}
-            {username_context}Context: {context}
-            Question: {prompt}
-            
-            Please provide a helpful response based on the context.
-            """
+{username_context}You are an SEO expert assistant.
+The context provided below contains a detailed SEO report for a website. This report may already include AI-generated strategic insights and recommendations.
+
+Context:
+{context}
+
+Question: {prompt}
+
+Please provide a helpful and comprehensive response based on the information in the provided context. If the report in the context already contains relevant suggestions or insights pertaining to the question, prioritize referencing or summarizing those. Only generate new insights if the question asks for something not covered or asks for alternatives.
+"""
             response = model.generate_content(full_prompt)
             return response.text
         except Exception as e:
@@ -149,21 +155,31 @@ async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str, message_list: 
                 }
                 language_info = f"Please respond in {language_names.get(lang, 'English')}. " if lang != "en" else ""
                 
+                # Updated system prompt for Mistral
+                system_prompt_content = f"""You are an SEO expert assistant. {language_info}
+Your primary goal is to provide helpful responses based on the website analysis report provided in the 'Context from SEO Report' section.
+This report is comprehensive and may already include AI-generated strategic insights, recommendations, keyword analysis, and subpage details.
+
+When responding to the user:
+1. First, check if the 'Context from SEO Report' directly answers or contains relevant information for the user's query.
+2. If it does, prioritize using, summarizing, or referencing that information from the report.
+3. If the report does not directly cover the query, or if the user asks for alternatives or further elaboration, then use your SEO expertise to generate a helpful response, still keeping the report's content in mind as the primary source of truth about the analyzed website.
+
+User Information:
+{username_context}
+
+Conversation History (for context, but prioritize the SEO Report for site-specific questions):
+{history_context}
+
+Context from SEO Report:
+{st.session_state.get("text_report", "No SEO report available.")}"""
+
                 data = {
                     "model": "mistral-large-latest",
                     "messages": [
                         {
                             "role": "system",
-                            "content": f"""You are an SEO expert assistant. {language_info}Provide helpful responses based on the website analysis report.
-                            
-User Information:
-{username_context}
-
-Conversation History:
-{history_context}
-
-Context from SEO Report:
-{st.session_state.get("text_report", "No SEO report available.")}""" # Use .get for safety
+                            "content": system_prompt_content
                         },
                         {
                             "role": "user",
@@ -171,7 +187,7 @@ Context from SEO Report:
                         }
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 1000
+                    "max_tokens": 1000 # Consider increasing if reports are very long and complex responses are needed
                 }
                 
                 response = requests.post(url, headers=headers, json=data)
@@ -218,31 +234,35 @@ async def process_with_gemini(prompt: str, GEMINI_API_KEY: str, message_list: st
             elif any(keyword in prompt.lower() for keyword in ["suggest", "recommendation", "improve", "seo"]) and \
                  not st.session_state.get("full_report"):
                  with st.chat_message("assistant"):
-                    msg = "SEO suggestions require a full analysis report, which is not available. Please analyze a URL first."
+                    # This message is specific to the 'generate_seo_suggestions' tool path
+                    msg = "To generate new SEO suggestions based on the full raw data, a complete analysis report is needed. Please analyze a URL first if you haven't. I can still discuss any suggestions present in the current summary if available."
                     st.markdown(msg)
                     st.session_state[message_list].append({"role": "assistant", "content": msg})
-                    tool_used = True # Technically a response was given, not a tool use.
+                    tool_used = True # A response was given, preventing fall-through to process_question immediately for this specific intent.
 
             if not tool_used:
                 with st.chat_message("assistant"):
                     history_context = ""
-                    num_history_turns = 5
+                    num_history_turns = 5 # Consider making this configurable
                     messages_to_process = st.session_state.get(message_list, [])
                     start_index = max(0, len(messages_to_process) - num_history_turns)
                     for message in messages_to_process[start_index:]:
                         history_context += f"{message['role'].capitalize()}: {message['content']}\n"
 
-                    context = f"""
-                    Username: {st.session_state.username if "username" in st.session_state else "Anonymous"}
-                    SEO Report: {st.session_state.get("text_report", "No SEO report available.")}
-                    Conversation History: {history_context}
+                    # Context for Gemini's process_question tool
+                    # The text_report here is the new comprehensive one
+                    context_for_gemini = f"""
+                    Username: {st.session_state.username if "username" in st.session_state and st.session_state.username else "Anonymous"}
+                    SEO Report: {st.session_state.get("text_report", "No SEO report available. Please analyze a URL first.")}
+                    Conversation History (for reference, prioritize the SEO Report for site-specific questions):
+                    {history_context}
                     """
-                    response = await tools["process_question"].function(prompt, context)
+                    response = await tools["process_question"].function(prompt, context_for_gemini)
                     st.markdown(response)
                     st.session_state[message_list].append({"role": "assistant", "content": response})
 
         except Exception as e:
             with st.chat_message("assistant"):
-                error_msg = f"Error processing request: {str(e)}"
+                error_msg = f"Error processing request with Gemini: {str(e)}"
                 st.error(error_msg) # Use st.error for better visibility of actual errors
                 st.session_state[message_list].append({"role": "assistant", "content": error_msg})

@@ -10,7 +10,7 @@ from utils.language_support import language_manager
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-1.5-flash-latest') # Keep your chosen model
+model = genai.GenerativeModel('gemini-2.0-flash') # Keep your chosen model
 
 def select_focus_keyword(text_report: str) -> str:
     """Selects a focus keyword from the text report."""
