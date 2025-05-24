@@ -1,5 +1,3 @@
-
-
 #SeoTree/pages/1_SEO_Helper.py
 import streamlit as st
 
@@ -96,7 +94,7 @@ async def main_seo_helper():
         isinstance(st.session_state.full_report, dict) and
         st.session_state.full_report.get("llm_analysis_all") and
         isinstance(st.session_state.full_report["llm_analysis_all"], dict) and
-        st.session_state.full_report["llm_analysis_all"] # Ensure it's not empty
+        st.session_state.full_report["llm_analysis_all"] # Ensure it's not empty (truthy, e.g. not {})
     )
 
     if llm_analysis_available:
@@ -113,54 +111,73 @@ async def main_seo_helper():
             sorted_page_keys = available_page_keys
         
         current_selection = st.session_state.selected_pages_for_seo_suggestions
+        # Keep default selection logic if desired, or remove if "empty means text_report" is the primary default
         if not current_selection and "main_page" in sorted_page_keys:
-            current_selection = ["main_page"]
-        elif not current_selection and sorted_page_keys: 
-            current_selection = [sorted_page_keys[0]]
+             current_selection = ["main_page"] # Default to main_page if available and nothing selected
+        # elif not current_selection and sorted_page_keys: 
+        #     current_selection = [sorted_page_keys[0]] # Or first page
 
-
-        st.sidebar.subheader(language_manager.get_text("seo_suggestions_for_pages_label", lang, fallback="SEO Suggestions for Pages:"))
+        st.sidebar.subheader(language_manager.get_text("seo_suggestions_for_pages_label", lang, fallback="SEO Suggestions:"))
         
         selected_pages = st.sidebar.multiselect(
-            label=language_manager.get_text("select_pages_for_seo_suggestions", lang, fallback="Select pages for analysis:"),
+            label=language_manager.get_text("select_pages_for_detailed_suggestions", lang, fallback="Select pages (or leave empty for general report suggestions):"),
             options=sorted_page_keys,
             default=current_selection,
             key="multiselect_seo_suggestion_pages", 
-            help="Select pages from the detailed analysis to generate SEO suggestions for. 'main_page' is often essential."
+            help=language_manager.get_text("multiselect_seo_help_text_v2", lang, fallback="Select pages for detailed suggestions. If empty, suggestions use the general text report of the site. 'main_page' is often key for page-specific analysis.")
         )
         st.session_state.selected_pages_for_seo_suggestions = selected_pages
 
 
-        if st.sidebar.button(language_manager.get_text("generate_seo_suggestions_button_text", lang, fallback="Generate SEO Suggestions for Selected Pages")):
-            if not st.session_state.selected_pages_for_seo_suggestions: 
-                st.sidebar.warning(language_manager.get_text("select_at_least_one_page_warning", lang, fallback="Please select at least one page."))
-            else:
-                data_for_suggestions = {
-                    key: llm_data[key] 
-                    for key in st.session_state.selected_pages_for_seo_suggestions
-                    if key in llm_data
-                }
-                
-                if not data_for_suggestions:
-                     st.sidebar.error(language_manager.get_text("error_preparing_data_no_valid_pages", lang, fallback="Error: No valid page data for selected items."))
+        if st.sidebar.button(language_manager.get_text("generate_seo_suggestions_button_text", lang, fallback="Generate SEO Suggestions")):
+            
+            user_selected_page_keys = st.session_state.selected_pages_for_seo_suggestions
+            data_for_suggestions = None # Initialize
+
+            if user_selected_page_keys:
+                # User selected specific pages from llm_analysis_all
+                valid_selected_keys = [
+                    key for key in user_selected_page_keys if key in llm_data
+                ]
+                if valid_selected_keys:
+                    data_for_suggestions = {
+                        key: llm_data[key] 
+                        for key in valid_selected_keys
+                    }
+                    # Optional: Add a type indicator if generate_seo_suggestions needs it
+                    # data_for_suggestions["_source_type_"] = "detailed_pages" 
                 else:
-                    with st.spinner(language_manager.get_text("processing_request", lang)):
-                        suggestions = generate_seo_suggestions(pages_data_for_suggestions=data_for_suggestions)
-                        # MODIFIED SECTION:
-                        # Remove direct display:
-                        # with st.chat_message("assistant"):
-                        #     st.markdown(suggestions)
-                        
-                        # Only append to session state. The main message loop will render it.
-                        # The condition prevents adding the same message repeatedly if this block runs multiple times.
-                        if not st.session_state.messages or st.session_state.messages[-1].get("content") != suggestions:
-                            st.session_state.messages.append({"role": "assistant", "content": suggestions})
-                        # A rerun is implicitly triggered by the button click, so the main message loop will pick this up.
+                    # User made selections, but none were valid keys in llm_data
+                    st.sidebar.error(language_manager.get_text("error_selected_pages_no_valid_data", lang, fallback="Error: None of the selected pages have data available for suggestions."))
+            
+            else: # No pages selected by the user from the multiselect, default to text_report
+                if st.session_state.get("text_report"):
+                    # Prepare data_for_suggestions using the text_report.
+                    # The structure should be something generate_seo_suggestions can differentiate.
+                    data_for_suggestions = {
+                        "_source_type_": "text_report",  # Key to indicate the source
+                        "content": st.session_state.text_report
+                    }
+                    st.sidebar.info(language_manager.get_text("using_text_report_for_suggestions", lang, fallback="No specific pages selected. Generating suggestions based on the general text report."))
+                else:
+                    # No pages selected AND no text_report available (should be rare if URL was processed and llm_analysis_available is true)
+                    st.sidebar.error(language_manager.get_text("error_no_pages_selected_no_text_report", lang, fallback="Error: No pages selected and no general text report available for suggestions."))
+
+            if data_for_suggestions:
+                with st.spinner(language_manager.get_text("processing_request", lang)):
+                    # generate_seo_suggestions must now be able to handle the two forms of `data_for_suggestions`:
+                    # 1. Dict of page analyses: { "page1": {...}, "page2": {...} }
+                    # 2. Dict for text report: { "_source_type_": "text_report", "content": "..." }
+                    suggestions = generate_seo_suggestions(pages_data_for_suggestions=data_for_suggestions)
+                    
+                    if not st.session_state.messages or st.session_state.messages[-1].get("content") != suggestions:
+                        st.session_state.messages.append({"role": "assistant", "content": suggestions})
+            # else: Error messages would have been displayed above.
     
-    elif st.session_state.get("full_report") and st.session_state.get("url"):
+    elif st.session_state.get("full_report") and st.session_state.get("url"): # llm_analysis_all not available or empty
         st.sidebar.info(language_manager.get_text("detailed_analysis_not_ready_for_suggestions", lang, 
-                                                  fallback="Detailed page analysis (llm_analysis_all) not yet available or empty. Ensure full site analysis has completed and yielded results."))
-    else:
+                                                  fallback="Detailed page analysis (llm_analysis_all) not yet available or empty. Ensure full site analysis has completed and yielded results. General suggestions might be possible via chat if a text report exists."))
+    else: # No full_report or URL
         if st.session_state.get("authenticated"):
             st.sidebar.text(language_manager.get_text("analyze_url_first_for_suggestions", lang, fallback="Analyze a URL to enable SEO suggestions."))
     # --- End SEO Suggestions Button & Page Selection Logic ---
@@ -168,7 +185,6 @@ async def main_seo_helper():
     st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
     common_sidebar()
     
-    # This loop will now correctly render the suggestions once.
     if "messages" in st.session_state:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):

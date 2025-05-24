@@ -144,12 +144,23 @@ class LanguageSupport:
 
                 "seo_suggestions_for_pages_label": "SEO Suggestions for Pages:",
                 "select_pages_for_seo_suggestions": "Select pages(s)/delete 🔸 ",
+                "select_pages_for_detailed_suggestions": "Select pages or leave empty for general report suggestions✖️ ",
+                "multiselect_seo_help_text_v2": "Select pages for detailed suggestions. If empty, suggestions use the general text report of the site. 'main_page' is often key for page-specific analysis. ",
+                "using_text_report_for_suggestions": "Creating General Suggestion ",
+                "error_no_pages_selected_no_text_report": "You didnt select any page. ",
                 
             },
 
             "tr": {
 
                 "select_pages_for_seo_suggestions": " Sayfa(lar) Seç/Sil: 🔸 ",
+                "select_pages_for_detailed_suggestions": "Sayfa Seç Yada genel öneri için boş bırak✖️ ",
+                "multiselect_seo_help_text_v2": "Öneri için Sayfa seç. Boşken Genel analiz yaratılır. main_page seçiliyken boş değildir. Genel analiz için main_page i sil. ",
+                "using_text_report_for_suggestions": "Genel Öneri yaratılıyor. ",
+                "error_no_pages_selected_no_text_report": "Sayfa Seçmediniz. ",
+                
+                
+
                 # newly added 1.1
                 "detailed_analysis_init_error": "Detaylı analiz işlemcisi başlatılırken hata oluştu. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
                 "detailed_analysis_runtime_error": "Detaylı analiz işlemcisi kurulumu sırasında çalışma zamanı hatası. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
