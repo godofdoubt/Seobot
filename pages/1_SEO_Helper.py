@@ -6,7 +6,7 @@ st.set_page_config(
     page_title="SEO Helper",
     page_icon="🚀",
     layout="wide",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded"
 )
 hide_pages_nav = """
 <style>

@@ -33,7 +33,7 @@ class LanguageSupport:
                 "check_report_update_button": "🔄 Check for Full Site Analysis Update",
                 "error_checking_report_status": "Error checking report status. Please try again.",
                 
-                "main_settings_title": " Panel: Open/Close '<' ^^ ",
+                "main_settings_title": " Panel: '<' ^^ ",
                 "home_page_label": " 👋 Home",
                 "language_select_label": "Language / Dil",
                  "select_ai_model_label": "Select AI Model:",
@@ -175,7 +175,7 @@ class LanguageSupport:
                 "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
 
                 # newly added 1.2
-                "main_settings_title": " Panel: Aç/Kapa'<' ^^ ",
+                "main_settings_title": " Panel: '<' ^^ ",
                 "home_page_label": "👋 Ana Sayfa",
                 "language_select_label": "Dil / Language",
                 "select_ai_model_label": "AI Modelini Seçin:",

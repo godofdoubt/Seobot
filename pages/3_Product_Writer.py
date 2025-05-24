@@ -21,7 +21,7 @@ st.set_page_config(
     page_title="Product Writer - Se10 AI",
     page_icon="🛍️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 # Hide Streamlit's default "/pages" sidebar nav
 hide_pages_nav = """
