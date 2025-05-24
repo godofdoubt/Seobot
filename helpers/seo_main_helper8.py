@@ -6,8 +6,7 @@ import requests
 from utils.s10tools import normalize_url, Tool
 from typing import Callable, Dict, Any
 from utils.language_support import language_manager
-# utils.shared_functions.analyze_website is not directly used here anymore for URL processing
-# if process_url_from_main handles it all.
+
 language_names = {"en": "English", "tr": "Turkish"}
 
 def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
@@ -15,10 +14,10 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
     
     # Configure Gemini
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.0-flash') # Updated recent available model
+    model = genai.GenerativeModel('gemini-2.0-flash')
 
     async def process_question(prompt: str, context: str) -> str:
-        """Process a question using Gemini.""" # Changed o10 to Gemini for clarity
+        """Process a question using Gemini."""
         try:
             # Include username in context if available
             username_context = f"Username: {st.session_state.username}\n" if "username" in st.session_state and st.session_state.username else ""
@@ -43,36 +42,32 @@ Please provide a helpful and comprehensive response based on the information in 
 
     # Create tools dictionary with actual function implementations
     from buttons.generate_seo_suggestions import generate_seo_suggestions
-    # Import other tool functions as needed
     
     tools = {
         "process_question": Tool(
-            description="Process a question using the chat context and SEO report",
+            description="Process a question using the chat context and analysis",
             function=process_question,
             parameters=["prompt", "context"],
             validation=True,
             prompt="Processing your question..."
         ),
         "generate_seo_suggestions": Tool(
-            description="Provide SEO suggestions based on the full SEO report",
+            description="Provide SEO suggestions based on the llm_analysis_all data",
             function=generate_seo_suggestions,
-            parameters=["report"], # This expects the full_report, not text_report
+            parameters=[], # No parameters needed - function will access session state
             validation=True,
             prompt="Generating SEO suggestions..."
         )
-        # Add other tools here as needed
     }
 
     return tools
 
 async def process_chat_input(
     prompt: str,
-    process_url_from_main: Callable, # MODIFIED: New parameter to call main.py's process_url
+    process_url_from_main: Callable,
     MISTRAL_API_KEY: str = None,
     GEMINI_API_KEY: str = None,
     message_list: str = "messages"
-    # analyze_website, load_saved_report, display_report_and_services are no longer needed here
-    # if process_url_from_main handles all URL processing aspects.
 ):
     """Processes chat input. Uses process_url_from_main for URL analysis, 
     or question answering for other inputs.
@@ -88,28 +83,14 @@ async def process_chat_input(
     
     # Handle URL analysis by delegating to main.py's process_url
     if re.match(r'^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$', prompt):
-        with st.chat_message("assistant"): # Provide immediate feedback in chat
+        with st.chat_message("assistant"):
             st.markdown(f"Processing URL: {prompt}...")
-        # Add user prompt to message list before calling process_url, 
-        # as process_url might rerun and clear current chat display if not careful
-        # St.session_state[message_list].append({"role": "user", "content": prompt}) # Already done by caller
         
         await process_url_from_main(prompt, lang)
-        # process_url_from_main (main.py's process_url) is expected to handle:
-        # - Normalization
-        # - Checking saved reports (via load_saved_report)
-        # - Analyzing new sites (via analyze_website)
-        # - Saving reports
-        # - Triggering background tasks (llm_analysis_end.py)
-        # - Updating session_state (text_report, full_report, url, analysis_complete)
-        # - Calling main.py's display_report which does st.rerun()
-        # - Displaying relevant messages during its execution (e.g., "Analyzing...", "Found existing report...")
-        # No need to explicitly call display_report_and_services or set analysis_complete here.
-        # The st.rerun() from main.py's display_report will refresh the UI.
 
     else:
         # Handle questions using appropriate model
-        if st.session_state.get("text_report"): # Check .get("text_report") for safety
+        if st.session_state.get("text_report"):
             # Determine which model to use based on provided API keys
             if MISTRAL_API_KEY and (not GEMINI_API_KEY or st.session_state.get("use_mistral", False)):
                 # Use Mistral API
@@ -125,23 +106,18 @@ async def process_chat_input(
             with st.chat_message("assistant"):
                 st.markdown("Please provide a website URL first so I can analyze it.")
             st.session_state[message_list].append({"role": "assistant", "content": "Please provide a website URL first so I can analyze it."})
-    
-    # The st.rerun() if a URL was processed will happen due to main.py's display_report.
-    # If it was a question, the UI updates messages directly.
 
 async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str, message_list: str = "messages"):
     """Process the chat input using Mistral API."""
     lang = st.session_state.get("language", "en")
-    # Using language_manager for spinner text
     spinner_text = language_manager.get_text("processing_request", lang) if hasattr(language_manager, "get_text") else "Processing your request..."
-
 
     with st.spinner(spinner_text):
         with st.chat_message("assistant"):
             try:
                 history_context = ""
                 num_history_turns = 5
-                messages_to_process = st.session_state.get(message_list, []) # Use .get for safety
+                messages_to_process = st.session_state.get(message_list, [])
                 start_index = max(0, len(messages_to_process) - num_history_turns)
                 for message in messages_to_process[start_index:]:
                     history_context += f"{message['role'].capitalize()}: {message['content']}\n"
@@ -155,7 +131,15 @@ async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str, message_list: 
                 }
                 language_info = f"Please respond in {language_names.get(lang, 'English')}. " if lang != "en" else ""
                 
-                # Updated system prompt for Mistral
+                # Prepare context - use llm_analysis_all if available, fallback to text_report
+                context_data = ""
+                if st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
+                    context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
+                elif st.session_state.get("text_report"):
+                    context_data = f"SEO Report: {st.session_state.text_report}"
+                else:
+                    context_data = "No SEO report available."
+                
                 system_prompt_content = f"""You are an SEO expert assistant. {language_info}
 Your primary goal is to provide helpful responses based on the website analysis report provided in the 'Context from SEO Report' section.
 This report is comprehensive and may already include AI-generated strategic insights, recommendations, keyword analysis, and subpage details.
@@ -172,7 +156,7 @@ Conversation History (for context, but prioritize the SEO Report for site-specif
 {history_context}
 
 Context from SEO Report:
-{st.session_state.get("text_report", "No SEO report available.")}"""
+{context_data}"""
 
                 data = {
                     "model": "mistral-large-latest",
@@ -187,7 +171,7 @@ Context from SEO Report:
                         }
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 1000 # Consider increasing if reports are very long and complex responses are needed
+                    "max_tokens": 1000
                 }
                 
                 response = requests.post(url, headers=headers, json=data)
@@ -220,43 +204,51 @@ async def process_with_gemini(prompt: str, GEMINI_API_KEY: str, message_list: st
 
             tool_used = False
 
-            # Ensure full_report exists for generate_seo_suggestions
-            if any(keyword in prompt.lower() for keyword in ["suggest", "recommendation", "improve", "seo"]) and \
+            # Check for suggestion keywords but ensure llm_analysis_all is available
+            if any(keyword in prompt.lower() for keyword in ["suggest", "recommendation", "improve"]) and \
                "generate_seo_suggestions" not in st.session_state.used_tools and \
-               st.session_state.get("full_report"): # Check for full_report
+               st.session_state.get("full_report") and \
+               st.session_state.full_report.get("llm_analysis_all"):
                 with st.chat_message("assistant"):
-                    # generate_seo_suggestions expects the full_report dictionary
-                    response = tools["generate_seo_suggestions"].function(st.session_state.full_report)
+                    # generate_seo_suggestions will now access llm_analysis_all directly from session state
+                    response = tools["generate_seo_suggestions"].function()
                     st.markdown(response)
                     st.session_state[message_list].append({"role": "assistant", "content": response})
                     st.session_state.used_tools.add("generate_seo_suggestions")
                     tool_used = True
-            elif any(keyword in prompt.lower() for keyword in ["suggest", "recommendation", "improve", "seo"]) and \
-                 not st.session_state.get("full_report"):
+            elif any(keyword in prompt.lower() for keyword in ["suggest", "recommendation", "improve"]) and \
+                 (not st.session_state.get("full_report") or not st.session_state.full_report.get("llm_analysis_all")):
                  with st.chat_message("assistant"):
-                    # This message is specific to the 'generate_seo_suggestions' tool path
-                    msg = "To generate new SEO suggestions based on the full raw data, a complete analysis report is needed. Please analyze a URL first if you haven't. I can still discuss any suggestions present in the current summary if available."
+                    msg = "To generate comprehensive SEO suggestions based on detailed page analysis, complete llm_analysis_all data is needed. Please analyze a URL first and wait for the detailed analysis to complete. I can still discuss any suggestions present in the current summary if available."
                     st.markdown(msg)
                     st.session_state[message_list].append({"role": "assistant", "content": msg})
-                    tool_used = True # A response was given, preventing fall-through to process_question immediately for this specific intent.
+                    tool_used = True
 
             if not tool_used:
                 with st.chat_message("assistant"):
                     history_context = ""
-                    num_history_turns = 5 # Consider making this configurable
+                    num_history_turns = 5
                     messages_to_process = st.session_state.get(message_list, [])
                     start_index = max(0, len(messages_to_process) - num_history_turns)
                     for message in messages_to_process[start_index:]:
                         history_context += f"{message['role'].capitalize()}: {message['content']}\n"
 
-                    # Context for Gemini's process_question tool
-                    # The text_report here is the new comprehensive one
+                    # Context for Gemini's process_question tool - prioritize llm_analysis_all
+                    context_data = ""
+                    if st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
+                        context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
+                    elif st.session_state.get("text_report"):
+                        context_data = f"SEO Report: {st.session_state.text_report}"
+                    else:
+                        context_data = "No SEO report available. Please analyze a URL first."
+
                     context_for_gemini = f"""
                     Username: {st.session_state.username if "username" in st.session_state and st.session_state.username else "Anonymous"}
-                    SEO Report: {st.session_state.get("text_report", "No SEO report available. Please analyze a URL first.")}
+                    {context_data}
                     Conversation History (for reference, prioritize the SEO Report for site-specific questions):
                     {history_context}
                     """
+                    
                     response = await tools["process_question"].function(prompt, context_for_gemini)
                     st.markdown(response)
                     st.session_state[message_list].append({"role": "assistant", "content": response})
@@ -264,5 +256,5 @@ async def process_with_gemini(prompt: str, GEMINI_API_KEY: str, message_list: st
         except Exception as e:
             with st.chat_message("assistant"):
                 error_msg = f"Error processing request with Gemini: {str(e)}"
-                st.error(error_msg) # Use st.error for better visibility of actual errors
+                st.error(error_msg)
                 st.session_state[message_list].append({"role": "assistant", "content": error_msg})

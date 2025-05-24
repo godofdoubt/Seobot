@@ -20,11 +20,11 @@ st.markdown(hide_pages_nav, unsafe_allow_html=True)
 import asyncio
 import os
 from dotenv import load_dotenv
-from supabase import create_client, Client # Keep Client if used directly, else remove
+from supabase import create_client, Client
 from utils.shared_functions import init_shared_session_state, common_sidebar, update_page_history
 from utils.language_support import language_manager
 from helpers.seo_main_helper8 import process_chat_input
-from buttons.generate_seo_suggestions import generate_seo_suggestions # Corrected import
+from buttons.generate_seo_suggestions import generate_seo_suggestions
 
 # --- Import process_url from main.py ---
 try:
@@ -94,7 +94,7 @@ async def main_seo_helper():
         isinstance(st.session_state.full_report, dict) and
         st.session_state.full_report.get("llm_analysis_all") and
         isinstance(st.session_state.full_report["llm_analysis_all"], dict) and
-        st.session_state.full_report["llm_analysis_all"] # Ensure it's not empty (truthy, e.g. not {})
+        st.session_state.full_report["llm_analysis_all"]
     )
 
     if llm_analysis_available:
@@ -111,28 +111,24 @@ async def main_seo_helper():
             sorted_page_keys = available_page_keys
         
         current_selection = st.session_state.selected_pages_for_seo_suggestions
-        # Keep default selection logic if desired, or remove if "empty means text_report" is the primary default
         if not current_selection and "main_page" in sorted_page_keys:
-             current_selection = ["main_page"] # Default to main_page if available and nothing selected
-        # elif not current_selection and sorted_page_keys: 
-        #     current_selection = [sorted_page_keys[0]] # Or first page
+             current_selection = ["main_page"]
 
         st.sidebar.subheader(language_manager.get_text("seo_suggestions_for_pages_label", lang, fallback="SEO Suggestions:"))
         
         selected_pages = st.sidebar.multiselect(
-            label=language_manager.get_text("select_pages_for_detailed_suggestions", lang, fallback="Select pages (or leave empty for general report suggestions):"),
+            label=language_manager.get_text("select_pages_for_detailed_suggestions", lang, fallback="Select pages (or leave empty for all pages):"),
             options=sorted_page_keys,
             default=current_selection,
             key="multiselect_seo_suggestion_pages", 
-            help=language_manager.get_text("multiselect_seo_help_text_v2", lang, fallback="Select pages for detailed suggestions. If empty, suggestions use the general text report of the site. 'main_page' is often key for page-specific analysis.")
+            help=language_manager.get_text("multiselect_seo_help_text_v3", lang, fallback="Select specific pages for focused suggestions. If empty, suggestions will use all available page analysis data. 'main_page' contains the homepage analysis.")
         )
         st.session_state.selected_pages_for_seo_suggestions = selected_pages
-
 
         if st.sidebar.button(language_manager.get_text("generate_seo_suggestions_button_text", lang, fallback="Generate SEO Suggestions")):
             
             user_selected_page_keys = st.session_state.selected_pages_for_seo_suggestions
-            data_for_suggestions = None # Initialize
+            data_for_suggestions = None
 
             if user_selected_page_keys:
                 # User selected specific pages from llm_analysis_all

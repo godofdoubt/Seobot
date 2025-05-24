@@ -259,18 +259,18 @@ def load_saved_report(url: str, supabase: Client):
     try:
         normalized_url = normalize_url(url)
         # Fetch both report and llm_analysis_all to construct the full_report if available
-        response = supabase.table('seo_reports').select('text_report, report, llm_analysis_all, llm_analysis_all_completed').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
+        response = supabase.table('seo_reports').select('text_report, llm_analysis_all, llm_analysis_all_completed').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute() 
         if response.data and len(response.data) > 0:
             data = response.data[0]
             text_report = data.get('text_report', "Text report not available.")
-            full_report_base = data.get('report', {})
+           # full_report_base = data.get('report', {})
             llm_analysis_data = data.get('llm_analysis_all')
             
-            # Construct the full_report including llm_analysis_all if completed
+            current_full_report = {}
             if data.get('llm_analysis_all_completed') and llm_analysis_data:
-                full_report_base['llm_analysis_all'] = llm_analysis_data
+                current_full_report['llm_analysis_all'] = llm_analysis_data
             
-            return text_report, full_report_base
+            return text_report, current_full_report # Return the newly constructed report
         else:
             logging.warning(f"No data found for URL {normalized_url}")
             return None, None
@@ -280,9 +280,7 @@ def load_saved_report(url: str, supabase: Client):
 
 def check_and_update_report_status(supabase: Client, report_id: int, lang: str = "en"):
     try:
-        response = supabase.table('seo_reports').select(
-            'llm_analysis_all_completed, llm_analysis_all_error, text_report, report, llm_analysis_all, url' # Ensure llm_analysis_all is selected
-        ).eq('id', report_id).execute()
+        response = supabase.table('seo_reports').select('llm_analysis_all_completed, llm_analysis_all_error, text_report, llm_analysis_all, url').eq('id', report_id).execute()
         
         if not response.data:
             logging.warning(f"No report found with ID {report_id}")
@@ -299,12 +297,13 @@ def check_and_update_report_status(supabase: Client, report_id: int, lang: str =
             new_message = language_manager.get_text("full_site_analysis_complete", lang)
             
             db_text_report = report_data.get('text_report', '')
-            db_main_report_json = report_data.get('report', {}) 
+            #db_main_report_json = report_data.get('report', {}) 
             db_llm_analysis_all_json = report_data.get('llm_analysis_all', {}) # Get llm_analysis_all
             db_url = report_data.get('url', '')
             
             # Combine main report with llm_analysis_all data
-            comprehensive_full_report = db_main_report_json.copy()
+            #comprehensive_full_report = db_main_report_json.copy()
+            comprehensive_full_report = {} # Build from scratch
             if db_llm_analysis_all_json: # If llm_analysis_all data exists and is not empty
                 comprehensive_full_report['llm_analysis_all'] = db_llm_analysis_all_json
             
