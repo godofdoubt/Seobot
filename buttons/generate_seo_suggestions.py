@@ -18,7 +18,7 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
         pages_data_for_suggestions: Dict containing either:
             - Selected pages from llm_analysis_all: {"page_key": {...}, ...}
             - Text report fallback: {"_source_type_": "text_report", "content": "..."}
-            - None: Will use all llm_analysis_all data
+            - None: Will use text_report as fallback if llm_analysis_all not available
     """
     
     # Get current language
@@ -37,14 +37,18 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
     try:
         # Determine data source and prepare report_data_str
         if pages_data_for_suggestions is None:
-            # Use all llm_analysis_all if no specific data provided
-            if st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
-                report_data_str = json.dumps(st.session_state.full_report["llm_analysis_all"], indent=2, ensure_ascii=False)
+            # Default to text_report when no specific data provided
+            if st.session_state.get("text_report"):
+                pages_data_for_suggestions = {
+                    "_source_type_": "text_report",
+                    "content": st.session_state.text_report
+                }
+                report_data_str = st.session_state.text_report
             else:
-                return "No detailed analysis data available. Please analyze a URL first to generate suggestions."
+                return "No analysis data available. Please analyze a URL first to generate suggestions."
         
         elif pages_data_for_suggestions.get("_source_type_") == "text_report":
-            # Handle text_report fallback
+            # Handle text_report case
             report_data_str = pages_data_for_suggestions.get("content", "No content available")
             
         else:
@@ -53,7 +57,7 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
 
         if use_mistral:
             # Use Mistral API
-            response_text = generate_with_mistral(report_data_str, mistral_api_key, lang)
+            response_text = generate_with_mistral(report_data_str, mistral_api_key, lang, pages_data_for_suggestions)
         else:
             # Use Gemini API
             language_instruction = f"Respond in Turkish. " if lang == "tr" else "Respond in English. "
@@ -66,15 +70,18 @@ You have been provided with a general SEO report for a website. Based on this re
 
 Your task is to:
 1. Analyze the provided report thoroughly
-2. Generate NEW actionable SEO and content strategy recommendations
+2. Generate actionable SEO and content strategy recommendations
 3. Organize suggestions into clear categories (On-Page SEO, Technical SEO, Content Strategy, User Experience)
 4. For each suggestion, provide:
    - Clear, actionable recommendation
    - Brief rationale explaining why it's important
    - Suggested priority (High, Medium, Low)
+5. Focus on practical improvements that can be implemented
 
 Here is the SEO report:
 {report_data_str}
+
+Please provide comprehensive suggestions to improve this website's SEO performance.
 """
             else:
                 prompt = f"""{language_instruction}
@@ -118,7 +125,7 @@ Here is the detailed analysis data for the selected page(s):
         logging.error(f"Error generating SEO suggestions: {e}")
         return f"Could not generate SEO suggestions: {str(e)}"
 
-def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en") -> str:
+def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en", pages_data_for_suggestions: dict = None) -> str:
     """Generate SEO suggestions using Mistral API."""
     url = "https://api.mistral.ai/v1/chat/completions"
 
@@ -130,16 +137,29 @@ def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en") 
     language_names = {"en": "English", "tr": "Turkish"}
     mistral_language_instruction = f"Please ensure your entire response is in {language_names.get(lang, 'English')}. "
 
-    data = {
-        "model": "mistral-large-latest",
-        "messages": [
-            {
-                "role": "system",
-                "content": f"You are a world-class SEO strategist and content analyst. Your primary function is to provide expert, actionable, and insightful recommendations based on detailed SEO analysis data for specific web pages. {mistral_language_instruction} You are analyzing detailed data for one or more pages of a website. Your advice should be tailored to the information presented in the data and delivered entirely in the requested language."
-            },
-            {
-                "role": "user",
-                "content": f"""{mistral_language_instruction}
+    # Determine the type of data we're working with
+    is_text_report = pages_data_for_suggestions and pages_data_for_suggestions.get("_source_type_") == "text_report"
+    
+    if is_text_report:
+        user_content = f"""{mistral_language_instruction}
+Please analyze the following general SEO report for a website and provide comprehensive, actionable SEO recommendations.
+
+Your objective is to:
+1. Thoroughly analyze the provided SEO report
+2. Generate strategic SEO and content recommendations based on the findings
+3. Identify key opportunities for improvement and potential weaknesses
+4. Structure your suggestions into logical categories (e.g., On-Page SEO, Technical SEO, Content Strategy, User Experience)
+5. For each suggestion, provide:
+   - The recommendation itself (actionable and specific)
+   - The reasoning behind it, linking back to findings in the report
+   - A suggested priority level (High, Medium, Low)
+6. Focus on delivering high-impact advice that can demonstrably improve SEO performance
+
+Here is the SEO report:
+{report_data_str}
+"""
+    else:
+        user_content = f"""{mistral_language_instruction}
 Please analyze the following detailed analysis data for specific page(s) from a website. This data includes content summaries, keywords, suggested keywords, tone, audience, topics, etc., for each selected page.
 
 Your objective is to go beyond any existing recommendations found within this page-specific data. Based on a thorough examination of ALL the provided information:
@@ -156,6 +176,17 @@ Your objective is to go beyond any existing recommendations found within this pa
 Here is the detailed analysis data:
 {report_data_str}
 """
+
+    data = {
+        "model": "mistral-large-latest",
+        "messages": [
+            {
+                "role": "system",
+                "content": f"You are a world-class SEO strategist and content analyst. Your primary function is to provide expert, actionable, and insightful recommendations based on SEO analysis data. {mistral_language_instruction} Your advice should be tailored to the information presented in the data and delivered entirely in the requested language."
+            },
+            {
+                "role": "user",
+                "content": user_content
             }
         ],
         "temperature": 0.7,
