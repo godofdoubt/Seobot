@@ -9,17 +9,6 @@ from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 
 #1
-# utils/shared_functions.py
-import streamlit as st
-import os
-import logging # Added import
-import time
-from supabase import Client
-from analyzer.seo import SEOAnalyzer
-from utils.s10tools import normalize_url
-from utils.language_support import language_manager
-
-#1
 def init_shared_session_state():
     """Initialize shared session state variables across all pages"""
     if "messages" not in st.session_state:
@@ -27,7 +16,7 @@ def init_shared_session_state():
     if "text_report" not in st.session_state:
         st.session_state.text_report = None
     if "full_report" not in st.session_state:
-        st.session_state.full_report = None
+        st.session_state.full_report = None # This will store combined report data
     if "url" not in st.session_state:
         st.session_state.url = None
     if "authenticated" not in st.session_state:
@@ -37,47 +26,36 @@ def init_shared_session_state():
     if "seo_suggestions_generated" not in st.session_state:
         st.session_state.seo_suggestions_generated = False    
     if "use_mistral" not in st.session_state:
-        st.session_state.use_mistral = False # Default to Gemini (o10)
+        st.session_state.use_mistral = False 
     if "current_page" not in st.session_state:
-        st.session_state.current_page = None # Changed default to None
+        st.session_state.current_page = None 
     if "page_history" not in st.session_state:
         st.session_state.page_history = {}
-    # Analysis state
     if "analysis_complete" not in st.session_state:
         st.session_state.analysis_complete = False
-     # Initialize language if not set
     if "language" not in st.session_state:
         st.session_state.language = "en"
-    # For tracking background detailed analysis
     if "detailed_analysis_info" not in st.session_state:
         st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
-    # For keeping track of URL being analyzed even when switching pages
     if "url_being_analyzed" not in st.session_state:
         st.session_state.url_being_analyzed = None
     if "analysis_in_progress" not in st.session_state:
         st.session_state.analysis_in_progress = False
 
 def update_page_history(page_name):
-    """Store the current page's message history and load the new page's history."""
-    lang = st.session_state.get("language", "en") # Ensure lang is available
+    lang = st.session_state.get("language", "en") 
 
-    # 1. Save the current page's state (its chat messages) before switching
-    # Only save if current_page is not None (i.e., not the very first load/app start)
-    # and if the current page is different from the target page (avoid saving to self when rerunning)
     if st.session_state.current_page and st.session_state.current_page != page_name:
         st.session_state.page_history[st.session_state.current_page] = st.session_state.messages.copy()
         logging.info(f"Saved chat history for '{st.session_state.current_page}' (length: {len(st.session_state.messages)})")
 
-    # 2. Update current page tracker
     st.session_state.current_page = page_name
     logging.info(f"Attempting to switch to page: '{page_name}'")
 
-    # 3. Restore messages from page history if available, or initialize
     if page_name in st.session_state.page_history:
         st.session_state.messages = st.session_state.page_history[page_name].copy()
         logging.info(f"Restored chat history for '{page_name}' (length: {len(st.session_state.messages)})")
     else:
-        # Initialize with a welcome message for a new page
         welcome_message = ""
         if page_name == "seo":
             if st.session_state.get("url") and st.session_state.get("text_report"):
@@ -89,35 +67,27 @@ def update_page_history(page_name):
                 welcome_message = language_manager.get_text("welcome_article_writer_analyzed", lang, st.session_state.url)
             else:
                 welcome_message = language_manager.get_text("welcome_article_writer_not_analyzed", lang)
-        elif page_name == "main": # Assuming 'main' is the identifier for main.py
+        elif page_name == "main": 
             if st.session_state.get("authenticated"):
                 welcome_message = language_manager.get_text("welcome_authenticated", lang, st.session_state.username)
             else:
                 welcome_message = language_manager.get_text("welcome_seo", lang)
-        # Add more `elif` for other pages like "product"
-        elif page_name == "product": # Assuming this exists or will exist
+        elif page_name == "product": 
              if st.session_state.get("url") and st.session_state.get("text_report"):
                 welcome_message = language_manager.get_text("welcome_product_writer_analyzed", lang, st.session_state.url)
              else:
                 welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang)
         else:
-            # Generic fallback if page_name not specifically handled
-            # Ensure 'generic_page_welcome' is defined in your language files
             welcome_message = language_manager.get_text("generic_page_welcome", lang, page_name=page_name.replace('_', ' ').title())
-            if not welcome_message or welcome_message == f"generic_page_welcome (page_name={page_name.replace('_', ' ').title()})": # Fallback if language key isn't found
+            if not welcome_message or welcome_message == f"generic_page_welcome (page_name={page_name.replace('_', ' ').title()})":
                  welcome_message = f"Welcome to the {page_name.replace('_', ' ').title()} page."
 
         st.session_state.messages = [{"role": "assistant", "content": welcome_message}]
         logging.info(f"Initialized new chat history for '{page_name}' with welcome message.")
 
-# ... (rest of shared_functions.py remains the same)
-
-
-# Display function for reports
 def display_report_and_services(text_report, full_report, normalized_url, message_list="messages"):
-    """Displays the report and sets up the session state."""
     st.session_state.text_report = text_report
-    st.session_state.full_report = full_report
+    st.session_state.full_report = full_report # This full_report might initially not have llm_analysis_all
     st.session_state.url = normalized_url
     with st.chat_message("assistant", avatar="🤖"):
         st.markdown(f"Report for {normalized_url}:")
@@ -134,32 +104,26 @@ You can select one of the following services from the sidebar pages:
     
     st.rerun()
     
-# Common sidebar layout
 def common_sidebar():
-    """Common sidebar content across all pages"""
     lang = st.session_state.get("language", "en")
     st.sidebar.title(language_manager.get_text("main_settings_title", lang))
 
     is_analysis_in_progress = st.session_state.get("analysis_in_progress", False)
 
-    # --- Navigation Links ---
     st.sidebar.page_link("main.py", label=language_manager.get_text("home_page_label", lang))
-    st.sidebar.page_link("pages/1_SEO_Helper.py", label=language_manager.get_text("seo_helper_button", lang)) # Always enabled
+    st.sidebar.page_link("pages/1_SEO_Helper.py", label=language_manager.get_text("seo_helper_button", lang))
     
-
-    # Define paths for other pages
-    # Ensure these paths are correct relative to your project root where streamlit run is executed
     article_writer_path = "pages/2_Article_Writer.py"
     product_writer_path = "pages/3_Product_Writer.py"
 
-    if os.path.exists(article_writer_path): # Check if file exists before creating link
+    if os.path.exists(article_writer_path):
         st.sidebar.page_link(
             article_writer_path,
             label=language_manager.get_text("article_writer_button", lang),
             disabled=is_analysis_in_progress
         )
     
-    if os.path.exists(product_writer_path): # Check if file exists
+    if os.path.exists(product_writer_path):
         st.sidebar.page_link(
             product_writer_path,
             label=language_manager.get_text("product_writer_button", lang),
@@ -167,11 +131,8 @@ def common_sidebar():
         )
     
     st.sidebar.divider()
-
-    # --- Other Sidebar Elements (Language, Model, Report) ---
     disable_interactive_elements = is_analysis_in_progress
 
-    # Language selector
     languages = language_manager.get_available_languages()
     language_names = {"en": "English", "tr": "Türkçe"}
     original_language = st.session_state.language
@@ -189,7 +150,6 @@ def common_sidebar():
         st.session_state.language = selected_language
         st.rerun()   
     
-    # Model selection
     if "GEMINI_API_KEY" in st.session_state and "MISTRAL_API_KEY" in st.session_state:
         if st.session_state.GEMINI_API_KEY and st.session_state.MISTRAL_API_KEY:
             model_options_map = {
@@ -217,11 +177,9 @@ def common_sidebar():
                 new_use_mistral = (selected_model_key_for_update == "Se10")
                 if new_use_mistral != original_use_mistral:
                     st.session_state.use_mistral = new_use_mistral
-                    # st.rerun() # Optional: rerun if model change needs immediate global UI effect
     
     with st.sidebar.expander(language_manager.get_text("view_seo_report_expander_label", lang), expanded=False):
         if st.session_state.text_report and st.session_state.url:
-            # MODIFIED LINE: Pass st.session_state.url as a positional argument
             report_label = language_manager.get_text("your_website_report_label", lang, st.session_state.url)
             st.sidebar.text_area(
                 report_label, 
@@ -237,11 +195,10 @@ def common_sidebar():
     
     st.sidebar.divider()
 
-    # Logout Button
     if st.sidebar.button(
         language_manager.get_text("logout_button", lang), 
         key="common_sidebar_logout_button",
-        disabled=is_analysis_in_progress # Disable logout during analysis
+        disabled=is_analysis_in_progress
     ):
         st.session_state.authenticated = False
         st.session_state.username = None
@@ -249,13 +206,13 @@ def common_sidebar():
         if 'page_history' in st.session_state:
             st.session_state.page_history = {}
         st.session_state.analysis_complete = False
-        st.session_state.analysis_in_progress = False # Reset this
-        st.session_state.url_being_analyzed = None    # Reset this
+        st.session_state.analysis_in_progress = False
+        st.session_state.url_being_analyzed = None    
         st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
         
         keys_to_clear_on_logout = [
             'text_report', 'full_report', 'url', 
-            'main_page_analysis', 'other_pages_analysis',
+            'main_page_analysis', 'other_pages_analysis', 'selected_pages_for_seo_suggestions'
         ]
         for key_to_del in keys_to_clear_on_logout:
             if key_to_del in st.session_state:
@@ -264,9 +221,7 @@ def common_sidebar():
         st.query_params.clear() 
         st.switch_page("main.py")
 
-
 async def analyze_website(url: str, supabase: Client):
-    """Analyzes website SEO and saves/retrieves reports from Supabase."""
     analyzer = SEOAnalyzer()
     try:
         results = await analyzer.analyze_url(url)
@@ -277,16 +232,17 @@ async def analyze_website(url: str, supabase: Client):
             if existing_report.data and len(existing_report.data) > 0:
                 logging.info(f"Report succesfully created {url}.")
                 text_report = existing_report.data[0].get('text_report', "Text report not available.")
-                full_report = existing_report.data[0].get('report')
+                full_report = existing_report.data[0].get('report') # Initial report
                 return text_report, full_report
             else:
                 text_report = results.get('text_report', "Text report not available.")
-                full_report = results
+                full_report = results # Initial report
                 data_to_insert = {
                     'url': normalized_url,
                     'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
                     'report': full_report,
                     'text_report': text_report
+                    # llm_analysis_all will be populated later by a background process
                 }
                 logging.info(f"Inserting data into Supabase: {data_to_insert}")
                 insert_response = supabase.table('seo_reports').insert(data_to_insert).execute()
@@ -300,14 +256,21 @@ async def analyze_website(url: str, supabase: Client):
         return None, None
 
 def load_saved_report(url: str, supabase: Client):
-    """Loads a previously saved report from Supabase."""
     try:
         normalized_url = normalize_url(url)
-        response = supabase.table('seo_reports').select('text_report, report').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
+        # Fetch both report and llm_analysis_all to construct the full_report if available
+        response = supabase.table('seo_reports').select('text_report, report, llm_analysis_all, llm_analysis_all_completed').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
         if response.data and len(response.data) > 0:
-            text_report = response.data[0].get('text_report', "Text report not available.")
-            full_report = response.data[0].get('report')
-            return text_report, full_report
+            data = response.data[0]
+            text_report = data.get('text_report', "Text report not available.")
+            full_report_base = data.get('report', {})
+            llm_analysis_data = data.get('llm_analysis_all')
+            
+            # Construct the full_report including llm_analysis_all if completed
+            if data.get('llm_analysis_all_completed') and llm_analysis_data:
+                full_report_base['llm_analysis_all'] = llm_analysis_data
+            
+            return text_report, full_report_base
         else:
             logging.warning(f"No data found for URL {normalized_url}")
             return None, None
@@ -315,18 +278,10 @@ def load_saved_report(url: str, supabase: Client):
         logging.error(f"Error loading from Supabase: {e}")
         return None, None
 
-# Add these new functions to your existing shared_functions.py file
-# Add this function to your shared_functions.py file, 
-# place it before the display_detailed_analysis_status_enhanced function
 def check_and_update_report_status(supabase: Client, report_id: int, lang: str = "en"):
-    """
-    Check the database for the current status of detailed analysis and update session state
-    Returns: (status_changed: bool, new_status: str, message: str)
-    """
     try:
-        # Query the database for current status AND the updated reports
         response = supabase.table('seo_reports').select(
-            'llm_analysis_all_completed, llm_analysis_all_error, text_report, report, url'
+            'llm_analysis_all_completed, llm_analysis_all_error, text_report, report, llm_analysis_all, url' # Ensure llm_analysis_all is selected
         ).eq('id', report_id).execute()
         
         if not response.data:
@@ -337,33 +292,38 @@ def check_and_update_report_status(supabase: Client, report_id: int, lang: str =
         llm_analysis_completed = report_data.get('llm_analysis_all_completed', False)
         llm_analysis_error = report_data.get('llm_analysis_all_error')
         
-        # Get the current status before updating
         current_status = st.session_state.detailed_analysis_info.get("status")
         
-        # Determine new status based on database values
         if llm_analysis_completed:
             new_status = "complete"
             new_message = language_manager.get_text("full_site_analysis_complete", lang)
             
-            # CRITICAL FIX: Update session state with the new comprehensive report
-            # Only update if we're transitioning to complete status or if reports are different
             db_text_report = report_data.get('text_report', '')
-            db_full_report = report_data.get('report', {})
+            db_main_report_json = report_data.get('report', {}) 
+            db_llm_analysis_all_json = report_data.get('llm_analysis_all', {}) # Get llm_analysis_all
             db_url = report_data.get('url', '')
             
+            # Combine main report with llm_analysis_all data
+            comprehensive_full_report = db_main_report_json.copy()
+            if db_llm_analysis_all_json: # If llm_analysis_all data exists and is not empty
+                comprehensive_full_report['llm_analysis_all'] = db_llm_analysis_all_json
+            
             should_update_reports = (
-                current_status != "complete" or  # Status is changing to complete
-                st.session_state.text_report != db_text_report or  # Text report is different
-                st.session_state.url == db_url  # Same URL (safety check)
+                current_status != "complete" or
+                st.session_state.text_report != db_text_report or
+                st.session_state.full_report != comprehensive_full_report or # Compare with combined
+                (st.session_state.url == db_url and comprehensive_full_report.get('llm_analysis_all')) # Ensure llm_analysis_all is present for update
             )
             
-            if should_update_reports and db_text_report and db_full_report:
-                logging.info(f"Updating session state with comprehensive report for {db_url}")
+            if should_update_reports and db_text_report and comprehensive_full_report:
+                logging.info(f"Updating session state with comprehensive report for {db_url} (includes llm_analysis_all if present)")
                 st.session_state.text_report = db_text_report
-                st.session_state.full_report = db_full_report
+                st.session_state.full_report = comprehensive_full_report # Store combined report
                 st.session_state.url = db_url
-                logging.info(f"Session state updated with comprehensive report (length: {len(db_text_report)} chars)")
-            
+                # Reset seo_suggestions_generated flag as new data is available
+                st.session_state.seo_suggestions_generated = False
+                logging.info(f"Session state updated. full_report contains 'llm_analysis_all': {'llm_analysis_all' in st.session_state.full_report}")
+
             if llm_analysis_error:
                 logging.warning(f"Report {report_id} completed but has errors: {llm_analysis_error}")
                 
@@ -374,11 +334,9 @@ def check_and_update_report_status(supabase: Client, report_id: int, lang: str =
             new_status = "in_progress"
             new_message = language_manager.get_text("detailed_analysis_inprogress", lang)
         
-        # Check if status changed
         status_changed = current_status != new_status
         
         if status_changed:
-            # Update session state
             st.session_state.detailed_analysis_info.update({
                 "status": new_status,
                 "status_message": new_message
@@ -392,11 +350,7 @@ def check_and_update_report_status(supabase: Client, report_id: int, lang: str =
         logging.error(error_msg, exc_info=True)
         return False, "error", error_msg
 
-
 def display_detailed_analysis_status_enhanced(supabase: Client, lang: str = "en"):
-    """
-    Enhanced display with smart auto-refresh that detects background completion
-    """
     detailed_info = st.session_state.detailed_analysis_info
     
     if not (detailed_info.get("report_id") and detailed_info.get("url") == st.session_state.url):
@@ -405,16 +359,13 @@ def display_detailed_analysis_status_enhanced(supabase: Client, lang: str = "en"
     report_id = detailed_info["report_id"]
     current_status = detailed_info.get("status")
     
-    # Display current status
     if current_status == "complete":
         st.success(f"✅ {detailed_info['status_message']}")
-        # Show a refresh button to manually reload the comprehensive report
         if st.button(
             language_manager.get_text("refresh_comprehensive_report", lang, "🔄 Refresh Comprehensive Report"), 
             key=f"refresh_comprehensive_{report_id}",
             help="Click to ensure you're seeing the latest comprehensive analysis"
         ):
-            # Force refresh the report from database
             status_changed, new_status, message = check_and_update_report_status(supabase, report_id, lang)
             if new_status == "complete":
                 st.success("Report refreshed with latest comprehensive analysis!")
@@ -425,7 +376,6 @@ def display_detailed_analysis_status_enhanced(supabase: Client, lang: str = "en"
     else:  # in_progress
         st.info(f"🔄 {detailed_info['status_message']}")
     
-    # Enhanced auto-refresh for in-progress reports
     if current_status == "in_progress":
         col1, col2 = st.columns([1, 1])
         
@@ -449,22 +399,19 @@ def display_detailed_analysis_status_enhanced(supabase: Client, lang: str = "en"
             )
             st.session_state[f"auto_refresh_{report_id}"] = auto_refresh_enabled
         
-        # Enhanced auto-refresh with completion detection
         if auto_refresh_enabled:
             status_changed, new_status, message = enhanced_auto_refresh_with_completion_detection(
                 supabase, report_id, lang
             )
             
             if status_changed and new_status in ["complete", "error"]:
-                # Show completion message and refresh
                 if new_status == "complete":
                     st.success(f"🎉 Comprehensive analysis completed! Report updated with detailed insights.")
                 else:
                     st.error(f"❌ Analysis failed: {message}")
-                time.sleep(2)  # Brief pause to show the message
+                time.sleep(2) 
                 st.rerun()
             else:
-                # Show live countdown
                 next_check_in = 5 - (time.time() - st.session_state.get(f"last_check_{report_id}", 0))
                 if next_check_in > 0:
                     st.info(f"⏱️ Next auto-check in {int(next_check_in)} seconds...")
@@ -474,58 +421,52 @@ def display_detailed_analysis_status_enhanced(supabase: Client, lang: str = "en"
                     st.info("🔍 Checking status now...")
                     st.rerun()
 
-
-
 def enhanced_auto_refresh_with_completion_detection(supabase: Client, report_id: int, lang: str = "en"):
-    """
-    Enhanced auto-refresh that tries to detect when background process completes
-    """
-    # Check if we should be auto-refreshing
     if not st.session_state.get(f"auto_refresh_{report_id}", False):
         return False, None, "Auto-refresh disabled"
     
     current_time = time.time()
     last_check = st.session_state.get(f"last_check_{report_id}", 0)
-    
-    # More frequent checks (every 5 seconds) when analysis is in progress
     check_interval = 5
     
     if current_time - last_check >= check_interval:
         st.session_state[f"last_check_{report_id}"] = current_time
         
-        # Check database status
         status_changed, new_status, message = check_and_update_report_status(supabase, report_id, lang)
         
         if status_changed and new_status in ["complete", "error"]:
-            # Analysis finished - stop auto-refresh
             st.session_state[f"auto_refresh_{report_id}"] = False
-            logging.info(f"Auto-refresh detected completion for report {report_id}")
+            logging.info(f"Auto-refresh detected completion/error for report {report_id}")
             return True, new_status, message
         
         return status_changed, new_status, message
     
     return False, None, "Not time to check yet"
 
-
 def trigger_detailed_analysis_background_process_with_callback(report_id: int, supabase: Client):
-    """
-    Triggers the detailed analysis and sets up auto-refresh detection
-    """
     try:
         logging.info(f"Triggering detailed analysis for report ID {report_id}")
         
-        # Store the start time to detect completion
         st.session_state[f"analysis_start_time_{report_id}"] = time.time()
-        st.session_state[f"auto_refresh_{report_id}"] = True
-        
-        # Import and use your existing trigger logic
+        st.session_state[f"auto_refresh_{report_id}"] = True # Enable auto-refresh
+        st.session_state.detailed_analysis_info.update({ # Set initial status
+            "report_id": report_id,
+            "url": st.session_state.url, # Assuming URL is in session_state
+            "status": "in_progress",
+            "status_message": language_manager.get_text("detailed_analysis_initiated", st.session_state.language)
+        })
+
         from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor
         processor = LLMAnalysisEndProcessor() 
-        processor.schedule_run_in_background(report_ids=[str(report_id)])
+        processor.schedule_run_in_background(report_ids=[str(report_id)]) # Ensure report_id is string if required
         
         logging.info(f"Successfully scheduled detailed analysis for report ID {report_id}")
         return True
         
     except Exception as e:
         logging.error(f"Failed to trigger detailed analysis for report ID {report_id}: {e}")
+        st.session_state.detailed_analysis_info.update({
+            "status": "error",
+            "status_message": f"Failed to trigger analysis: {e}"
+        })
         return False

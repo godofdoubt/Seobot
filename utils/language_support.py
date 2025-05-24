@@ -14,7 +14,9 @@ class LanguageSupport:
                 "article_writer_button": "✍️ Article Writer",
                 "product_writer_button": "🛍️ Product Writer",
                 "generate_seo_suggestions": "Generate SEO Suggestions",
-                "generate_article": "Generate Article",
+                "generate_seo_suggestions_button_text": "Generate Suggestions🔍", 
+                 "generate_article": "Generate Article",
+
                 "generate_product_description": "Generate Product Description",
                 "check_report_update_button": "🔄 Check for Full Report / Refresh",
                 "refresh_analysis_status": "🔄 Just a sec.../ Refresh",
@@ -30,8 +32,8 @@ class LanguageSupport:
                 "detailed_analysis_still_inprogress": "Detailed site-wide LLM analysis is still in progress. Please check back again.",
                 "check_report_update_button": "🔄 Check for Full Site Analysis Update",
                 "error_checking_report_status": "Error checking report status. Please try again.",
-
-                "main_settings_title": " Panel: Aç/Kapa '<' ",
+                
+                "main_settings_title": " Panel: Open/Close '<' ^^ ",
                 "home_page_label": " 👋 Home",
                 "language_select_label": "Language / Dil",
                  "select_ai_model_label": "Select AI Model:",
@@ -105,7 +107,7 @@ class LanguageSupport:
                 "welcome_seo_helper_analyzed": "Welcome to the Seo Helper Page.\nUsing analysis for: {0}",
                 "welcome_article_writer_not_analyzed": "Welcome to the Article Writer page. Please analyze a website in the SEO Helper page first to proceed.",
                 "welcome_article_writer_analyzed": "Welcome to the Article Writer page. Ready to help you write an article based on the analysis of {0}.",
-                "enter_url_or_question_seo_helper":"Enter Url......Ask a Question.......",
+                "enter_url_or_question_seo_helper":"Enter Url.....Select Page and generate srategy....I am here to help...",
                 "enter_url_placeholder":"Enter Url.",
                 # Article Options
                 "article_options_title": "Article Options",
@@ -136,12 +138,18 @@ class LanguageSupport:
                 "product_length": "Description Length",
                 "product_length_short": "Short (~100-150 words)",
                 "product_length_medium": "Medium (~150-250 words)",
-                "product_length_long": "Long (~250-350 words)"
+                "product_length_long": "Long (~250-350 words)",
+
+    
+
+                "seo_suggestions_for_pages_label": "SEO Suggestions for Pages:",
+                "select_pages_for_seo_suggestions": "Select pages(s)/delete 🔸 ",
+                
             },
 
             "tr": {
 
-
+                "select_pages_for_seo_suggestions": " Sayfa(lar) Seç/Sil: 🔸 ",
                 # newly added 1.1
                 "detailed_analysis_init_error": "Detaylı analiz işlemcisi başlatılırken hata oluştu. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
                 "detailed_analysis_runtime_error": "Detaylı analiz işlemcisi kurulumu sırasında çalışma zamanı hatası. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
@@ -156,7 +164,7 @@ class LanguageSupport:
                 "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
 
                 # newly added 1.2
-                "main_settings_title": " Panel: Open/Close '<' ",
+                "main_settings_title": " Panel: Aç/Kapa'<' ^^ ",
                 "home_page_label": "👋 Ana Sayfa",
                 "language_select_label": "Dil / Language",
                 "select_ai_model_label": "AI Modelini Seçin:",
@@ -181,6 +189,9 @@ class LanguageSupport:
                 "generate_product_description": "Ürün Açıklaması Oluştur",
                 "check_report_update_button": "🔄 Tam Raporu Kontrol Et / Yenile",
                 "go_to_login":"Lütfen Giriş Yapın.",
+                "generate_seo_suggestions_button_text": "Öneri Yarat🔍", 
+                "seo_suggestions_for_pages_label": "Seo Önerileri Sayfaları:", 
+                
 
                 # Messages
                 "welcome_message": "nevaR Web Servislerine Hoş Geldiniz!",
@@ -243,7 +254,7 @@ class LanguageSupport:
                 "welcome_seo_helper_analyzed": "Seo Yardımcısı Sayfasına Hoş Geldiniz.\nAnaliz şunun için kullanılıyor: {0}",
                 "welcome_article_writer_not_analyzed": "Makale Yazarı sayfasına hoş geldiniz. Devam etmek için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
                 "welcome_article_writer_analyzed": "Makale Yazarı sayfasına hoş geldiniz. {0} analizine dayalı bir makale yazmanıza yardımcı olmaya hazırım.",
-                "enter_url_or_question_seo_helper":" Url Gir...Yada...Soru sor........",
+                "enter_url_or_question_seo_helper":" Url Gir ve Analiz Değiştir...Sayfa Seç Öneri yarat.....Sana Yardım etmek için buradayım......",
                 "enter_url_placeholder":"Web sitenizin adresini girin.",
                 # Article Options
                 "article_options_title": "Makale Seçenekleri",

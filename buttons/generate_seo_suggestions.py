@@ -1,6 +1,6 @@
 #SeoTree/generate_seo_suggestions.py
 import google.generativeai as genai
-import json # Keep for now, might be useful if text_report needs parsing later, or remove if definitely not needed.
+import json
 import logging
 import os
 import streamlit as st
@@ -9,19 +9,19 @@ from utils.language_support import language_manager
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-2.0-flash') # As per original file
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 # MODIFIED FUNCTION SIGNATURE
-def generate_seo_suggestions(text_report: str) -> str: # Changed from 'report: dict'
-    """Generates SEO suggestions and content strategy using Gemini or Mistral based on the full text report.
+def generate_seo_suggestions(pages_data_for_suggestions: dict) -> str: # Changed from 'text_report: str'
+    """Generates SEO suggestions and content strategy using Gemini or Mistral based on selected page data from llm_analysis_all.
     Limited to one call per session."""
 
     # Get current language
     lang = st.session_state.get("language", "en")
 
     # Check if suggestions have already been generated in this session
-    if "seo_suggestions_generated" in st.session_state and st.session_state.seo_suggestions_generated:
-        return "SEO suggestions have already been generated in this session. Please refresh the page to generate new suggestions."
+    #if "seo_suggestions_generated" in st.session_state and st.session_state.seo_suggestions_generated:
+     #   return "SEO suggestions have already been generated in this session. Please refresh the page to generate new suggestions."
 
     # Get API keys
     gemini_api_key = os.getenv('GEMINI_API_KEY')
@@ -34,54 +34,55 @@ def generate_seo_suggestions(text_report: str) -> str: # Changed from 'report: d
     )
 
     try:
+        # Convert the structured page data to a JSON string for the prompt
+        report_data_str = json.dumps(pages_data_for_suggestions, indent=2, ensure_ascii=False)
+
         if use_mistral:
             # Use Mistral API
-            response_text = generate_with_mistral(text_report, mistral_api_key, lang)
+            response_text = generate_with_mistral(report_data_str, mistral_api_key, lang) # Pass stringified data
         else:
             # Use Gemini API
             language_instruction = f"Respond in Turkish. " if lang == "tr" else "Respond in English. "
             
-            # GENERALIZED PROMPT FOR GEMINI
+            # GENERALIZED PROMPT FOR GEMINI (UPDATED)
             prompt = f"""{language_instruction}
-You are an expert SEO strategist and content analyst. You have been provided with a comprehensive SEO analysis report for a website.
+You are an expert SEO strategist and content analyst.
+You have been provided with detailed analysis data for specific page(s) from a website. This data typically includes content summaries, keywords, headers, tone, audience, topics, and existing SEO keyword suggestions for each selected page (e.g., 'main_page' and other specific URLs).
 
-The report typically includes:
-- Main Page Analysis (Content Summary, Keywords, Headers, etc.)
-- Detailed Subpage Analysis (Summary, Tone, Audience, Topics, Keywords, SEO Keyword Suggestions for multiple pages)
-- Site-Wide Aggregations (Common Keywords, Suggested SEO Keywords, Topics, Audiences, Tones)
-- Potentially a section with pre-existing suggestions (e.g., 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS').
+The provided data structure is a dictionary where keys are page identifiers (like 'main_page' or a URL) and values are the detailed analysis for that page.
 
 Your task is to:
-1.  Thoroughly analyze ALL sections of the provided report.
-2.  Based on your deep analysis of the *entire* report (especially the content summaries, keyword lists, site-wide data, and individual page details), generate a NEW and comprehensive set of actionable SEO and content strategy recommendations.
-3.  Critically evaluate the findings. Identify strengths, weaknesses, and untapped opportunities.
-4.  Your recommendations should aim to significantly improve the website's search engine rankings, organic traffic, user engagement, and overall online presence.
-5.  **Crucially, if the report contains a section with pre-existing suggestions, do not merely rephrase or repeat them.** Instead, you should:
+1.  Thoroughly analyze ALL sections of the provided data for EACH page.
+2.  Based on your deep analysis of this data, generate a NEW and comprehensive set of actionable SEO and content strategy recommendations specifically tailored to improve the visibility and performance of these analyzed pages. Also consider how they contribute to the site's overall SEO if possible from the given data.
+3.  Critically evaluate the findings for each page. Identify strengths, weaknesses, and untapped opportunities.
+4.  Your recommendations should aim to significantly improve the search engine rankings, organic traffic, user engagement, and overall online presence of these specific pages and, by extension, the site.
+5.  **Crucially, if the data for a page contains a section with pre-existing suggestions (like 'suggested_keywords_for_seo'), do not merely rephrase or repeat them.** Instead, you should:
     *   Provide *additional, distinct* recommendations.
     *   Elaborate on existing points if you can offer significant new depth or a different angle.
-    *   Identify areas that might have been overlooked or underemphasized.
+    *   Identify areas that might have been overlooked or underemphasized for these pages.
     *   Offer alternative strategies.
 6.  Organize your suggestions clearly, for example, by categories like:
-    *   On-Page SEO (Meta tags, Content optimization, Internal linking, Keyword usage)
-    *   Technical SEO (Site speed, Mobile-friendliness, Crawlability, Schema markup)
-    *   Content Strategy (Content gaps, New content ideas, Content promotion, E-E-A-T improvement)
-    *   Off-Page SEO (Link building, Local SEO if applicable based on report data)
-    *   User Experience (UX)
+    *   Overall Strategic Insights (Synthesizing findings from all provided pages)
+    *   Page-Specific Recommendations (If multiple pages are provided, you can optionally group recommendations per page or integrate them into the categories below, clearly indicating which page a suggestion pertains to if it's highly specific).
+    *   On-Page SEO (Meta tags, Content optimization, Internal linking, Keyword usage specific to these pages)
+    *   Technical SEO (Consider if any page-specific technical aspects can be inferred or suggested, e.g., related to structured data for a specific page type)
+    *   Content Strategy (Content gaps on these pages, New content ideas related to these pages, Content promotion, E-E-A-T improvement for these pages)
+    *   User Experience (UX) related to the content and structure of these pages.
 7.  For each suggestion, provide:
     *   A clear, actionable recommendation.
-    *   A brief rationale explaining *why* it's important, referencing specific findings or patterns from the report.
+    *   A brief rationale explaining *why* it's important, referencing specific findings or patterns from the provided page data.
     *   Suggested priority (High, Medium, Low).
 
-The goal is to extract maximum value from the raw analytical data in the report and provide fresh, high-quality strategic advice.
+The goal is to extract maximum value from the analytical data for the selected page(s) and provide fresh, high-quality strategic advice for them.
 
-Here is the report:
-\n\n{text_report}
+Here is the detailed analysis data for the selected page(s):
+\n\n{report_data_str}
 """
             response = model.generate_content(prompt)
             response_text = response.text
 
         # Mark that suggestions have been generated in this session
-        st.session_state.seo_suggestions_generated = True
+        #st.session_state.seo_suggestions_generated = True
 
         return response_text
     except Exception as e:
@@ -89,7 +90,7 @@ Here is the report:
         return f"Could not generate SEO suggestions: {str(e)}"
 
 # MODIFIED FUNCTION SIGNATURE
-def generate_with_mistral(text_report: str, api_key: str, lang: str = "en") -> str: # Changed from 'report: dict'
+def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en") -> str: # Changed from 'pages_data_for_suggestions: dict' to 'report_data_str: str'
     """Generate SEO suggestions using Mistral API."""
     url = "https://api.mistral.ai/v1/chat/completions"
 
@@ -101,43 +102,37 @@ def generate_with_mistral(text_report: str, api_key: str, lang: str = "en") -> s
     language_names = {"en": "English", "tr": "Turkish"}
     mistral_language_instruction = f"Please ensure your entire response is in {language_names.get(lang, 'English')}. "
 
-    # GENERALIZED SYSTEM AND USER PROMPTS FOR MISTRAL
+    # GENERALIZED SYSTEM AND USER PROMPTS FOR MISTRAL (UPDATED)
     data = {
         "model": "mistral-large-latest",
         "messages": [
             {
                 "role": "system",
-                "content": f"You are a world-class SEO strategist and content analyst. Your primary function is to provide expert, actionable, and insightful recommendations based on detailed SEO reports. {mistral_language_instruction} You are analyzing a detailed SEO report for a website. Your advice should be tailored to the information presented in the report and delivered entirely in the requested language."
+                "content": f"You are a world-class SEO strategist and content analyst. Your primary function is to provide expert, actionable, and insightful recommendations based on detailed SEO analysis data for specific web pages. {mistral_language_instruction} You are analyzing detailed data for one or more pages of a website. Your advice should be tailored to the information presented in the data and delivered entirely in the requested language."
             },
             {
                 "role": "user",
                 "content": f"""{mistral_language_instruction}
-Please analyze the following comprehensive SEO report for a website.
+Please analyze the following detailed analysis data for specific page(s) from a website. This data includes content summaries, keywords, suggested keywords, tone, audience, topics, etc., for each selected page. The data is structured as a JSON object where keys are page identifiers (like 'main_page' or a URL) and values are the analysis for that page.
 
-The report typically contains:
-- Main Page Analysis
-- Detailed Subpage Analysis (summaries, keywords, current SEO suggestions, etc.)
-- Site-Wide Analyses (keywords, topics, audience, tone)
-- Potentially an existing section with suggestions (e.g., 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS').
+Your objective is to go beyond any existing recommendations found within this page-specific data. Based on a thorough examination of ALL the provided information for EACH selected page:
 
-Your objective is to go beyond any existing recommendations. Based on a thorough examination of ALL the data within the report (especially the raw analysis of content, keywords, and site structure):
-
-1.  Generate a **new set of strategic SEO and content recommendations**. These should be distinct from, or significantly build upon/offer alternatives to, those already present in the report, if any.
-2.  Identify key opportunities for improvement, potential weaknesses, and areas that require more attention based on the data provided.
-3.  Structure your suggestions into logical categories (e.g., On-Page SEO, Technical SEO, Content Strategy, Off-Page SEO/Local SEO if relevant, User Experience).
+1.  Generate a **new set of strategic SEO and content recommendations specifically for these pages**. These should be distinct from, or significantly build upon/offer alternatives to, any pre-existing suggestions (like 'suggested_keywords_for_seo') within the provided data for these pages.
+2.  Identify key opportunities for improvement, potential weaknesses, and areas that require more attention based on the data provided for these pages.
+3.  Structure your suggestions into logical categories (e.g., Overall Strategic Insights, Page-Specific Recommendations (optional grouping), On-Page SEO, Technical SEO (if applicable from page data), Content Strategy for these pages, User Experience on these pages).
 4.  For each new suggestion, provide:
     *   The recommendation itself (actionable).
-    *   The reasoning behind it, linking back to specific data or patterns observed in the report.
+    *   The reasoning behind it, linking back to specific data or patterns observed in the page-specific report data.
     *   A suggested priority level (High, Medium, Low).
-5.  Focus on delivering high-impact advice that can demonstrably improve the website's SEO performance and user engagement, based on the specifics of the provided report. Do not simply summarize or rehash any pre-existing recommendation section in the input. Provide fresh, expert insights. Ensure your entire response adheres to the specified language.
+5.  Focus on delivering high-impact advice that can demonstrably improve the SEO performance and user engagement of these specific pages, based on the details provided. Do not simply summarize or rehash any pre-existing recommendation section in the input. Provide fresh, expert insights for the analyzed pages. Ensure your entire response adheres to the specified language.
 
-Here is the SEO report:
-\n\n{text_report}
+Here is the detailed analysis data for the selected page(s):
+\n\n{report_data_str}
 """
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 2000
+        "max_tokens": 2000 # Consider increasing if comprehensive reports are very long
     }
 
     response = requests.post(url, headers=headers, json=data)
