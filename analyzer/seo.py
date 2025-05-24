@@ -15,21 +15,17 @@ from analyzer.sitemap import discover_sitemap_urls, fetch_all_pages_from_sitemap
 from analyzer.llm_analysis_start import llm_analysis_start
 from urllib.parse import urlparse, urljoin, urlunparse
 
+# Configure logging with reduced verbosity
+logging.basicConfig(
+    level=logging.WARNING,  # Changed from DEBUG to WARNING
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Simplified format
+)
 
-# Make sure this format string includes %(name)s to see which logger is active
-#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Explicitly set levels for potentially problematic loggers
-#logging.getLogger('analyzer.methods').setLevel(logging.DEBUG)
-#logging.getLogger('analyzer').setLevel(logging.DEBUG) # Set parent as well
-# For extreme debugging, ensure root is also DEBUG after basicConfig, though basicConfig should handle this
-# logging.getLogger().setLevel(logging.DEBUG)
-
-logging.info("Root logger level: %s", logging.getLogger().getEffectiveLevel())
-logging.info("analyzer logger level: %s", logging.getLogger('analyzer').getEffectiveLevel())
-logging.info("analyzer.methods logger level: %s", logging.getLogger('analyzer.methods').getEffectiveLevel())
-
-
+# Set specific loggers to higher levels to reduce noise
+logging.getLogger('analyzer.methods').setLevel(logging.ERROR)
+logging.getLogger('analyzer').setLevel(logging.WARNING)
+logging.getLogger('playwright').setLevel(logging.ERROR)
+logging.getLogger('asyncio').setLevel(logging.ERROR)
 
 load_dotenv()
 
@@ -43,9 +39,8 @@ class SEOAnalyzer:
         self.start_domain_normal_part: Optional[str] = None
         self.identified_header_texts: List[str] = [] 
         self.identified_footer_texts: List[str] = [] 
-        self.initial_page_llm_report: Optional[Dict[str, Any]] = None # To store the first LLM report
+        self.initial_page_llm_report: Optional[Dict[str, Any]] = None
 
-    # ... ( _normalize_url and _extract_internal_links_from_page methods remain unchanged) ...
     def _normalize_url(self, url: str, site_canonical_base_url: str) -> Optional[str]:
         """
         Normalizes a URL relative to the site's canonical base URL.
@@ -57,7 +52,6 @@ class SEOAnalyzer:
             parsed_original_link = urlparse(absolute_url)
 
             if parsed_original_link.scheme not in ('http', 'https') or not parsed_original_link.netloc:
-                logging.debug(f"URL '{url}' has invalid scheme or netloc after making absolute: {absolute_url}")
                 return None
 
             parsed_site_canonical = urlparse(site_canonical_base_url)
@@ -68,7 +62,6 @@ class SEOAnalyzer:
             site_canonical_domain_part = site_canonical_netloc_lower.split(':')[0].replace('www.', '', 1)
 
             if original_link_domain_part != site_canonical_domain_part:
-                logging.debug(f"URL '{url}' (domain: {original_link_domain_part}) is not on the canonical site domain ({site_canonical_domain_part}). Not an internal link for this crawl.")
                 return None 
 
             target_netloc = site_canonical_netloc_lower 
@@ -98,7 +91,7 @@ class SEOAnalyzer:
             return normalized
 
         except Exception as e:
-            logging.warning(f"Error normalizing URL '{url}' with site_canonical_base_url '{site_canonical_base_url}': {e}")
+            logging.error(f"Error normalizing URL '{url}': {e}")
             return None
 
     async def _extract_internal_links_from_page(self, page: Page, base_domain_check_part: str, site_canonical_base_url: str, exclude_patterns: List[str]) -> Set[str]:
@@ -133,7 +126,7 @@ class SEOAnalyzer:
             return normalized_found_links
             
         except Exception as e:
-            logging.warning(f"Could not extract links from {page.url}: {e}")
+            # Reduced logging - only log critical errors
             return set()
 
     async def _process_page(self, page: Page, url_to_crawl: str, 
@@ -155,13 +148,11 @@ class SEOAnalyzer:
             normalized_landed_url = self._normalize_url(actual_landed_url_str, site_canonical_base_url)
 
             if not normalized_landed_url:
-                logging.warning(f"Crawled {url_to_crawl}, but landed on unnormalizable URL: {actual_landed_url_str}. Skipping.")
                 result['url'] = None
                 return result
             
             parsed_landed = urlparse(normalized_landed_url)
             if parsed_landed.netloc.replace('www.','',1) != start_domain_check_part:
-                logging.warning(f"Crawled {url_to_crawl}, but redirected to external domain: {normalized_landed_url}. Skipping.")
                 result['url'] = None
                 return result
 
@@ -170,13 +161,16 @@ class SEOAnalyzer:
             text_content = await page.evaluate('() => document.body ? document.body.innerText : ""')
             
             if text_content:
-                result['cleaned_text'] = extract_text(
-                    text_content,
-                    header_snippets=header_snippets_to_remove,
-                    footer_snippets=footer_snippets_to_remove
-                )
-                if header_snippets_to_remove or footer_snippets_to_remove:
-                    logging.debug(f"Called extract_text for {normalized_landed_url} with H/F snippet removal.")
+                try:
+                    result['cleaned_text'] = extract_text(
+                        text_content,
+                        header_snippets=header_snippets_to_remove,
+                        footer_snippets=footer_snippets_to_remove
+                    )
+                except Exception as extract_error:
+                    # Fallback if extract_text fails
+                    logging.error(f"extract_text failed for {normalized_landed_url}: {extract_error}")
+                    result['cleaned_text'] = text_content  # Use raw text as fallback
             else:
                 result['cleaned_text'] = ""
           
@@ -186,17 +180,16 @@ class SEOAnalyzer:
             
             return result
         except PlaywrightTimeoutError:
-            logging.warning(f"Timeout loading page: {url_to_crawl} (intended), landed on {page.url if 'page' in locals() else 'N/A'}")
             result['url'] = None
             return result
         except Exception as e:
-            logging.error(f"Error processing {url_to_crawl} (intended), landed on {page.url if 'page' in locals() else 'N/A'}: {e}")
+            logging.error(f"Error processing {url_to_crawl}: {e}")
             result['url'] = None
             return result
 
     async def analyze_url(self, url: str) -> Optional[Dict[str, Any]]:
         start_time = time.time()
-        # ... (URL validation and normalization setup remains the same) ...
+        
         raw_validated_url = validate_url(url)
         if not raw_validated_url:
             logging.error(f"Invalid start URL provided: {url}")
@@ -214,19 +207,18 @@ class SEOAnalyzer:
         
         analysis_url_input = self._normalize_url(raw_validated_url, self.site_base_for_normalization)
         if not analysis_url_input:
-            logging.error(f"Could not normalize the start URL '{raw_validated_url}' using base '{self.site_base_for_normalization}'")
+            logging.error(f"Could not normalize the start URL '{raw_validated_url}'")
             return None
 
-        logging.info(f"Site base for normalization: {self.site_base_for_normalization}")
-        logging.info(f"Analyzing normalized URL: {analysis_url_input}")
+        print(f"Starting analysis of: {analysis_url_input}")  # Use print for important user-facing info
         
         self.identified_header_texts = []
         self.identified_footer_texts = []
         self.visited_urls = set() 
         self.all_discovered_links = set() 
-        self.initial_page_llm_report = None # Reset for new analysis
+        self.initial_page_llm_report = None
 
-        # ... (sitemap discovery remains the same) ...
+        # Sitemap discovery
         sitemap_pages_raw: Set[str] = set()
         sitemap_urls_discovered: List[str] = []
 
@@ -241,7 +233,7 @@ class SEOAnalyzer:
             if norm_page_url and not any(exclude in norm_page_url for exclude in config.EXCLUDE_PATTERNS):
                  sitemap_pages_normalized.add(norm_page_url)
         
-        logging.info(f"Total unique URLs from sitemaps after filtering and normalization: {len(sitemap_pages_normalized)}")
+        print(f"Found {len(sitemap_pages_normalized)} URLs in sitemaps")
         
         analysis = {
             'url': analysis_url_input, 
@@ -254,7 +246,6 @@ class SEOAnalyzer:
             'sitemap_urls_discovered': sitemap_urls_discovered,
             'sitemap_urls_discovered_count': len(sitemap_urls_discovered),
             'sitemap_pages_processed_count': len(sitemap_pages_normalized)
-            # 'llm_analysis' will be added later before saving
         }
 
         self.visited_urls.add(analysis_url_input) 
@@ -268,8 +259,8 @@ class SEOAnalyzer:
                 urls_to_visit.append(s_url)
                 self.visited_urls.add(s_url) 
 
-        actual_initial_url = None # Define for broader scope, in case of errors before assignment
-        initial_cleaned_text_for_main_url = "" # Store this for LLM analysis only
+        actual_initial_url = None
+        initial_cleaned_text_for_main_url = ""
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -283,6 +274,7 @@ class SEOAnalyzer:
                     any(domain in route.request.url for domain in config.BLOCKED_DOMAINS) 
                     else route.continue_())
                 
+                # Process initial page
                 initial_page_obj = await context.new_page()
                 raw_initial_cleaned_text = "" 
                 try:
@@ -300,29 +292,28 @@ class SEOAnalyzer:
                     if actual_initial_url and initial_result['cleaned_text']:
                         raw_initial_cleaned_text = initial_result['cleaned_text'] 
                         
-                        logging.info(f"Requesting LLM analysis for main page: {actual_initial_url} to identify header/footer.")
+                        print("Analyzing main page content...")
                         initial_page_data_for_llm = {
                             'url': actual_initial_url,
                             'cleaned_text': raw_initial_cleaned_text, 
                             'headings': {} 
                         }
                         try:
-                            # This is the FIRST and CRITICAL LLM call for H/F identification
                             self.initial_page_llm_report = await llm_analysis_start(initial_page_data_for_llm)
                             if self.initial_page_llm_report and not self.initial_page_llm_report.get("error"):
                                 self.identified_header_texts = self.initial_page_llm_report.get("header", [])
                                 self.identified_footer_texts = self.initial_page_llm_report.get("footer", [])
-                                logging.info(f"LLM identified header snippets ({len(self.identified_header_texts)}): {self.identified_header_texts if self.identified_header_texts else 'None'}")
-                                logging.info(f"LLM identified footer snippets ({len(self.identified_footer_texts)}): {self.identified_footer_texts if self.identified_footer_texts else 'None'}")
+                                if self.identified_header_texts or self.identified_footer_texts:
+                                    print(f"Identified {len(self.identified_header_texts)} header and {len(self.identified_footer_texts)} footer elements")
                             else:
                                 error_msg = self.initial_page_llm_report.get('error', 'Unknown LLM error') if self.initial_page_llm_report else 'No LLM report'
-                                logging.warning(f"LLM analysis for main page header/footer identification ({actual_initial_url}) failed or returned error: {error_msg}")
-                                # Ensure initial_page_llm_report is a dict even on error for later assignment
-                                if not isinstance(self.initial_page_llm_report, dict): self.initial_page_llm_report = {}
+                                logging.warning(f"LLM analysis failed: {error_msg}")
+                                if not isinstance(self.initial_page_llm_report, dict): 
+                                    self.initial_page_llm_report = {}
                                 self.initial_page_llm_report.setdefault('url', actual_initial_url)
                                 self.initial_page_llm_report.setdefault('error', error_msg)
                         except Exception as e_llm_init:
-                            logging.error(f"Error calling llm_analysis_start for initial page {actual_initial_url}: {e_llm_init}", exc_info=True)
+                            logging.error(f"Error in LLM analysis: {e_llm_init}")
                             self.initial_page_llm_report = {
                                 "url": actual_initial_url, "error": f"Exception in llm_analysis_start: {str(e_llm_init)}",
                                 "keywords": [], "content_summary": "", "other_information_and_contacts": [],
@@ -331,15 +322,16 @@ class SEOAnalyzer:
                         
                         final_initial_cleaned_text = raw_initial_cleaned_text 
                         if self.identified_header_texts or self.identified_footer_texts:
-                            logging.info(f"Re-processing initial page text for {actual_initial_url} with identified H/F snippets.")
-                            final_initial_cleaned_text = extract_text(
-                                raw_initial_cleaned_text, 
-                                header_snippets=self.identified_header_texts,
-                                footer_snippets=self.identified_footer_texts
-                            )
-                            logging.debug(f"Initial page text length after H/F removal: {len(final_initial_cleaned_text)} (Original: {len(raw_initial_cleaned_text)})")
+                            try:
+                                final_initial_cleaned_text = extract_text(
+                                    raw_initial_cleaned_text, 
+                                    header_snippets=self.identified_header_texts,
+                                    footer_snippets=self.identified_footer_texts
+                                )
+                            except Exception as extract_error:
+                                logging.error(f"extract_text failed during header/footer removal: {extract_error}")
+                                final_initial_cleaned_text = raw_initial_cleaned_text  # Use original text
                         
-                        # Store the cleaned text but DON'T add to page_statistics
                         initial_cleaned_text_for_main_url = final_initial_cleaned_text
                         analysis['crawled_urls'].append(actual_initial_url)
                         
@@ -349,14 +341,13 @@ class SEOAnalyzer:
                                 urls_to_visit.append(link)
                                 self.visited_urls.add(link) 
                 except Exception as e:
-                    logging.error(f"Error during initial page analysis of {analysis_url_input}: {e}")
+                    logging.error(f"Error during initial page analysis: {e}")
                 finally:
                     if initial_page_obj and not initial_page_obj.is_closed():
                         await initial_page_obj.close()
                 
-                # --- Main parallel crawl process (remains largely the same) ---
+                # Main crawling process
                 async def process_batch_wrapper(batch_urls_to_crawl):
-                    # ... (no changes needed inside process_batch_wrapper)
                     tasks = []
                     pages_for_batch = []
                     try:
@@ -374,13 +365,12 @@ class SEOAnalyzer:
                         batch_proc_results = await asyncio.gather(*tasks, return_exceptions=True)
                         return batch_proc_results, pages_for_batch
                     except Exception as e_batch:
-                        logging.error(f"Error in batch processing setup: {e_batch}")
+                        logging.error(f"Error in batch processing: {e_batch}")
                         return [e_batch] * len(batch_urls_to_crawl), pages_for_batch
 
                 batch_size = min(8, config.MAX_PAGES_TO_ANALYZE)
                 
                 while urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE and len(self.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER :
-                    # ... (batch processing loop remains the same logic) ...
                     current_batch_urls = []
                     processed_in_batch_count = 0 
                     
@@ -393,28 +383,24 @@ class SEOAnalyzer:
                            processed_in_batch_count +=1 
 
                     if not current_batch_urls:
-                        if not urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE:
-                            logging.info("No more URLs in queue to process, but MAX_PAGES_TO_ANALYZE not reached.")
                         break 
                         
-                    logging.info(f"Processing batch of {len(current_batch_urls)} pages (Total unique pages in report: {len(url_in_report_dict)}/{config.MAX_PAGES_TO_ANALYZE})")
+                    print(f"Processing {len(current_batch_urls)} pages... ({len(url_in_report_dict)}/{config.MAX_PAGES_TO_ANALYZE} complete)")
                     
                     batch_results_data, batch_pages_created = await process_batch_wrapper(current_batch_urls)
                     
                     try: 
+                        successful_pages = 0
                         for intended_url, page_result_data in zip(current_batch_urls, batch_results_data):
                             if isinstance(page_result_data, Exception):
-                                logging.error(f"Task for {intended_url} failed with exception: {page_result_data}")
                                 continue 
 
                             actual_processed_url = page_result_data['url'] 
 
                             if not actual_processed_url: 
-                                logging.debug(f"Skipping result for intended URL {intended_url} as actual processed URL is invalid.")
                                 continue
                             
                             if actual_processed_url in url_in_report_dict:
-                                logging.debug(f"URL {actual_processed_url} (from intended {intended_url}) already in report. Skipping storage.")
                                 for new_link in page_result_data['new_links']: 
                                     if len(self.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
                                         if new_link not in self.visited_urls and new_link not in urls_to_visit: 
@@ -437,10 +423,7 @@ class SEOAnalyzer:
                                     }
                                     url_in_report_dict[actual_processed_url] = True
                                     analysis['crawled_urls'].append(actual_processed_url)
-                                    if self.identified_header_texts or self.identified_footer_texts:
-                                        logging.info(f"Stored cleaned_text for {actual_processed_url} (H/F removal applied by extract_text).")
-                                else:
-                                    logging.info(f"Max pages limit ({config.MAX_PAGES_TO_ANALYZE}) reached, not adding {actual_processed_url} to report.")
+                                    successful_pages += 1
                             
                             for new_link in page_result_data['new_links']: 
                                 if len(self.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
@@ -449,11 +432,14 @@ class SEOAnalyzer:
                                         urls_to_visit.append(new_link)
                                         self.visited_urls.add(new_link) 
                                 else:
-                                    logging.info(f"Reached maximum links to discover: {config.MAX_LINKS_TO_DISCOVER}")
                                     break 
                             if len(self.all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER or \
                                len(url_in_report_dict) >= config.MAX_PAGES_TO_ANALYZE:
                                 break 
+                        
+                        if successful_pages > 0:
+                            print(f"Successfully processed {successful_pages} pages in this batch")
+                            
                     finally:
                         for p_obj in batch_pages_created:
                              if p_obj and not p_obj.is_closed():
@@ -461,7 +447,6 @@ class SEOAnalyzer:
                     
                     if len(url_in_report_dict) >= config.MAX_PAGES_TO_ANALYZE or \
                        len(self.all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER:
-                        logging.info("Max pages or max discovered links limit reached. Ending crawl.")
                         break 
                     
                     await asyncio.sleep(random.uniform(config.CRAWL_DELAY_MIN / 2, config.CRAWL_DELAY_MAX / 2))
@@ -473,23 +458,18 @@ class SEOAnalyzer:
                 analysis['crawled_internal_pages_count'] = len(analysis['crawled_urls'])
                 analysis['analysis_duration_seconds'] = round(time.time() - start_time, 2)
                 
-                if len(set(analysis['crawled_urls'])) != len(analysis['crawled_urls']):
-                    logging.warning(f"DUPLICATE CHECK: crawled_urls list contains duplicates. Unique count: {len(set(analysis['crawled_urls']))}, List length: {len(analysis['crawled_urls'])}")
-
-                logging.info(f"Analysis complete. Discovered {len(self.all_discovered_links)} unique links. Analyzed {analysis['crawled_internal_pages_count']} unique pages in report.")
-                logging.info(f"Total visited_urls (includes queue): {len(self.visited_urls)}")
-                logging.info(f"Analysis duration: {analysis['analysis_duration_seconds']} seconds")
+                print(f"Analysis complete: {analysis['crawled_internal_pages_count']} pages analyzed in {analysis['analysis_duration_seconds']} seconds")
                 
                 # Add the stored initial LLM report to the main analysis object
                 if self.initial_page_llm_report:
                     analysis['llm_analysis'] = self.initial_page_llm_report
-                elif actual_initial_url: # Fallback if initial_page_llm_report wasn't set but we know the URL
+                elif actual_initial_url:
                      analysis['llm_analysis'] = {
                         "url": actual_initial_url, "error": "Initial LLM analysis data unavailable.",
                         "keywords": [], "content_summary": "", "other_information_and_contacts": [],
                         "suggested_keywords_for_seo": [], "header": [], "footer": []
                     }
-                else: # Ultimate fallback
+                else:
                     analysis['llm_analysis'] = {
                         "url": analysis_url_input, "error": "Initial LLM analysis data critically unavailable.",
                         "keywords": [], "content_summary": "", "other_information_and_contacts": [],
@@ -499,8 +479,7 @@ class SEOAnalyzer:
                 return analysis
                 
             except Exception as e:
-                logging.critical(f"Critical error in analysis: {e}", exc_info=True)
-                analysis = None 
+                logging.critical(f"Critical error in analysis: {e}")
                 return None
             finally:
                 if 'browser' in locals() and browser.is_connected():
@@ -510,11 +489,9 @@ class SEOAnalyzer:
                 final_analysis_data = current_analysis_data if current_analysis_data and current_analysis_data.get('crawled_internal_pages_count',0) > 0 else None
 
                 if final_analysis_data:
-                    # Ensure llm_analysis is part of final_analysis_data from the stored initial report
-                    # This step is slightly redundant if 'analysis' object was correctly populated above, but acts as a safeguard.
                     if self.initial_page_llm_report and 'llm_analysis' not in final_analysis_data:
                         final_analysis_data['llm_analysis'] = self.initial_page_llm_report
-                    elif 'llm_analysis' not in final_analysis_data: # If still not present, add a default error
+                    elif 'llm_analysis' not in final_analysis_data:
                         final_url_for_llm_error = actual_initial_url if actual_initial_url else analysis_url_input
                         final_analysis_data['llm_analysis'] = {
                             "url": final_url_for_llm_error, "error": "LLM analysis for initial page missing before save.",
@@ -524,11 +501,11 @@ class SEOAnalyzer:
                         
                     try:
                         await self.saver.save_reports(final_analysis_data) 
-                        logging.info(f"Analysis saved successfully for {final_analysis_data['url']}.")
+                        print("Analysis saved successfully!")
                     except Exception as e_save:
-                        logging.error(f"Failed to save analysis for {final_analysis_data.get('url', 'N/A')}: {e_save}")
+                        logging.error(f"Failed to save analysis: {e_save}")
                 else:
                     start_url_for_log = analysis_url_input if 'analysis_url_input' in locals() else url
-                    logging.warning(f"No substantial analysis data to save for {start_url_for_log}.")
+                    logging.warning(f"No substantial analysis data to save for {start_url_for_log}")
                 
                 return final_analysis_data

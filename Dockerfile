@@ -26,4 +26,4 @@ COPY . /app
 EXPOSE 8501
 
 # Command to run the Streamlit application
-CMD ["streamlit", "run", "main.py"]
+CMD ["streamlit", "run", "main.py" , "--browser.gatherUsageStats=false"]
