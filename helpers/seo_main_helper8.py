@@ -131,12 +131,12 @@ async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str, message_list: 
                 }
                 language_info = f"Please respond in {language_names.get(lang, 'English')}. " if lang != "en" else ""
                 
-                # Prepare context - use llm_analysis_all if available, fallback to text_report
+                # Prepare context - use text_report first, fallback to llm_analysis_all
                 context_data = ""
-                if st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
-                    context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
-                elif st.session_state.get("text_report"):
+                if st.session_state.get("text_report"):
                     context_data = f"SEO Report: {st.session_state.text_report}"
+                elif st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
+                    context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
                 else:
                     context_data = "No SEO report available."
                 
@@ -233,12 +233,12 @@ async def process_with_gemini(prompt: str, GEMINI_API_KEY: str, message_list: st
                     for message in messages_to_process[start_index:]:
                         history_context += f"{message['role'].capitalize()}: {message['content']}\n"
 
-                    # Context for Gemini's process_question tool - prioritize llm_analysis_all
+                    # Context for Gemini's process_question tool - prioritize text_report, fallback to llm_analysis_all
                     context_data = ""
-                    if st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
-                        context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
-                    elif st.session_state.get("text_report"):
+                    if st.session_state.get("text_report"):
                         context_data = f"SEO Report: {st.session_state.text_report}"
+                    elif st.session_state.get("full_report") and st.session_state.full_report.get("llm_analysis_all"):
+                        context_data = f"Detailed Analysis Data (llm_analysis_all): {st.session_state.full_report['llm_analysis_all']}"
                     else:
                         context_data = "No SEO report available. Please analyze a URL first."
 
