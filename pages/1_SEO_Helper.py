@@ -152,7 +152,7 @@ async def main_seo_helper():
                             key: llm_data[key] 
                             for key in valid_selected_keys
                         }
-                        st.sidebar.info(language_manager.get_text("using_selected_pages_for_suggestions", lang, fallback=f"Generating suggestions for selected pages: {', '.join(valid_selected_keys)}"))
+                        st.sidebar.info(language_manager.get_text("using_selected_pages_for_suggestions", lang, ', '.join(valid_selected_keys), fallback=f"Generating suggestions for selected pages: {', '.join(valid_selected_keys)}"))
                     else:
                         # User made selections, but none were valid keys in llm_data
                         st.sidebar.error(language_manager.get_text("error_selected_pages_no_valid_data", lang, fallback="Error: None of the selected pages have data available for suggestions."))
