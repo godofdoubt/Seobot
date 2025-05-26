@@ -50,6 +50,37 @@ class LLMAnalysisEndProcessor:
         # Initialize the analysis process handler
         self.analysis_process = LLMAnalysisProcess(self.model, self.logger)
 
+    def _extract_technical_statistics(self, report_json_blob: dict) -> dict:
+        """Extract technical statistics from the report JSON blob."""
+        technical_stats = {}
+        
+        # Extract technical metrics with safe fallbacks
+        technical_stats['robots_txt_found'] = report_json_blob.get('robots_txt_found', False)
+        technical_stats['total_images_count'] = report_json_blob.get('total_images_count', 0)
+        technical_stats['total_headings_count'] = report_json_blob.get('total_headings_count', 0)
+        technical_stats['analysis_duration_seconds'] = report_json_blob.get('analysis_duration_seconds', 0)
+        technical_stats['crawled_internal_pages_count'] = report_json_blob.get('crawled_internal_pages_count', 0)
+        technical_stats['total_cleaned_content_length'] = report_json_blob.get('total_cleaned_content_length', 0)
+        technical_stats['total_missing_alt_tags_count'] = report_json_blob.get('total_missing_alt_tags_count', 0)
+        technical_stats['pages_with_mobile_viewport_count'] = report_json_blob.get('pages_with_mobile_viewport_count', 0)
+        technical_stats['average_cleaned_content_length_per_page'] = report_json_blob.get('average_cleaned_content_length_per_page', 0)
+        
+        # Additional computed metrics
+        if technical_stats['total_images_count'] > 0 and technical_stats['total_missing_alt_tags_count'] >= 0:
+            alt_text_coverage = ((technical_stats['total_images_count'] - technical_stats['total_missing_alt_tags_count']) / technical_stats['total_images_count']) * 100
+            technical_stats['alt_text_coverage_percentage'] = round(alt_text_coverage, 1)
+        else:
+            technical_stats['alt_text_coverage_percentage'] = 0
+            
+        if technical_stats['crawled_internal_pages_count'] > 0 and technical_stats['pages_with_mobile_viewport_count'] >= 0:
+            mobile_optimization_percentage = (technical_stats['pages_with_mobile_viewport_count'] / technical_stats['crawled_internal_pages_count']) * 100
+            technical_stats['mobile_optimization_percentage'] = round(mobile_optimization_percentage, 1)
+        else:
+            technical_stats['mobile_optimization_percentage'] = 0
+        
+        self.logger.info(f"Extracted technical statistics: {technical_stats}")
+        return technical_stats
+
     async def _process_seo_report(self, report_id: int):
         self.logger.info(f"++++ ENTERING _process_seo_report for ID: {report_id} ++++")
         try:
@@ -73,11 +104,19 @@ class LLMAnalysisEndProcessor:
                 self.logger.error(f"Report with ID {report_id} has no 'report' JSON data in DB record.")
                 await self._mark_report_as_error(report_id, "Missing report_json_blob in DB record.")
                 return False
+            
+            # Extract technical statistics
+            technical_stats = self._extract_technical_statistics(report_json_blob)
+            
             normalized_db_main_url = main_report_url_original.rstrip('/')
             self.logger.info(f"Processing llm_analysis_all for report ID {report_id}, Main Site URL (Original DB): {main_report_url_original}, Normalized: {normalized_db_main_url}")
             page_statistics = report_json_blob.get('page_statistics', {})
             initial_llm_analysis_from_blob = report_json_blob.get('llm_analysis', {})
             llm_analysis_all = {}
+            
+            # Add technical statistics to the main structure
+            llm_analysis_all['technical_statistics'] = technical_stats
+            
             url_from_llm_blob_original = initial_llm_analysis_from_blob.get('url', "")
             normalized_url_from_llm_blob = url_from_llm_blob_original.rstrip('/')
             is_valid_and_matches_main_url = (

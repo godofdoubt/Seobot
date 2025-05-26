@@ -195,6 +195,92 @@ class LLMAnalysisProcess:
             self.logger.error(f"Unexpected error during LLM analysis processing for URL {page_url}: {e}", exc_info=True)
             return {**base_result, "error": f"An unexpected error occurred: {str(e)}"}
 
+    def _format_technical_statistics_section(self, tech_stats: dict) -> list:
+        """Format technical statistics into report sections."""
+        if not tech_stats:
+            return ["## Technical SEO Overview", "Technical statistics data not available.", ""]
+        
+        tech_sections = []
+        tech_sections.append("## Technical SEO Overview")
+        
+        # Basic crawl statistics
+        crawled_pages = tech_stats.get('crawled_internal_pages_count', 0)
+        analysis_duration = tech_stats.get('analysis_duration_seconds', 0)
+        tech_sections.append(f"**Website Analysis Summary:**")
+        tech_sections.append(f"- Total pages crawled and analyzed: {crawled_pages}")
+        if analysis_duration > 0:
+            minutes = analysis_duration // 60
+            seconds = analysis_duration % 60
+            if minutes > 0:
+                tech_sections.append(f"- Analysis duration: {minutes} minutes {seconds} seconds")
+            else:
+                tech_sections.append(f"- Analysis duration: {seconds} seconds")
+        tech_sections.append("")
+        
+        # Content statistics
+        total_content_length = tech_stats.get('total_cleaned_content_length', 0)
+        avg_content_length = tech_stats.get('average_cleaned_content_length_per_page', 0)
+        total_headings = tech_stats.get('total_headings_count', 0)
+        
+        tech_sections.append(f"**Content Analysis:**")
+        if total_content_length > 0:
+            tech_sections.append(f"- Total content analyzed: {total_content_length:,} characters")
+        if avg_content_length > 0:
+            tech_sections.append(f"- Average content per page: {avg_content_length:,} characters")
+        if total_headings > 0:
+            tech_sections.append(f"- Total headings found: {total_headings}")
+        tech_sections.append("")
+        
+        # Image and Alt text analysis
+        total_images = tech_stats.get('total_images_count', 0)
+        missing_alt_tags = tech_stats.get('total_missing_alt_tags_count', 0)
+        alt_text_coverage = tech_stats.get('alt_text_coverage_percentage', 0)
+        
+        if total_images > 0:
+            tech_sections.append(f"**Image Optimization Analysis:**")
+            tech_sections.append(f"- Total images found: {total_images}")
+            tech_sections.append(f"- Images missing alt text: {missing_alt_tags}")
+            tech_sections.append(f"- Alt text coverage: {alt_text_coverage}%")
+            
+            if alt_text_coverage >= 90:
+                tech_sections.append("- ✅ **Excellent**: Alt text coverage is very good")
+            elif alt_text_coverage >= 70:
+                tech_sections.append("- ⚠️ **Good**: Alt text coverage is decent but could be improved")
+            elif alt_text_coverage >= 50:
+                tech_sections.append("- ⚠️ **Needs Improvement**: Many images lack alt text")
+            else:
+                tech_sections.append("- ❌ **Critical Issue**: Most images are missing alt text")
+            tech_sections.append("")
+        
+        # Mobile optimization
+        mobile_pages = tech_stats.get('pages_with_mobile_viewport_count', 0)
+        mobile_optimization = tech_stats.get('mobile_optimization_percentage', 0)
+        
+        if crawled_pages > 0:
+            tech_sections.append(f"**Mobile Optimization:**")
+            tech_sections.append(f"- Pages with mobile viewport: {mobile_pages} out of {crawled_pages}")
+            tech_sections.append(f"- Mobile optimization coverage: {mobile_optimization}%")
+            
+            if mobile_optimization >= 95:
+                tech_sections.append("- ✅ **Excellent**: Nearly all pages are mobile-optimized")
+            elif mobile_optimization >= 80:
+                tech_sections.append("- ⚠️ **Good**: Most pages are mobile-optimized")
+            elif mobile_optimization >= 50:
+                tech_sections.append("- ⚠️ **Needs Improvement**: Some pages lack mobile optimization")
+            else:
+                tech_sections.append("- ❌ **Critical Issue**: Many pages are not mobile-optimized")
+            tech_sections.append("")
+        
+        # Robots.txt analysis
+        robots_found = tech_stats.get('robots_txt_found', False)
+        tech_sections.append(f"**Technical Configuration:**")
+        tech_sections.append(f"- Robots.txt file: {'✅ Found' if robots_found else '❌ Not found'}")
+        if not robots_found:
+            tech_sections.append("  - Consider adding a robots.txt file to guide search engine crawlers")
+        tech_sections.append("")
+        
+        return tech_sections
+
     async def _generate_ai_recommendations(self, llm_analysis_all: dict) -> str:
         """Generate AI-powered recommendations based on the complete website analysis."""
         if not self.model:
@@ -203,7 +289,9 @@ class LLMAnalysisProcess:
         
         try:
             main_page_analysis = llm_analysis_all.get('main_page', {})
-            other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page' and data}
+            technical_stats = llm_analysis_all.get('technical_statistics', {})
+            other_pages = {url: data for url, data in llm_analysis_all.items() 
+                          if url not in ['main_page', 'technical_statistics'] and data}
             
             all_keywords = []
             all_seo_keywords = []
@@ -234,7 +322,8 @@ class LLMAnalysisProcess:
                         all_summaries.append(f"{page_url}: {page_data.get('content_summary')}")
             
             website_data_summary = {
-                "total_pages_analyzed": len([p for p_url, p in llm_analysis_all.items() if p and not p.get('error')]),
+                "total_pages_analyzed": len([p for p_url, p in llm_analysis_all.items() 
+                                           if p and not p.get('error') and p_url not in ['technical_statistics']]),
                 "main_page_url": main_page_analysis.get('url', 'Unknown'),
                 "all_keywords": list(set(all_keywords)),
                 "all_seo_keywords": list(set(all_seo_keywords)),
@@ -243,7 +332,8 @@ class LLMAnalysisProcess:
                 "all_content_tones": list(set(all_tones)),
                 "content_summaries_sample": all_summaries[:10],
                 "main_page_header_elements": main_page_analysis.get('header', []),
-                "main_page_footer_elements": main_page_analysis.get('footer', [])
+                "main_page_footer_elements": main_page_analysis.get('footer', []),
+                "technical_statistics": technical_stats
             }
             
             prompt = f"""
@@ -271,6 +361,14 @@ Generate recommendations in the following JSON structure:
             "expected_impact": "string (what improvement to expect)"
         }}
     ],
+    "technical_seo_recommendations": [
+        {{
+            "technical_area": "string (e.g., 'Image Optimization', 'Mobile Responsiveness', 'Site Structure')",
+            "issue_identified": "string (specific technical issue found)",
+            "recommendation": "string (how to fix it)",
+            "urgency": "string (High/Medium/Low)"
+        }}
+    ],
     "content_strategy_insights": [
         {{
             "insight": "string (key insight about content strategy)",
@@ -282,12 +380,13 @@ Generate recommendations in the following JSON structure:
 REQUIREMENTS:
 1. Provide 3-5 strategic recommendations covering different aspects (SEO, content, technical, UX).
 2. Include 4-6 specific SEO & content optimization suggestions.
-3. Give 2-4 content strategy insights with actionable items.
-4. Base all recommendations on the actual website data provided. Be specific and actionable, not generic.
-5. Consider the identified target audiences, topic categories, and content tones.
-6. Address any content gaps or opportunities you identify from the summaries and keyword data.
-7. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish.
-
+3. Based on technical_statistics, provide 2-4 technical SEO recommendations addressing specific issues found.
+4. Give 2-4 content strategy insights with actionable items.
+5. Base all recommendations on the actual website data provided. Be specific and actionable, not generic.
+6. Consider the identified target audiences, topic categories, and content tones.
+7. Address any content gaps or opportunities you identify from the summaries and keyword data.
+8. Pay special attention to technical issues like alt text coverage, mobile optimization, and site structure.
+9. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish.
 
 Output ONLY the JSON object with no additional text or formatting.
 """
@@ -340,6 +439,22 @@ Output ONLY the JSON object with no additional text or formatting.
                             formatted_recommendations.append(f"**Expected Impact**: {expected_impact}")
                         formatted_recommendations.append("")
                 
+                technical_recs = recommendations_data.get('technical_seo_recommendations', [])
+                if technical_recs:
+                    formatted_recommendations.append("### Technical SEO Recommendations")
+                    for rec in technical_recs:
+                        technical_area = rec.get('technical_area', 'Technical SEO')
+                        issue_identified = rec.get('issue_identified', '')
+                        recommendation = rec.get('recommendation', '')
+                        urgency = rec.get('urgency', 'Medium')
+                        
+                        formatted_recommendations.append(f"#### {technical_area}")
+                        if issue_identified:
+                            formatted_recommendations.append(f"**Issue Identified**: {issue_identified}")
+                        formatted_recommendations.append(f"**Recommendation**: {recommendation}")
+                        formatted_recommendations.append(f"**Urgency**: {urgency}")
+                        formatted_recommendations.append("")
+                
                 content_insights = recommendations_data.get('content_strategy_insights', [])
                 if content_insights:
                     formatted_recommendations.append("### Content Strategy Insights")
@@ -369,13 +484,21 @@ Output ONLY the JSON object with no additional text or formatting.
             self.logger.error(f"Error generating AI recommendations: {e}", exc_info=True)
             return f"An error occurred while generating AI recommendations: {str(e)}"
 
+
     async def generate_comprehensive_text_report(self, llm_analysis_all: dict) -> str:
         main_page_analysis = llm_analysis_all.get('main_page', {})
-        other_pages = {url: data for url, data in llm_analysis_all.items() if url != 'main_page' and data}
+        technical_stats = llm_analysis_all.get('technical_statistics', {})
+        other_pages = {url: data for url, data in llm_analysis_all.items() 
+                      if url not in ['main_page', 'technical_statistics'] and data}
+        
         report_sections = []
         report_sections.append("# COMPREHENSIVE SEO ANALYSIS REPORT")
         report_sections.append("Generated: " + time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
         report_sections.append("")
+        
+        # Add technical statistics section early in the report
+        tech_sections = self._format_technical_statistics_section(technical_stats)
+        report_sections.extend(tech_sections)
         
         if main_page_analysis:
             main_url_display = main_page_analysis.get('url', 'Main Page Analysis (URL not found in analysis data)')
@@ -477,7 +600,8 @@ Output ONLY the JSON object with no additional text or formatting.
                     report_sections.append(f"  **Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
                 
                 content_summary_sub = page_analysis_item.get('content_summary', '')
-                if content_summary_sub: report_sections.append(f"  **Summary**: {content_summary_sub}")
+                if content_summary_sub: 
+                    report_sections.append(f"  **Summary**: {content_summary_sub}")
                 
                 subpage_overall_tone = page_analysis_item.get('overall_tone', '')
                 if subpage_overall_tone:
@@ -487,25 +611,29 @@ Output ONLY the JSON object with no additional text or formatting.
                 subpage_target_audience = page_analysis_item.get('target_audience', [])
                 if subpage_target_audience:
                     audiences_str_sub = ", ".join(ta for ta in subpage_target_audience if ta)
-                    if audiences_str_sub: report_sections.append(f"  **Target Audience**: {audiences_str_sub}")
+                    if audiences_str_sub: 
+                        report_sections.append(f"  **Target Audience**: {audiences_str_sub}")
                     all_subpage_target_audiences.extend(ta for ta in subpage_target_audience if ta)
 
                 subpage_topic_categories = page_analysis_item.get('topic_categories', [])
                 if subpage_topic_categories:
                     categories_str_sub = ", ".join(tc for tc in subpage_topic_categories if tc)
-                    if categories_str_sub: report_sections.append(f"  **Topic Categories**: {categories_str_sub}")
+                    if categories_str_sub: 
+                        report_sections.append(f"  **Topic Categories**: {categories_str_sub}")
                     all_subpage_topic_categories.extend(tc for tc in subpage_topic_categories if tc)
                 
                 keywords_sub = page_analysis_item.get('keywords', [])
                 if keywords_sub:
                     keywords_str_sub = ", ".join(k for k in keywords_sub if k)
-                    if keywords_str_sub: report_sections.append(f"  **Keywords**: {keywords_str_sub}")
+                    if keywords_str_sub: 
+                        report_sections.append(f"  **Keywords**: {keywords_str_sub}")
                     all_subpage_keywords.extend(k for k in keywords_sub if k)
                     
                 seo_keywords_sub = page_analysis_item.get('suggested_keywords_for_seo', [])
                 if seo_keywords_sub:
                     seo_keywords_str_sub = ", ".join(sk for sk in seo_keywords_sub if sk)
-                    if seo_keywords_str_sub: report_sections.append(f"  **SEO Keyword Suggestions**: {seo_keywords_str_sub}")
+                    if seo_keywords_str_sub: 
+                        report_sections.append(f"  **SEO Keyword Suggestions**: {seo_keywords_str_sub}")
                     all_subpage_seo_keywords.extend(sk for sk in seo_keywords_sub if sk)
 
                 contacts_sub = page_analysis_item.get('other_information_and_contacts', [])
@@ -526,7 +654,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if sorted_keywords:
                     report_sections.append("## Site-Wide Subpage Keyword Analysis")
                     report_sections.append("Most common keywords across analyzed subpages (top 15):")
-                    for kw, count in sorted_keywords[:15]: report_sections.append(f"- {kw} (found in {count} subpages)")
+                    for kw, count in sorted_keywords[:15]: 
+                        report_sections.append(f"- {kw} (found in {count} subpages)")
                     report_sections.append("")
                 
             if all_subpage_seo_keywords:
@@ -535,7 +664,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if sorted_seo_keywords:
                     report_sections.append("## Site-Wide Subpage SEO Suggestions")
                     report_sections.append("Most frequently suggested SEO keywords for subpages (top 10):")
-                    for kw, count in sorted_seo_keywords[:10]: report_sections.append(f"- {kw} (suggested for {count} subpages)")
+                    for kw, count in sorted_seo_keywords[:10]: 
+                        report_sections.append(f"- {kw} (suggested for {count} subpages)")
                     report_sections.append("")
             
             if all_subpage_topic_categories:
@@ -544,7 +674,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if sorted_topic_categories:
                     report_sections.append("## Site-Wide Topic Categories Analysis (Subpages)")
                     report_sections.append("Most common topic categories across analyzed subpages (top 10):")
-                    for tc, count in sorted_topic_categories[:10]: report_sections.append(f"- {tc} (found in {count} subpages)")
+                    for tc, count in sorted_topic_categories[:10]: 
+                        report_sections.append(f"- {tc} (found in {count} subpages)")
                     report_sections.append("")
 
             if all_subpage_target_audiences:
@@ -553,7 +684,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if sorted_target_audiences:
                     report_sections.append("## Site-Wide Target Audience Analysis (Subpages)")
                     report_sections.append("Most common target audiences across analyzed subpages (top 8):")
-                    for ta, count in sorted_target_audiences[:8]: report_sections.append(f"- {ta} (identified in {count} subpages)")
+                    for ta, count in sorted_target_audiences[:8]: 
+                        report_sections.append(f"- {ta} (identified in {count} subpages)")
                     report_sections.append("")
 
             if all_subpage_tones:
@@ -562,7 +694,8 @@ Output ONLY the JSON object with no additional text or formatting.
                 if sorted_tones:
                     report_sections.append("## Site-Wide Content Tone Analysis (Subpages)")
                     report_sections.append("Most common content tones across analyzed subpages:")
-                    for tone, count in sorted_tones: report_sections.append(f"- {tone} (found in {count} subpages)")
+                    for tone, count in sorted_tones: 
+                        report_sections.append(f"- {tone} (found in {count} subpages)")
                     report_sections.append("")
 
         report_sections.append("## AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS")
