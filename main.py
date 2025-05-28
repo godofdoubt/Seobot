@@ -1,19 +1,23 @@
-
-
-
 # /SeoTree/main.py
 import streamlit as st
 import os
 from dotenv import load_dotenv
 import logging
 import asyncio
+import json # Already present, re-confirming
+import re   # Added for data extraction
+from datetime import datetime # Already present
+import plotly.express as px # Added for Plotly Express
+import plotly.graph_objects as go # Added for Plotly Graph Objects
+# from plotly.subplots import make_subplots # Not used yet, can be added if complex subplots are needed
+# import pandas as pd # Not strictly needed for these charts, can be added if complex data manipulation is required by Plotly
+
 # Import update_page_history as well
 from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar , display_detailed_analysis_status_enhanced, trigger_detailed_analysis_background_process_with_callback, update_page_history
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
 from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor 
-from datetime import datetime # Added import
 
 # --- Configuration & Setup ---
 load_dotenv()
@@ -92,7 +96,7 @@ def trigger_detailed_analysis_background_process(report_id: int): # report_id is
 
 async def process_url(url, lang="en"):
     st.session_state.analysis_in_progress = True
-    st.session_state.url_being_analyzed = url  # Store the URL being analyzed
+    st.session_state.url_being_analyzed = url
     try:
         normalized_url = normalize_url(url)
         logging.info(f"Starting process_url for {normalized_url}")
@@ -110,6 +114,7 @@ async def process_url(url, lang="en"):
                 st.info(language_manager.get_text("found_existing_report", lang))
                 logging.info(f"Found existing report for {normalized_url}")
                 
+                # Get the report ID and detailed analysis status
                 report_response = await asyncio.to_thread(
                     lambda: supabase.table('seo_reports').select('id, llm_analysis_all_completed, llm_analysis_all_error')
                     .eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
@@ -117,12 +122,12 @@ async def process_url(url, lang="en"):
                 
                 if report_response.data:
                     report_data = report_response.data[0]
-                    report_id_for_detailed_analysis = report_data['id'] # This is an int
+                    report_id_for_detailed_analysis = report_data['id']
                     llm_analysis_completed = report_data.get('llm_analysis_all_completed', False)
                     llm_analysis_error = report_data.get('llm_analysis_all_error')
                     logging.info(f"Existing report ID: {report_id_for_detailed_analysis}, completed: {llm_analysis_completed}, error: {llm_analysis_error}")
                     
-                    # MODIFIED LOGIC: Prioritize llm_analysis_completed
+                    # FIXED LOGIC: Better status handling
                     if llm_analysis_completed:
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
@@ -130,16 +135,16 @@ async def process_url(url, lang="en"):
                             "status_message": language_manager.get_text("full_site_analysis_complete", lang),
                             "status": "complete"
                         }
-                        if llm_analysis_error: # Log error if present, but status is still complete
-                             logging.warning(f"Detailed analysis for report ID {report_id_for_detailed_analysis} (URL: {normalized_url}) is complete but has logged errors: {llm_analysis_error}")
-                    elif llm_analysis_error: # This means completed is False and there is an error
+                        if llm_analysis_error:
+                            logging.warning(f"Detailed analysis for report ID {report_id_for_detailed_analysis} (URL: {normalized_url}) is complete but has logged errors: {llm_analysis_error}")
+                    elif llm_analysis_error:  # Error occurred and not completed
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
                             "url": normalized_url,
                             "status_message": language_manager.get_text("detailed_analysis_error_status", lang, llm_analysis_error),
                             "status": "error"
                         }
-                    elif not llm_analysis_completed: # Not completed and no error reported yet (implies in progress)
+                    else:  # Not completed and no error (in progress or not started)
                         logging.info(f"Detailed analysis not complete for report ID {report_id_for_detailed_analysis}, triggering background process.")
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
@@ -147,12 +152,13 @@ async def process_url(url, lang="en"):
                             "status_message": language_manager.get_text("detailed_analysis_inprogress", lang),
                             "status": "in_progress"
                         }
-                        # Call the synchronous version, no await
-                        if not trigger_detailed_analysis_background_process_with_callback(report_id_for_detailed_analysis, supabase):
+                        # FIXED: Use the correct function that exists
+                        if not trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
                             st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
                 else:
                     logging.warning(f"Could not find report ID for existing report {normalized_url} to check detailed analysis status.")
             else:
+                # New analysis case
                 logging.info(f"Generating new report for {normalized_url}")
                 st.info(language_manager.get_text("generating_new_analysis", lang))
                 
@@ -162,11 +168,12 @@ async def process_url(url, lang="en"):
                     text_report, full_report = analysis_result
                     logging.info("New analysis successfully generated")
                     
+                    # Get the new report ID
                     report_response = await asyncio.to_thread(
                         lambda: supabase.table('seo_reports').select('id').eq('url', normalized_url).order('timestamp', desc=True).limit(1).execute()
                     )
                     if report_response.data:
-                        report_id_for_detailed_analysis = report_response.data[0]['id'] # This is an int
+                        report_id_for_detailed_analysis = report_response.data[0]['id']
                         logging.info(f"New report ID: {report_id_for_detailed_analysis}. Triggering detailed analysis background process.")
                         st.session_state.detailed_analysis_info = {
                             "report_id": report_id_for_detailed_analysis,
@@ -174,7 +181,7 @@ async def process_url(url, lang="en"):
                             "status_message": language_manager.get_text("detailed_analysis_inprogress", lang),
                             "status": "in_progress"
                         }
-                        # Call the synchronous version, no await
+                        # FIXED: Use the correct function that exists
                         if not trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
                             st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
                     else:
@@ -186,21 +193,355 @@ async def process_url(url, lang="en"):
             
             if text_report and full_report:
                 logging.info(f"Displaying initial report for {normalized_url}")
-                st.session_state.analysis_in_progress = False # Reset on successful completion (before display)
-                st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
+                st.session_state.analysis_in_progress = False
+                st.session_state.url_being_analyzed = None
                 display_report(text_report, full_report, normalized_url)
             else:
                 st.error(language_manager.get_text("report_data_unavailable", lang))
                 logging.error(f"Report data (text_report or full_report) is None for {normalized_url} before display_report call.")
-                st.session_state.analysis_in_progress = False # Reset if report data is unexpectedly unavailable
-                st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
+                st.session_state.analysis_in_progress = False
+                st.session_state.url_being_analyzed = None
     
     except Exception as e:
         error_message = f"Error in process_url: {str(e)}"
         st.error(error_message) 
         logging.error(error_message, exc_info=True)
-        st.session_state.analysis_in_progress = False # Reset on any exception
-        st.session_state.url_being_analyzed = None    # Clear the URL being analyzed
+        st.session_state.analysis_in_progress = False
+        st.session_state.url_being_analyzed = None
+
+# --- DATA EXTRACTION AND VISUALIZATION FUNCTIONS ---
+
+def extract_metrics_from_report(text_report):
+    """Extract key metrics from the SEO report for visualization."""
+    metrics = {
+        'seo_score': None,
+        'issues_by_priority': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0},
+        'page_metrics': {}, # e.g., word_count, images, internal_links, external_links, headings
+        'technical_metrics': {'robots_txt_status': None} # e.g., mobile_friendly, ssl_secure, page_speed, meta_description, title_tag, robots_txt_status
+    }
+    
+    if not text_report: # Handle empty report
+        return metrics
+        
+    lines = text_report.split('\n')
+    
+    # Extract SEO Score
+    for line in lines:
+        if 'seo score' in line.lower() or 'overall score' in line.lower():
+            score_match = re.search(r'(\d+)(?:/100|\%)?', line) # Made /100 or % optional
+            if score_match:
+                try:
+                    metrics['seo_score'] = int(score_match.group(1))
+                    break 
+                except ValueError:
+                    logging.warning(f"Could not parse SEO score from: {line}")
+    
+    # Count issues by priority
+    for line in lines:
+        line_lower = line.lower()
+        if 'priority:' in line_lower: # This should catch "**Priority**: High" as well
+            if 'critical' in line_lower:
+                metrics['issues_by_priority']['critical'] += 1
+            elif 'high' in line_lower:
+                metrics['issues_by_priority']['high'] += 1
+            elif 'medium' in line_lower:
+                metrics['issues_by_priority']['medium'] += 1
+            elif 'low' in line_lower:
+                metrics['issues_by_priority']['low'] += 1
+    
+    # Extract page metrics
+    for line in lines:
+        if ':' in line and not line.startswith('#'): # Avoid section titles
+            key_value = line.split(':', 1)
+            if len(key_value) == 2:
+                key, value_str = key_value[0].strip().lower(), key_value[1].strip()
+                
+                number_match = re.search(r'(\d+)', value_str)
+                if number_match:
+                    try:
+                        num_value = int(number_match.group(1))
+                        
+                        if 'word count' in key:
+                            metrics['page_metrics']['word_count'] = num_value
+                        elif ('image' in key or 'images' in key) and ('number of' in key or 'count' in key or 'total' in key or 'found' in key): # More robust image count
+                            metrics['page_metrics']['images'] = num_value
+                        elif 'internal link' in key:
+                            metrics['page_metrics']['internal_links'] = num_value
+                        elif 'external link' in key:
+                            metrics['page_metrics']['external_links'] = num_value
+                        # More robust headings count
+                        elif ('heading' in key or 'headings' in key or 'h1 tag' in key) and \
+                             ('count' in key or 'number of' in key or 'total' in key or 'found' in key or 'tags:' in key_value[0].strip()):
+                            metrics['page_metrics']['headings'] = num_value
+                    except ValueError:
+                        logging.warning(f"Could not parse number for page metric '{key}' from: {value_str}")
+
+    # Extract technical performance indicators
+    for line in lines:
+        line_lower = line.lower()
+        status_category = None
+        if '✅' in line: status_category = 'good'
+        elif '⚠️' in line: status_category = 'warning'
+        elif '❌' in line: status_category = 'error'
+        else: continue
+            
+        # More robust mobile friendly check
+        if 'mobile-friendly' in line_lower or \
+           'mobile usability' in line_lower or \
+           'mobile optimization' in line_lower or \
+           ('mobile' in line_lower and 'optimized' in line_lower):
+            metrics['technical_metrics']['mobile_friendly'] = status_category
+        elif ('ssl certificate' in line_lower or 'https' in line_lower) and ('secure' in line_lower or 'active' in line_lower):
+            metrics['technical_metrics']['ssl_secure'] = status_category
+        elif 'page speed' in line_lower or 'loading time' in line_lower or 'performance' in line_lower and not 'score' in line_lower: # Avoid performance score line
+            metrics['technical_metrics']['page_speed'] = status_category
+        elif 'meta description' in line_lower and ('present' in line_lower or 'length' in line_lower or 'missing' in line_lower):
+            metrics['technical_metrics']['meta_description'] = status_category
+        elif 'title tag' in line_lower and ('length' in line_lower or 'present' in line_lower or 'missing' in line_lower):
+            metrics['technical_metrics']['title_tag'] = status_category
+        elif 'robots.txt' in line_lower and ('file' in line_lower or 'found' in line_lower or 'status' in line_lower): # New: Robots.txt status
+            metrics['technical_metrics']['robots_txt_status'] = status_category
+    
+    return metrics
+
+def create_seo_score_gauge(score, lang="en"):
+    """Create a gauge chart for SEO score."""
+    if score is None:
+        score = 0 # Default to 0 if no score is found
+    
+    title_text = language_manager.get_text("seo_score_gauge_title", lang, fallback="SEO Score")
+
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number", # Removed delta as it might be confusing without clear context
+        value = score,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': title_text, 'font': {'size': 20}},
+        gauge = {
+            'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+            'bar': {'color': "#667eea"}, # Main bar color
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "gray",
+            'steps': [
+                {'range': [0, 50], 'color': '#f8d7da'},  # Light red for poor
+                {'range': [50, 80], 'color': '#fff3cd'}, # Light yellow for average
+                {'range': [80, 100], 'color': '#d4edda'} # Light green for good
+            ],
+            'threshold': { # Example threshold line
+                'line': {'color': "red", 'width': 3},
+                'thickness': 0.75,
+                'value': score # Shows current value on threshold line (can be static like 90)
+            }
+        }
+    ))
+    
+    fig.update_layout(
+        height=280, # Adjusted height
+        margin=dict(l=20, r=20, t=50, b=20),
+        font={'color': "#333", 'family': "Arial, sans-serif"}
+    )
+    
+    return fig
+
+def create_issues_pie_chart(issues_data, lang="en"):
+    """Create a pie chart for issues by priority."""
+    labels = []
+    values = []
+    colors = []
+    
+    priority_map = {
+        'critical': language_manager.get_text("priority_critical", lang, fallback="Critical"),
+        'high': language_manager.get_text("priority_high", lang, fallback="High"),
+        'medium': language_manager.get_text("priority_medium", lang, fallback="Medium"),
+        'low': language_manager.get_text("priority_low", lang, fallback="Low")
+    }
+    color_map = {
+        'critical': '#dc3545', # Red
+        'high': '#fd7e14',     # Orange
+        'medium': '#ffc107',   # Yellow
+        'low': '#28a745'       # Green
+    }
+    
+    for priority_key, count in issues_data.items():
+        if count > 0:
+            labels.append(f'{priority_map.get(priority_key, priority_key.title())} ({count})')
+            values.append(count)
+            colors.append(color_map.get(priority_key, '#cccccc')) # Default color
+    
+    if not values: # No issues found
+        labels = [language_manager.get_text("no_issues_found_pie", lang, fallback="No Issues Found")]
+        values = [1]
+        colors = ['#17a2b8'] # Info color
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.4, # Donut chart
+        marker_colors=colors,
+        textinfo='percent+label',
+        insidetextorientation='radial'
+    )])
+    
+    fig.update_layout(
+        title_text=language_manager.get_text("issues_by_priority_pie_title", lang, fallback="Issues by Priority"),
+        height=380, # Adjusted height
+        showlegend=False, # Legend can be redundant with textinfo
+        margin=dict(l=20, r=20, t=50, b=20),
+        font={'family': "Arial, sans-serif"}
+    )
+    
+    return fig
+
+def create_page_metrics_bar_chart(page_metrics_data, lang="en"):
+    """Create a bar chart for page metrics."""
+    if not page_metrics_data:
+        return None # Or a message saying "No page metrics available"
+    
+    metric_names_map = {
+        'word_count': language_manager.get_text("metric_word_count", lang, fallback="Word Count"),
+        'images': language_manager.get_text("metric_images", lang, fallback="Images"),
+        'internal_links': language_manager.get_text("metric_internal_links", lang, fallback="Internal Links"),
+        'external_links': language_manager.get_text("metric_external_links", lang, fallback="External Links"),
+        'headings': language_manager.get_text("metric_headings", lang, fallback="Headings")
+    }
+    
+    metrics = []
+    values = []
+    
+    for metric_key, value in page_metrics_data.items():
+        if value is not None: # Only include metrics that have a value
+            metrics.append(metric_names_map.get(metric_key, metric_key.replace('_', ' ').title()))
+            values.append(value)
+    
+    if not metrics: return None
+
+    fig = go.Figure(data=[
+        go.Bar(
+            x=metrics,
+            y=values,
+            text=values,
+            textposition='auto',
+            marker_color=['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'] * (len(metrics)//5 + 1) # Cycle colors
+        )
+    ])
+    
+    fig.update_layout(
+        title_text=language_manager.get_text("page_content_metrics_bar_title", lang, fallback="Page Content Metrics"),
+        xaxis_title=language_manager.get_text("metrics_axis_label", lang, fallback="Metrics"),
+        yaxis_title=language_manager.get_text("count_axis_label", lang, fallback="Count"),
+        height=380, # Adjusted height
+        margin=dict(l=20, r=20, t=50, b=20),
+        font={'family': "Arial, sans-serif"}
+    )
+    
+    return fig
+
+def create_technical_status_chart(technical_metrics_data, lang="en"):
+    """Create a status chart for technical SEO factors."""
+    if not technical_metrics_data:
+        return None
+    
+    tech_factor_map = {
+        'mobile_friendly': language_manager.get_text("tech_mobile_friendly", lang, fallback="Mobile Friendly"),
+        'ssl_secure': language_manager.get_text("tech_ssl_secure", lang, fallback="SSL Secure"),
+        'page_speed': language_manager.get_text("tech_page_speed", lang, fallback="Page Speed"),
+        'meta_description': language_manager.get_text("tech_meta_description", lang, fallback="Meta Description"),
+        'title_tag': language_manager.get_text("tech_title_tag", lang, fallback="Title Tag"),
+        'robots_txt_status': language_manager.get_text("tech_robots_txt", lang, fallback="Robots.txt Status") # Added new metric
+    }
+    
+    categories = []
+    status_texts = [] # Good, Warning, Error
+    colors = []
+    
+    status_color_map = {
+        'good': '#28a745',    # Green
+        'warning': '#ffc107', # Yellow
+        'error': '#dc3545'    # Red
+    }
+    status_text_map = {
+        'good': language_manager.get_text("status_good", lang, fallback="Good"),
+        'warning': language_manager.get_text("status_warning", lang, fallback="Warning"),
+        'error': language_manager.get_text("status_error", lang, fallback="Error")
+    }
+
+    for category_key, status_val in technical_metrics_data.items():
+        if status_val is not None: # Only include metrics that have a status
+            categories.append(tech_factor_map.get(category_key, category_key.replace('_', ' ').title()))
+            status_texts.append(status_text_map.get(status_val, str(status_val).title())) # Ensure status_val is a string for .title()
+            colors.append(status_color_map.get(status_val, '#cccccc'))
+    
+    if not categories: return None
+
+    # Using horizontal bar chart for better readability of categories
+    fig = go.Figure()
+    for i in range(len(categories)):
+        fig.add_trace(go.Bar(
+            y=[categories[i]], # Category names on y-axis
+            x=[1],             # All bars have a "length" of 1 for visual representation
+            name=status_texts[i],
+            orientation='h',
+            marker_color=colors[i],
+            text=status_texts[i], # Display status text on bar
+            textposition="inside",
+            insidetextanchor="middle"
+        ))
+
+    fig.update_layout(
+        title_text=language_manager.get_text("technical_seo_status_title", lang, fallback="Technical SEO Status"),
+        barmode='stack', # Though we add traces one by one, this is good practice for categorical bars
+        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0,1]), # Hide X-axis numbers
+        yaxis=dict(autorange="reversed"), # Optional: reverse order if needed
+        height=max(300, len(categories) * 60), # Dynamic height
+        showlegend=False,
+        margin=dict(l=150, r=20, t=50, b=20), # Adjust left margin for category names
+        font={'family': "Arial, sans-serif"}
+    )
+    return fig
+
+def display_seo_dashboard(metrics, lang="en"):
+    """Display the SEO dashboard with various charts."""
+    
+    st.markdown(f"### {language_manager.get_text('seo_dashboard_main_title', lang, fallback='📊 SEO Analysis Dashboard')}")
+    
+    # Create columns for layout
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if metrics['seo_score'] is not None:
+            fig_gauge = create_seo_score_gauge(metrics['seo_score'], lang)
+            st.plotly_chart(fig_gauge, use_container_width=True)
+        else:
+            # Display gauge at 0 if score is None, as per create_seo_score_gauge logic
+            fig_gauge = create_seo_score_gauge(None, lang) 
+            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.caption(language_manager.get_text("seo_score_not_available_caption", lang, fallback="SEO Score not explicitly found in report."))
+
+        page_metrics_chart_data = {k: v for k, v in metrics.get('page_metrics', {}).items() if v is not None}
+        if page_metrics_chart_data:
+            fig_bar = create_page_metrics_bar_chart(page_metrics_chart_data, lang)
+            if fig_bar:
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else: # Should not happen if page_metrics_chart_data is not empty
+                 st.info(language_manager.get_text("page_metrics_not_available", lang, fallback="Page Content Metrics not available."))
+        else:
+            st.info(language_manager.get_text("page_metrics_not_available", lang, fallback="Page Content Metrics not available."))
+    
+    with col2:
+        # issues_by_priority will always exist, even if all counts are 0
+        fig_pie = create_issues_pie_chart(metrics['issues_by_priority'], lang)
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        technical_metrics_chart_data = {k: v for k, v in metrics.get('technical_metrics', {}).items() if v is not None}
+        if technical_metrics_chart_data:
+            fig_tech = create_technical_status_chart(technical_metrics_chart_data, lang)
+            if fig_tech:
+                st.plotly_chart(fig_tech, use_container_width=True)
+            else: # Should not happen if technical_metrics_chart_data is not empty
+                st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
+        else:
+            st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
+    st.markdown("---") # Add a separator
 
 # --- PRIORITY STYLING HELPER ---
 PRIORITY_STYLES = {
@@ -259,7 +600,7 @@ def _get_main_section_details(section_title):
     return icon, expanded_default
 
 def display_styled_report(text_report, lang):
-    """Display the SEO report with enhanced styling, structure, and expanders."""
+    """Display the SEO report with enhanced styling, structure, expanders, and visualizations."""
     st.markdown("""
     <style>
     .report-container {
@@ -323,16 +664,25 @@ def display_styled_report(text_report, lang):
     </style>
     """, unsafe_allow_html=True)
     
+    # Extract metrics and display dashboard
+    metrics = extract_metrics_from_report(text_report)
+    display_seo_dashboard(metrics, lang) # Pass lang for localized chart titles
+    
     lines = text_report.split('\n')
     st.markdown('<div class="report-container">', unsafe_allow_html=True)
     
+    report_header_title = language_manager.get_text("seo_report_main_header_title", lang, fallback="SEO Analysis Report")
+    report_header_subtitle = language_manager.get_text("seo_report_generated_time", lang, datetime_now=datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"))
+    report_header_tag = language_manager.get_text("seo_report_comprehensive_tag", lang, fallback="Comprehensive Website Analysis")
+
+
     st.markdown(f'''
     <div class="report-header">
-        <h1 style="color: #667eea; margin-bottom: 0.3rem; font-size: 2rem;">📊 SEO Analysis Report</h1>
-        <p style="color: #5a5a5a; margin: 0; font-size: 1rem;">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")}</p>
+        <h1 style="color: #667eea; margin-bottom: 0.3rem; font-size: 2rem;">📊 {report_header_title}</h1>
+        <p style="color: #5a5a5a; margin: 0; font-size: 1rem;">{report_header_subtitle}</p>
         <div style="margin-top: 0.8rem;">
             <span style="background: linear-gradient(45deg, #667eea, #764ba2); color: white; padding: 0.4rem 0.8rem; border-radius: 15px; font-weight: 500; font-size: 0.9rem;">
-                🚀 Comprehensive Website Analysis
+                🚀 {report_header_tag}
             </span>
         </div>
     </div>
@@ -349,7 +699,7 @@ def display_styled_report(text_report, lang):
         i += 1
     
     if not first_section_found:
-        st.warning("Could not parse the report into sections. Displaying raw content.")
+        st.warning(language_manager.get_text("report_parse_error_raw_display", lang, fallback="Could not parse the report into sections. Displaying raw content."))
         st.markdown(f"<pre>{text_report}</pre>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         return
@@ -521,7 +871,7 @@ def _display_elements_for_subsection(elements):
 def run_main_app():
     st.set_page_config(
         page_title="Raven Web Services Beta",
-        page_icon="👋",
+        page_icon="📊", # Changed icon to reflect dashboard
         layout="wide",
         initial_sidebar_state="collapsed",
         menu_items={
@@ -603,10 +953,12 @@ def run_main_app():
     else:
         st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
 
-        if "messages" in st.session_state:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+        if "messages" in st.session_state: # This is for chat messages, typically not used on main page report view
+            # Filter out report display messages if we are showing a full styled report
+            # For now, let's assume main.py doesn't use the chat interface itself, but other pages might.
+            # If chat messages were to be shown here, they'd go here.
+            pass
+
 
         if st.session_state.analysis_complete and hasattr(st.session_state, 'text_report') and st.session_state.text_report and hasattr(st.session_state, 'url') and st.session_state.url: #
             
@@ -633,7 +985,7 @@ def run_main_app():
             
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, st.session_state.url))
             
-            # Use the new styled report display instead of the old markdown/text_area
+            # Use the new styled report display which now includes the dashboard
             display_styled_report(st.session_state.text_report, lang)
             
             # Optional: Add a collapsible raw report section for advanced users
@@ -661,7 +1013,7 @@ def run_main_app():
                         placeholder="https://example.com",
                         disabled=True
                     )
-                    st.info(language_manager.get_text("analyzing_website", lang))
+                    st.info(language_manager.get_text("analyzing_website", lang)) # This spinner is part of process_url
                     analyze_button = st.form_submit_button(
                         language_manager.get_text("analyze_button", lang),
                         disabled=True
