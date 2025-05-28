@@ -14,11 +14,7 @@ load_dotenv()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-# model = genai.GenerativeModel('gemini-2.0-flash') # Original model
-# It's good practice to ensure the model selection here matches any specific model requirements
-# For Gemini 1.5 Flash, if it's the intended model:
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Initialize Supabase client
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -104,7 +100,7 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
         pages_data_for_suggestions: Dict containing either:
             - Selected pages from llm_analysis_all: {"page_key": {...}, ...}
             - Text report fallback: {"_source_type_": "text_report", "content": "..."}
-            - None: Will use text_report as fallback if llm_analysis_all not available
+            - None: Will use text_report from st.session_state for general report.
     """
     
     # Get current language
@@ -117,13 +113,13 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
     # Determine which API to use
     use_mistral = mistral_api_key is not None and (
         gemini_api_key is None or
-        st.session_state.get("use_mistral", True) # Assuming True means prefer Mistral if available
+        st.session_state.get("use_mistral", True)
     )
 
     try:
         # Determine data source and prepare report_data_str
         report_data_str = ""
-        enhanced_pages_data = None # This will store the data possibly enhanced with main_page context
+        enhanced_pages_data = None
         
         if pages_data_for_suggestions is None:
             # Default to text_report when no specific data provided
@@ -137,7 +133,7 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
                 return "No analysis data available. Please analyze a URL first to generate suggestions."
         
         elif pages_data_for_suggestions.get("_source_type_") == "text_report":
-            # Handle text_report case
+            # Handle explicit text_report case
             report_data_str = pages_data_for_suggestions.get("content", "No content available")
             
         else:
@@ -152,12 +148,10 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
                     )
                     report_data_str = json.dumps(enhanced_pages_data, indent=2, ensure_ascii=False)
                 else:
-                    # Fallback: use provided data as is, without DB enhancement if DB fetch fails
-                    enhanced_pages_data = pages_data_for_suggestions # For prompt logic consistency
+                    enhanced_pages_data = pages_data_for_suggestions
                     report_data_str = json.dumps(pages_data_for_suggestions, indent=2, ensure_ascii=False)
             else:
-                # No URL available, use provided data as-is
-                enhanced_pages_data = pages_data_for_suggestions # For prompt logic consistency
+                enhanced_pages_data = pages_data_for_suggestions
                 report_data_str = json.dumps(pages_data_for_suggestions, indent=2, ensure_ascii=False)
 
         if use_mistral:
@@ -166,93 +160,138 @@ def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
                 report_data_str, 
                 mistral_api_key, 
                 lang, 
-                pages_data_for_suggestions, # Pass original selection for _source_type_ check
-                enhanced_pages_data # Pass enhanced data for context note
+                pages_data_for_suggestions,
+                enhanced_pages_data
             )
         else:
             # Use Gemini API
             language_instruction = f"Respond in Turkish. " if lang == "tr" else "Respond in English. "
             
             if pages_data_for_suggestions and pages_data_for_suggestions.get("_source_type_") == "text_report":
+                # UPDATED PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
                 prompt = f"""{language_instruction}
-You are an expert SEO strategist and content analyst.
-You have been provided with a general SEO report for a website. Based on this report, generate comprehensive and actionable SEO recommendations.
+You are an expert SEO content strategist specializing in creating actionable content tasks.
 
-Your task is to:
-1. Analyze the provided report thoroughly.
-2. Generate actionable SEO and content strategy recommendations.
-3. Organize suggestions into clear categories (On-Page SEO, Technical SEO, Content Strategy, User Experience , Content Suggestions.).
-4. For each suggestion, provide:
-   - Clear, actionable recommendation.
-   - Brief rationale explaining why it's important.
-   - Suggested priority (High, Medium, Low).
-5. Focus on practical improvements that can be implemented. 
+You have been provided with a comprehensive SEO analysis report. Your primary goal is to analyze this report and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.
 
-Here is the SEO report:
+Based on your analysis of the report, generate the following structured output:
+
+**1. Key Content Opportunities Identified:**
+   * Provide a brief summary (2-3 sentences) of the main content gaps and opportunities you've identified from the report.
+
+**2. Content Creation Tasks (PRIMARY OUTPUT):**
+
+You MUST provide a JSON object with specific tasks for content creation tools. Format as a markdown code block:
+
+```json
+{{
+    "article_content_tasks": [
+        {{
+            "focus_keyword": "string (primary keyword for the article)",
+            "content_length": "string (Short/Medium/Long/Very Long)",
+            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "additional_keywords": ["string (supporting keywords)"],
+            "suggested_title": "string (SEO-optimized title)",
+            "target_page_url": "string (URL where this content will be published)",
+            "content_gap_addressed": "string (what gap this fills)",
+            "target_audience": "string (specific audience for this content)",
+            "content_outline": ["string (3-5 key points/sections this article should cover)"]
+        }}
+    ],
+    "product_content_tasks": [
+        {{
+            "product_name": "string (product/service name)",
+            "product_details": "string (features, benefits, specifications for the product writer)",
+            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "description_length": "string (Short/Medium/Long)",
+            "target_page_url": "string (product page URL)",
+            "seo_keywords": ["string (2-5 SEO keywords)"],
+            "competitive_advantage": "string (unique selling points)",
+            "target_customer": "string (ideal customer profile)"
+        }}
+    ]
+}}
+```
+
+**Guidelines for Task Generation:**
+- Generate 3-8 article tasks and 2-5 product tasks based on the report findings
+- Focus on high-impact opportunities identified in the analysis
+- Ensure each task is specific and actionable
+- Keywords should be based on actual opportunities found in the report
+- Target audiences should reflect the site's actual visitor demographics
+- Content outlines should be practical and implementable
+
+**3. Implementation Priority:**
+   * List the top 5 tasks from your JSON in order of priority (High/Medium/Low) with brief rationale for each priority level.
+
+Here is the SEO ANALYSIS REPORT:
 {report_data_str}
-
-Please provide comprehensive suggestions to improve this website's SEO performance and content strategy.
 """
             else:
-                # Enhanced prompt for detailed analysis with context
+                # UPDATED PROMPT FOR SELECTED PAGES - FOCUSED ON JSON TASKS
                 context_note = ""
                 if enhanced_pages_data and "_main_page_context" in enhanced_pages_data:
                     context_note = """
-
-**Important Context**: The data includes header and footer information from the main page (marked as '_main_page_context') to provide you with the overall site structure and navigation context. Use this information to understand the site's overall theme and structure when making recommendations for the selected pages."""
+**Important Context**: The data includes header and footer information from the main page (marked as '_main_page_context') for site structure reference."""
 
                 prompt = f"""{language_instruction}
-You are an expert SEO strategist and content architect.
-You have been provided with detailed analysis data for specific page(s) from a website. This data typically includes content summaries, keywords, headers, tone, audience, topics, existing SEO keyword suggestions, and potentially AI-generated strategic insights for each selected page.{context_note}
+You are an expert SEO content strategist specializing in creating actionable content tasks.
 
-The provided data structure is a dictionary where keys are page identifiers (like 'main_page', specific URLs, or '_main_page_context' for reference) and values are the detailed analysis for that page.
+You have been provided with detailed page analysis data from a website. Your primary goal is to analyze this data and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.{context_note}
 
-Your primary task is to act as a strategic advisor, preparing a comprehensive SEO and content *plan* that the user can then take to content generation tools like "Article Writer / Makale Yazarı" or "Product Writer /  Ürün Yazarı"(product content only). Your output should NOT be the full content itself, but the blueprint for it.
+Based on your analysis of the provided page data, generate the following output:
 
-Based on your deep analysis of this data, your plan should:
+**1. Page Analysis Summary:**
+   * Provide a brief summary (2-3 sentences) of the key findings and content opportunities for the analyzed pages.
 
-1.  **Thoroughly analyze ALL sections** of the provided data for EACH page.
-2.  **If '_main_page_context' is present, use it** to understand the overall site structure, navigation, and theme to ensure your plan is contextually relevant.
-3.  **Develop a NEW and actionable SEO and Content Strategy** tailored to improve the visibility, ranking, and user engagement of these analyzed pages. This strategy should aim for quick, impactful wins where possible.
-4.  **Critically Evaluate Existing Data**:
-    * Identify strengths, weaknesses, and untapped opportunities within the provided page data.
-    * If the data contains pre-existing suggestions (e.g., 'suggested_keywords_for_seo', 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS', 'Site-Wide Subpage SEO Suggestions'), do not merely rephrase them. Instead:
-        * Provide *additional, distinct, and actionable* strategic recommendations.
-        * Elaborate on existing points if you can offer significant new depth, a different angle, or a more concrete implementation plan.
-        * Identify overlooked areas or underemphasized strategies.
-        * Offer alternative or complementary strategies.
-        * Prioritize these existing and new recommendations.
-5.  **Strategic Content Development Plan**:
-    * **Target Keywords**:
-        * Identify relevant **low-competition keywords** with good potential that align with the site's topics and user intent.
-        * Suggest a core set of primary and secondary keywords for each targeted piece of content or page.
-    * **Content Ideas & Structure**:
-        * Propose **new content topics or alternative page ideas** (e.g., supporting articles, cornerstone content, FAQ pages) that could enhance the site's authority, fill content gaps, or target new keyword opportunities. This includes considering pages that can internally link to and power up existing important pages.
-        * For key content pieces (new or existing that need enhancement), outline a suggested structure or key talking points.
-    * **Tone and Audience Alignment**:
-        * Recommend a specific **main tone** for new/updated content that aligns with the target audience identified in the analysis (or suggest refinements if the current tone is suboptimal or inconsistent).
-    * **Content Formats**: Suggest appropriate content formats (e.g., blog posts, articles, product descriptions, guides, case studies, listicles) based on the strategic goals and target audience for the selected pages.
-6.  **Implementation Guidance**:
-    * Outline the **quickest and most effective ways to implement** the proposed strategy, focusing on high-impact actions.
-    * Briefly suggest how the user can leverage their "Article Writer" or "Product Writer /  Ürün Yazarı" (product content only.) (e.g., "For the suggested blog post on 'X', use the 'Article Writer' with these keywords, this target audience, this suggested tone, and the outlined structure.").
-7.  **Organize your comprehensive plan clearly** by categories like:
-    * Overall Strategic Direction (Synthesizing findings and overarching goals for the selected pages based on the analysis)
-    * Page-Specific Strategic Plans (If multiple pages are provided, detail the plan for each)
-        * Key Objectives for this Page
-        * Target Audience & Recommended Tone
-        * Core Keywords (including low-competition opportunities and justification)
-        * Proposed Content Actions (e.g., create new article on [topic], enhance existing [page] with [details], develop FAQ section) & Structure Outline
-        * Key On-Page SEO Focus Points (e.g., title tag refinement, meta description, header optimization, internal linking opportunities specific to this page's new strategy)
-    * Site-Level Content Opportunities (e.g., New supporting articles, topic clusters to build authority around core themes identified from the analyzed pages)
-    * Quick Wins & Prioritized Action Plan (Top 3-5 actions for immediate impact)
-8.  For each strategic element, provide:
-    * A clear, actionable recommendation.
-    * A brief rationale explaining *why* it's important, referencing specific findings from the provided page data.
-    * Suggested priority (High, Medium, Low).
+**2. Content Creation Tasks (PRIMARY OUTPUT):**
 
-Remember, the output should be a STRATEGY and a PLAN that empowers the user to create effective content, not the content itself. Focus on actionable advice that builds upon or offers alternatives to any existing suggestions in the report.
+You MUST provide a JSON object with specific tasks for content creation tools. Format as a markdown code block:
 
-Here is the detailed analysis data for the selected page(s):
+```json
+{{
+    "article_content_tasks": [
+        {{
+            "focus_keyword": "string (primary keyword for the article)",
+            "content_length": "string (Short/Medium/Long/Very Long)",
+            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "additional_keywords": ["string (supporting keywords from page analysis)"],
+            "suggested_title": "string (SEO-optimized title)",
+            "target_page_url": "string (URL where content will be published)",
+            "content_gap_addressed": "string (what specific gap this fills based on page analysis)",
+            "target_audience": "string (audience based on page data)",
+            "content_outline": ["string (3-5 key sections this article should cover)"],
+            "internal_linking_opportunities": ["string (existing pages to link to/from)"]
+        }}
+    ],
+    "product_content_tasks": [
+        {{
+            "product_name": "string (product/service name from page data)",
+            "product_details": "string (comprehensive details for the product writer)",
+            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "description_length": "string (Short/Medium/Long)",
+            "target_page_url": "string (specific product page URL)",
+            "seo_keywords": ["string (keywords from page analysis)"],
+            "competitive_advantage": "string (unique selling points identified)",
+            "target_customer": "string (customer profile from page data)",
+            "key_features_to_highlight": ["string (specific features to emphasize)"]
+        }}
+    ]
+}}
+```
+
+**Guidelines for Task Generation:**
+- Generate 2-6 article tasks and 1-4 product tasks based on the specific pages analyzed
+- Focus on opportunities directly identified in the page data
+- Use keywords and topics already present in the analysis
+- Ensure tasks complement the existing page structure
+- Consider internal linking opportunities between pages
+- Target audiences should match the identified demographics from the page data
+
+**3. Quick Implementation Guide:**
+   * Provide 3-5 bullet points on how to implement these tasks effectively using the Article Writer and Product Writer tools.
+
+Here is the page analysis data:
 {report_data_str}
 """
             
@@ -263,7 +302,6 @@ Here is the detailed analysis data for the selected page(s):
         
     except Exception as e:
         logging.error(f"Error generating SEO suggestions: {e}")
-        # Attempt to get more detailed error information if available from Gemini API
         error_details = ""
         if hasattr(e, 'response') and hasattr(e.response, 'prompt_feedback'):
             error_details = f" Prompt Feedback: {e.response.prompt_feedback}"
@@ -285,100 +323,150 @@ def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en", 
 
     # Determine the type of data we're working with
     is_text_report = pages_data_for_suggestions and pages_data_for_suggestions.get("_source_type_") == "text_report"
-    has_main_context = enhanced_pages_data and "_main_page_context" in enhanced_pages_data # Check enhanced_pages_data
+    has_main_context = enhanced_pages_data and "_main_page_context" in enhanced_pages_data
     
     if is_text_report:
+        # UPDATED MISTRAL PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
         user_content = f"""{mistral_language_instruction}
-Please analyze the following general SEO report for a website and provide comprehensive, actionable SEO recommendations.
+You are an expert SEO content strategist specializing in creating actionable content tasks.
 
-Your objective is to:
-1. Thoroughly analyze the provided SEO report.
-2. Generate strategic SEO and content recommendations based on the findings.
-3. Identify key opportunities for improvement and potential weaknesses.
-4. Structure your suggestions into logical categories (e.g., On-Page SEO, Technical SEO, Content Strategy, User Experience).
-5. For each suggestion, provide:
-   - The recommendation itself (actionable and specific).
-   - The reasoning behind it, linking back to findings in the report.
-   - A suggested priority level (High, Medium, Low).
-6. Focus on delivering high-impact advice that can demonstrably improve SEO performance.
+You have been provided with a comprehensive SEO analysis report. Your primary goal is to analyze this report and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.
 
-Here is the SEO report:
+Based on your analysis of the report, generate the following structured output:
+
+**1. Key Content Opportunities Identified:**
+   * Provide a brief summary (2-3 sentences) of the main content gaps and opportunities you've identified from the report.
+
+**2. Content Creation Tasks (PRIMARY OUTPUT):**
+
+You MUST provide a JSON object with specific tasks for content creation tools. Format as a markdown code block:
+
+```json
+{{
+    "article_content_tasks": [
+        {{
+            "focus_keyword": "string (primary keyword for the article)",
+            "content_length": "string (Short/Medium/Long/Very Long)",
+            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "additional_keywords": ["string (supporting keywords)"],
+            "suggested_title": "string (SEO-optimized title)",
+            "target_page_url": "string (URL where this content will be published)",
+            "content_gap_addressed": "string (what gap this fills)",
+            "target_audience": "string (specific audience for this content)",
+            "content_outline": ["string (3-5 key points/sections this article should cover)"]
+        }}
+    ],
+    "product_content_tasks": [
+        {{
+            "product_name": "string (product/service name)",
+            "product_details": "string (features, benefits, specifications for the product writer)",
+            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "description_length": "string (Short/Medium/Long)",
+            "target_page_url": "string (product page URL)",
+            "seo_keywords": ["string (2-5 SEO keywords)"],
+            "competitive_advantage": "string (unique selling points)",
+            "target_customer": "string (ideal customer profile)"
+        }}
+    ]
+}}
+```
+
+**Guidelines for Task Generation:**
+- Generate 3-8 article tasks and 2-5 product tasks based on the report findings
+- Focus on high-impact opportunities identified in the analysis
+- Ensure each task is specific and actionable
+- Keywords should be based on actual opportunities found in the report
+- Target audiences should reflect the site's actual visitor demographics
+- Content outlines should be practical and implementable
+
+**3. Implementation Priority:**
+   * List the top 5 tasks from your JSON in order of priority (High/Medium/Low) with brief rationale for each priority level.
+
+Here is the SEO ANALYSIS REPORT:
 {report_data_str}
 """
     else:
+        # UPDATED MISTRAL PROMPT FOR SELECTED PAGES - FOCUSED ON JSON TASKS
         context_instruction = ""
-        if has_main_context: # Use has_main_context
+        if has_main_context:
             context_instruction = """
-
-**Important Context**: The data includes header and footer information from the main page (marked as '_main_page_context') to provide you with the overall site structure and navigation context. Use this information to understand the site's overall theme and structure when making recommendations for the selected pages."""
+**Important Context**: The data includes header and footer information from the main page (marked as '_main_page_context') for site structure reference."""
 
         user_content = f"""{mistral_language_instruction}
-You are an expert SEO strategist and content architect.
-You have been provided with detailed analysis data for specific page(s) from a website. This data includes content summaries, keywords, suggested keywords, tone, audience, topics, and potentially AI-generated strategic insights for each selected page.{context_instruction}
+You are an expert SEO content strategist specializing in creating actionable content tasks.
 
-Your primary task is to act as a strategic advisor, preparing a comprehensive SEO and content *plan* that the user can then take to content generation tools like "Article Writer / Makale Yazarı " or "Product Writer /  Ürün Yazarı" (product content only). Your output should NOT be the full content itself, but the blueprint for it.
+You have been provided with detailed page analysis data from a website. Your primary goal is to analyze this data and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.{context_instruction}
 
-Based on your deep analysis of this data, your plan should:
+Based on your analysis of the provided page data, generate the following output:
 
-1.  **Thoroughly analyze ALL sections** of the provided data for EACH page.
-2.  **If '_main_page_context' is present, use it** to understand the overall site structure and theme to ensure your plan is contextually relevant.
-3.  **Develop a NEW and actionable SEO and Content Strategy** tailored to improve the visibility, ranking, and user engagement of these analyzed pages. This strategy should aim for quick, impactful wins where possible.
-4.  **Critically Evaluate Existing Data**:
-    * Identify strengths, weaknesses, and untapped opportunities within the provided page data.
-    * If the data contains pre-existing suggestions (e.g., 'suggested_keywords_for_seo', 'AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS', 'Site-Wide Subpage SEO Suggestions'), do not merely rephrase them. Instead:
-        * Provide *additional, distinct, and actionable* strategic recommendations.
-        * Elaborate on existing points if you can offer significant new depth, a different angle, or a more concrete implementation plan.
-        * Identify overlooked areas or underemphasized strategies.
-        * Offer alternative or complementary strategies.
-        * Prioritize these existing and new recommendations.
-5.  **Strategic Content Development Plan**:
-    * **Target Keywords**:
-        * Identify relevant **low-competition keywords** with good potential that align with the site's topics and user intent.
-        * Suggest a core set of primary and secondary keywords for each targeted piece of content or page.
-    * **Content Ideas & Structure**:
-        * Propose **new content topics or alternative page ideas** (e.g., supporting articles, cornerstone content, FAQ pages, pillar pages, topic clusters) that could enhance the site's authority, fill content gaps, or target new keyword opportunities. Consider pages that can internally link to and power up existing important pages.
-        * For key content pieces (new or existing that need enhancement), outline a suggested structure or key talking points.
-    * **Tone and Audience Alignment**:
-        * Recommend a specific **main tone** for new/updated content that aligns with the target audience identified in the analysis (or suggest refinements if the current tone is suboptimal or inconsistent).
-    * **Content Formats**: Suggest appropriate content formats (e.g., blog posts, articles, product descriptions, guides, case studies, listicles, pillar pages) based on the strategic goals and target audience for the selected pages.
-6.  **Implementation Guidance**:
-    * Outline the **quickest and most effective ways to implement** the proposed strategy, focusing on high-impact actions.
-    * Briefly suggest how the user can leverage their "Article Writer / Makale Yazarı" or "Product Writer /  Ürün Yazarı" (product content only.) tools with your strategic plan (e.g., "For the proposed blog post on 'X', utilize the 'Article Writer' with the identified keywords, target audience, recommended tone, and the outlined structure.").
-7.  **Organize your comprehensive plan clearly** by categories such as:
-    * Overall Strategic Direction (Synthesizing findings, overarching goals for the selected pages based on the analysis)
-    * Page-Specific Strategic Plans (If multiple pages are analyzed, detail the plan for each)
-        * Key Objectives for this Page
-        * Target Audience & Recommended Tone
-        * Core Keywords (including low-competition options and justification)
-        * Proposed Content Actions (e.g., create new article on [topic], enhance existing [page] with [details], develop FAQ section) & Structure Outline
-        * Key On-Page SEO Focus Points (e.g., title tag refinement, meta description, header optimization, internal linking opportunities specific to this page's new strategy)
-    * Site-Level Content Opportunities (e.g., New supporting articles, topic clusters to build authority around core themes identified from the analyzed pages)
-    * Quick Wins & Prioritized Action Plan (Top 3-5 actions for immediate impact)
-8.  For each strategic element, provide:
-    * A clear, actionable recommendation.
-    * A brief rationale explaining *why* it's important, referencing specific findings from the provided page data.
-    * Suggested priority (High, Medium, Low).
+**1. Page Analysis Summary:**
+   * Provide a brief summary (2-3 sentences) of the key findings and content opportunities for the analyzed pages.
 
-Remember, the output should be a STRATEGY and a PLAN that empowers the user to create effective content. Focus on providing actionable advice that goes beyond merely summarizing the input data or repeating existing suggestions.
+**2. Content Creation Tasks (PRIMARY OUTPUT):**
 
-Here is the detailed analysis data for the selected page(s):
+You MUST provide a JSON object with specific tasks for content creation tools. Format as a markdown code block:
+
+```json
+{{
+    "article_content_tasks": [
+        {{
+            "focus_keyword": "string (primary keyword for the article)",
+            "content_length": "string (Short/Medium/Long/Very Long)",
+            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "additional_keywords": ["string (supporting keywords from page analysis)"],
+            "suggested_title": "string (SEO-optimized title)",
+            "target_page_url": "string (URL where content will be published)",
+            "content_gap_addressed": "string (what specific gap this fills based on page analysis)",
+            "target_audience": "string (audience based on page data)",
+            "content_outline": ["string (3-5 key sections this article should cover)"],
+            "internal_linking_opportunities": ["string (existing pages to link to/from)"]
+        }}
+    ],
+    "product_content_tasks": [
+        {{
+            "product_name": "string (product/service name from page data)",
+            "product_details": "string (comprehensive details for the product writer)",
+            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "description_length": "string (Short/Medium/Long)",
+            "target_page_url": "string (specific product page URL)",
+            "seo_keywords": ["string (keywords from page analysis)"],
+            "competitive_advantage": "string (unique selling points identified)",
+            "target_customer": "string (customer profile from page data)",
+            "key_features_to_highlight": ["string (specific features to emphasize)"]
+        }}
+    ]
+}}
+```
+
+**Guidelines for Task Generation:**
+- Generate 2-6 article tasks and 1-4 product tasks based on the specific pages analyzed
+- Focus on opportunities directly identified in the page data
+- Use keywords and topics already present in the analysis
+- Ensure tasks complement the existing page structure
+- Consider internal linking opportunities between pages
+- Target audiences should match the identified demographics from the page data
+
+**3. Quick Implementation Guide:**
+   * Provide 3-5 bullet points on how to implement these tasks effectively using the Article Writer and Product Writer tools.
+
+Here is the page analysis data:
 {report_data_str}
 """
 
     data = {
-        "model": "mistral-large-latest", # Consider using a specific version if needed, e.g., "mistral-large-2402"
+        "model": "mistral-large-latest",
         "messages": [
             {
                 "role": "system",
-                "content": f"You are a world-class SEO strategist and content architect. Your primary function is to provide expert, actionable, and insightful strategic plans based on SEO analysis data. {mistral_language_instruction} Your advice should be tailored to the information presented in the data and delivered entirely in the requested language. You excel at understanding site context, identifying strategic opportunities, and providing recommendations that align with overall site strategy, guiding users on how to plan content effectively before generation."
+                "content": f"You are an expert SEO content strategist specializing in creating actionable, JSON-formatted content tasks for Article Writer and Product Writer tools. {mistral_language_instruction} Your primary function is to analyze SEO data and generate specific, implementable content tasks that teams can immediately use for content creation."
             },
             {
                 "role": "user",
                 "content": user_content
             }
         ],
-        "temperature": 0.7, # Adjust as needed; lower for more deterministic, higher for more creative
-        "max_tokens": 3500 # Increased to allow for more comprehensive strategic plans
+        "temperature": 0.7,
+        "max_tokens": 3500
     }
 
     response = requests.post(url, headers=headers, json=data)
@@ -388,7 +476,7 @@ Here is the detailed analysis data for the selected page(s):
         if response_json.get('choices') and len(response_json['choices']) > 0 and response_json['choices'][0].get('message'):
             return response_json['choices'][0]['message']['content']
         else:
-            logging.error(f"Mistral API response format error: 'choices' or 'message' structure not as expected. Response: {response.text}")
+            logging.error(f"Mistral API response format error: {response.text}")
             raise Exception(f"Mistral API response format error. Check logs.")
     else:
         logging.error(f"Mistral API error: {response.status_code} - {response.text}")

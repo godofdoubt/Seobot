@@ -2,19 +2,22 @@
 import json
 import asyncio
 import time
+import httpx # For Mistral API calls
 
 class LLMAnalysisProcess:
-    def __init__(self, model, logger):
-        self.model = model
+    def __init__(self, gemini_model, logger, mistral_api_key=None, mistral_model_name=None):
+        self.gemini_model = gemini_model  # This is the initialized genai.GenerativeModel
         self.logger = logger
+        self.mistral_api_key = mistral_api_key
+        self.mistral_model_name = mistral_model_name
 
     async def _call_gemini_api(self, prompt_text: str) -> str:
-        if not self.model:
+        if not self.gemini_model: # Corrected: was self.model
             self.logger.error("Gemini model not initialized. Cannot make API call.")
             return ""
         try:
             response = await asyncio.to_thread(
-                self.model.generate_content,
+                self.gemini_model.generate_content, # Corrected: was self.model
                 prompt_text,
                 generation_config={
                     "temperature": 0.2,
@@ -29,7 +32,7 @@ class LLMAnalysisProcess:
                     return all_text_parts
             if response and hasattr(response, 'prompt_feedback') and response.prompt_feedback:
                 self.logger.warning(f"Gemini API call for prompt resulted in feedback: {response.prompt_feedback}")
-            self.logger.warning(f"LLM response was empty or did not contain text. Full response object: {response}")
+            self.logger.warning(f"LLM response (Gemini) was empty or did not contain text. Full response object: {response}")
             return ""
         except Exception as e:
             if "API key not valid" in str(e) or "PERMISSION_DENIED" in str(e):
@@ -37,6 +40,58 @@ class LLMAnalysisProcess:
             else:
                 self.logger.error(f"Error during Gemini API call: {e}", exc_info=True)
             return ""
+
+    async def _call_mistral_api(self, prompt_text: str, purpose: str) -> tuple[str | None, str | None]:
+        """
+        Calls the Mistral API using httpx.
+        Returns (response_text, error_message string or None if success).
+        'purpose' is for logging.
+        """
+        if not self.mistral_api_key:
+            return None, "Mistral API key not configured."
+        if not self.mistral_model_name:
+            return None, "Mistral model name not configured."
+
+        self.logger.debug(f"Attempting Mistral API call ({self.mistral_model_name}) for {purpose} (prompt {len(prompt_text)} chars)")
+        api_url = "https://api.mistral.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.mistral_api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        # Ensure Mistral is also asked for JSON if the prompt implies it
+        # The prompt itself asks for JSON output.
+        payload = {
+            "model": self.mistral_model_name,
+            "messages": [{"role": "user", "content": prompt_text}],
+            "temperature": 0.7, # Example, adjust as needed. For JSON, lower might be better.
+            # Mistral's API has a response_format parameter for some models, e.g. "response_format": {"type": "json_object"}
+            # Check if your model/Mistral's current API supports this for more reliable JSON.
+            # For now, we rely on the prompt asking for JSON.
+        }
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client: # Timeout for LLM calls
+                api_response = await client.post(api_url, headers=headers, json=payload)
+                api_response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
+            
+            data = api_response.json()
+            if data.get("choices") and data["choices"][0].get("message") and data["choices"][0]["message"].get("content"):
+                response_text = data["choices"][0]["message"]["content"]
+                if not response_text.strip():
+                    self.logger.warning(f"Mistral API for {purpose} returned blank content after stripping.")
+                    return None, "Mistral LLM returned blank content."
+                self.logger.debug(f"Mistral API call for {purpose} successful.")
+                return response_text, None
+            else:
+                self.logger.warning(f"Mistral API call for {purpose} returned unexpected JSON structure or no content: {data}")
+                return None, "Mistral LLM returned malformed/empty response."
+        except httpx.HTTPStatusError as e:
+            err_text = e.response.text[:200] if e.response else "No response body"
+            self.logger.error(f"HTTP Error calling Mistral API for {purpose}: {e.response.status_code if e.response else 'N/A'} - {err_text}")
+            return None, f"Mistral API HTTP error {e.response.status_code if e.response else 'N/A'}: {err_text}"
+        except Exception as e:
+            self.logger.error(f"Error calling Mistral API for {purpose}: {e}", exc_info=True)
+            return None, f"Mistral API error: {str(e)}"        
 
     async def analyze_single_page(self, page_url: str, page_data: dict, is_main_page: bool = False) -> dict:
         base_result = {
@@ -47,7 +102,8 @@ class LLMAnalysisProcess:
             "suggested_keywords_for_seo": [],
             "overall_tone": "",
             "target_audience": [],
-            "topic_categories": []
+            "topic_categories": [],
+            "llm_provider": "N/A" # To track which LLM was used
         }
         if is_main_page:
             base_result.update({"header": [], "footer": []})
@@ -60,7 +116,7 @@ class LLMAnalysisProcess:
             self.logger.warning(f"No cleaned_text or headings_data found for URL {page_url}. LLM analysis might be ineffective.")
             return {**base_result, "error": "No content (cleaned_text or headings) available for analysis."}
         
-        max_text_len = 25000
+        max_text_len = 18000
         truncated_cleaned_text = cleaned_text[:max_text_len] + ('...' if len(cleaned_text) > max_text_len else '')
         
         json_structure_for_llm = {
@@ -156,12 +212,46 @@ class LLMAnalysisProcess:
         prompt += """
     Ensure your entire response is ONLY a valid JSON object.
     """
+        llm_response_str = None
+        llm_provider = "N/A"
+        error_message_for_return = "LLM analysis failed for both primary and fallback providers."
+
         try:
-            self.logger.debug(f"Sending prompt to Gemini for URL: {page_url} (Main page: {is_main_page})")
-            llm_response_str = await self._call_gemini_api(prompt)
+            if self.gemini_model:
+                self.logger.debug(f"Attempting LLM analysis with Gemini for URL: {page_url} (Main page: {is_main_page})")
+                llm_response_str = await self._call_gemini_api(prompt)
+                llm_provider = "Gemini"
+            
             if not llm_response_str:
-                self.logger.error(f"LLM returned empty or no-text response for URL: {page_url}")
-                return {**base_result, "error": "LLM returned an empty response."}
+                if self.gemini_model: # Only log Gemini failure if it was attempted
+                    self.logger.warning(f"Gemini returned empty or no-text response for URL: {page_url}. Attempting Mistral fallback.")
+                else: # Gemini was not configured/initialized
+                    self.logger.info(f"Gemini not configured. Attempting analysis with Mistral for URL: {page_url}.")
+
+                if self.mistral_api_key and self.mistral_model_name:
+                    mistral_response, mistral_error = await self._call_mistral_api(prompt, purpose=f"analyze_single_page_fallback_for_{page_url}")
+                    if mistral_error:
+                        self.logger.error(f"Mistral fallback for {page_url} also failed: {mistral_error}")
+                        error_message_for_return = f"Gemini primary failed/not configured; Mistral fallback failed: {mistral_error}"
+                        # Fall through to return error based on error_message_for_return
+                    elif mistral_response:
+                        llm_response_str = mistral_response
+                        llm_provider = "Mistral (fallback)"
+                        self.logger.info(f"Successfully used Mistral as fallback for LLM analysis for URL: {page_url}")
+                    else: # Mistral response was None but no error string
+                        self.logger.error(f"Mistral fallback for {page_url} returned empty response without explicit error.")
+                        error_message_for_return = "Gemini primary failed/not configured; Mistral fallback returned empty."
+                        # Fall through
+                else:
+                    self.logger.warning(f"LLM (Gemini) failed or not configured, and Mistral is not configured. Cannot analyze URL: {page_url}")
+                    error_message_for_return = "Primary LLM (Gemini) failed or not configured; Mistral fallback not configured."
+                    # Fall through
+            
+            if not llm_response_str: # If still no response string after all attempts
+                self.logger.error(f"All LLM attempts failed for URL: {page_url}. Final error state: {error_message_for_return}")
+                return {**base_result, "error": error_message_for_return, "llm_provider": llm_provider}
+
+            # Proceed with parsing if llm_response_str is populated
             try:
                 cleaned_llm_response_str = llm_response_str.strip()
                 if cleaned_llm_response_str.startswith("```json"):
@@ -171,8 +261,8 @@ class LLMAnalysisProcess:
                 cleaned_llm_response_str = cleaned_llm_response_str.strip()
                 llm_data = json.loads(cleaned_llm_response_str)
             except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to decode JSON response from LLM for {page_url}: {e}. Raw Response: '{llm_response_str[:500]}'")
-                return {**base_result, "error": "Failed to parse LLM response as JSON.", "llm_response_raw": llm_response_str[:500]}
+                self.logger.error(f"Failed to decode JSON response from {llm_provider} for {page_url}: {e}. Raw Response: '{llm_response_str[:500]}'")
+                return {**base_result, "error": f"Failed to parse {llm_provider} response as JSON.", "llm_response_raw": llm_response_str[:500], "llm_provider": llm_provider}
             
             analysis_result = {
                 "url": page_url,
@@ -182,18 +272,19 @@ class LLMAnalysisProcess:
                 "suggested_keywords_for_seo": llm_data.get("suggested_keywords_for_seo", base_result["suggested_keywords_for_seo"]),
                 "overall_tone": llm_data.get("overall_tone", base_result["overall_tone"]),
                 "target_audience": llm_data.get("target_audience", base_result["target_audience"]),
-                "topic_categories": llm_data.get("topic_categories", base_result["topic_categories"])
+                "topic_categories": llm_data.get("topic_categories", base_result["topic_categories"]),
+                "llm_provider": llm_provider
             }
             if is_main_page:
                 analysis_result.update({
                     "header": llm_data.get("header", base_result.get("header", [])),
                     "footer": llm_data.get("footer", base_result.get("footer", []))
                 })
-            self.logger.info(f"Successfully completed LLM analysis for URL: {page_url} (Main page: {is_main_page})")
+            self.logger.info(f"Successfully completed LLM analysis via {llm_provider} for URL: {page_url} (Main page: {is_main_page})")
             return analysis_result
         except Exception as e:
             self.logger.error(f"Unexpected error during LLM analysis processing for URL {page_url}: {e}", exc_info=True)
-            return {**base_result, "error": f"An unexpected error occurred: {str(e)}"}
+            return {**base_result, "error": f"An unexpected error occurred: {str(e)}", "llm_provider": llm_provider}
 
     def _format_technical_statistics_section(self, tech_stats: dict) -> list:
         """Format technical statistics into report sections."""
@@ -283,121 +374,214 @@ class LLMAnalysisProcess:
 
     async def _generate_ai_recommendations(self, llm_analysis_all: dict) -> str:
         """Generate AI-powered recommendations based on the complete website analysis."""
-        if not self.model:
-            self.logger.error("Gemini model not initialized. Cannot generate AI recommendations.")
-            return "AI recommendations could not be generated due to model initialization issues."
+        # Determine if primary LLM (Gemini) is available
+        primary_llm_available = bool(self.gemini_model)
+        fallback_llm_available = bool(self.mistral_api_key and self.mistral_model_name)
+
+        if not primary_llm_available and not fallback_llm_available:
+            self.logger.error("Neither Gemini nor Mistral is configured. Cannot generate AI recommendations.")
+            return "AI recommendations could not be generated due to model initialization/configuration issues."
+            
+        main_page_analysis = llm_analysis_all.get('main_page', {})
+        technical_stats = llm_analysis_all.get('technical_statistics', {})
+        other_pages = {url: data for url, data in llm_analysis_all.items() 
+                        if url not in ['main_page', 'technical_statistics'] and data}
         
-        try:
-            main_page_analysis = llm_analysis_all.get('main_page', {})
-            technical_stats = llm_analysis_all.get('technical_statistics', {})
-            other_pages = {url: data for url, data in llm_analysis_all.items() 
-                          if url not in ['main_page', 'technical_statistics'] and data}
-            
-            all_keywords = []
-            all_seo_keywords = []
-            all_topic_categories = []
-            all_target_audiences = []
-            all_tones = []
-            all_summaries = []
-            
-            if main_page_analysis and not main_page_analysis.get('error'):
-                all_keywords.extend(k for k in main_page_analysis.get('keywords', []) if k)
-                all_seo_keywords.extend(sk for sk in main_page_analysis.get('suggested_keywords_for_seo', []) if sk)
-                all_topic_categories.extend(tc for tc in main_page_analysis.get('topic_categories', []) if tc)
-                all_target_audiences.extend(ta for ta in main_page_analysis.get('target_audience', []) if ta)
-                if main_page_analysis.get('overall_tone'):
-                    all_tones.append(main_page_analysis.get('overall_tone'))
-                if main_page_analysis.get('content_summary'):
-                    all_summaries.append(f"Main Page ({main_page_analysis.get('url', 'N/A')}): {main_page_analysis.get('content_summary')}")
-            
-            for page_url, page_data in other_pages.items():
-                if page_data and not page_data.get('error'):
-                    all_keywords.extend(k for k in page_data.get('keywords', []) if k)
-                    all_seo_keywords.extend(sk for sk in page_data.get('suggested_keywords_for_seo', []) if sk)
-                    all_topic_categories.extend(tc for tc in page_data.get('topic_categories', []) if tc)
-                    all_target_audiences.extend(ta for ta in page_data.get('target_audience', []) if ta)
-                    if page_data.get('overall_tone'):
-                        all_tones.append(page_data.get('overall_tone'))
-                    if page_data.get('content_summary'):
-                        all_summaries.append(f"{page_url}: {page_data.get('content_summary')}")
-            
-            website_data_summary = {
-                "total_pages_analyzed": len([p for p_url, p in llm_analysis_all.items() 
-                                           if p and not p.get('error') and p_url not in ['technical_statistics']]),
-                "main_page_url": main_page_analysis.get('url', 'Unknown'),
-                "all_keywords": list(set(all_keywords)),
-                "all_seo_keywords": list(set(all_seo_keywords)),
-                "all_topic_categories": list(set(all_topic_categories)),
-                "all_target_audiences": list(set(all_target_audiences)),
-                "all_content_tones": list(set(all_tones)),
-                "content_summaries_sample": all_summaries[:10],
-                "main_page_header_elements": main_page_analysis.get('header', []),
-                "main_page_footer_elements": main_page_analysis.get('footer', []),
-                "technical_statistics": technical_stats
-            }
-            
-            prompt = f"""
-Based on the comprehensive SEO and content analysis of this website, provide strategic recommendations and actionable SEO optimization suggestions.
-Language: Turkish if the content is primarily in Turkish, otherwise English.
-The analysis includes:
+        all_keywords = []
+        all_seo_keywords = []
+        all_topic_categories = []
+        all_target_audiences = []
+        all_tones = []
+        all_summaries = []
+        
+        if main_page_analysis and not main_page_analysis.get('error'):
+            all_keywords.extend(k for k in main_page_analysis.get('keywords', []) if k)
+            all_seo_keywords.extend(sk for sk in main_page_analysis.get('suggested_keywords_for_seo', []) if sk)
+            all_topic_categories.extend(tc for tc in main_page_analysis.get('topic_categories', []) if tc)
+            all_target_audiences.extend(ta for ta in main_page_analysis.get('target_audience', []) if ta)
+            if main_page_analysis.get('overall_tone'):
+                all_tones.append(main_page_analysis.get('overall_tone'))
+            if main_page_analysis.get('content_summary'):
+                all_summaries.append(f"Main Page ({main_page_analysis.get('url', 'N/A')}): {main_page_analysis.get('content_summary')}")
+        
+        for page_url, page_data in other_pages.items():
+            if page_data and not page_data.get('error'):
+                all_keywords.extend(k for k in page_data.get('keywords', []) if k)
+                all_seo_keywords.extend(sk for sk in page_data.get('suggested_keywords_for_seo', []) if sk)
+                all_topic_categories.extend(tc for tc in page_data.get('topic_categories', []) if tc)
+                all_target_audiences.extend(ta for ta in page_data.get('target_audience', []) if ta)
+                if page_data.get('overall_tone'):
+                    all_tones.append(page_data.get('overall_tone'))
+                if page_data.get('content_summary'):
+                    all_summaries.append(f"{page_url}: {page_data.get('content_summary')}")
+        
+        website_data_summary = {
+            "total_pages_analyzed": len([p for p_url, p in llm_analysis_all.items() 
+                                        if p and not p.get('error') and p_url not in ['technical_statistics']]),
+            "main_page_url": main_page_analysis.get('url', 'Unknown'),
+            "all_keywords": list(set(all_keywords)),
+            "all_seo_keywords": list(set(all_seo_keywords)),
+            "all_topic_categories": list(set(all_topic_categories)),
+            "all_target_audiences": list(set(all_target_audiences)),
+            "all_content_tones": list(set(all_tones)),
+            "content_summaries_sample": all_summaries[:10],
+            "main_page_header_elements": main_page_analysis.get('header', []),
+            "main_page_footer_elements": main_page_analysis.get('footer', []),
+            "technical_statistics": technical_stats
+        }
+        
+        # Enhanced prompt with improved structure
+        prompt = f"""
+Based on the comprehensive SEO and content analysis of this website, provide strategic recommendations and actionable SEO optimization strategies.
+
 WEBSITE ANALYSIS DATA:
 {json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
 
 Generate recommendations in the following JSON structure:
+
 {{
     "strategic_recommendations": [
         {{
-            "category": "string (e.g., 'SEO Optimization', 'Content Strategy', 'Technical SEO', 'User Experience')",
+            "category": "string (e.g., 'SEO Optimization', 'Content Strategy', 'User Experience', 'Site Structure')",
             "title": "string (brief title for the recommendation)",
             "description": "string (detailed explanation and actionable steps)",
             "priority": "string (High/Medium/Low)",
-            "implementation_difficulty": "string (Easy/Medium/Hard)"
+            "implementation_difficulty": "string (Easy/Medium/Hard)",
+            "based_on_data": "string (specific data point or metric that led to this recommendation)"
         }}
     ],
     "seo_content_optimization": [
         {{
             "focus_area": "string (e.g., 'Keyword Strategy', 'Content Gaps', 'Internal Linking', 'Meta Optimization')",
+            "current_issue": "string (specific issue found in the data)",
             "recommendation": "string (specific actionable recommendation)",
-            "expected_impact": "string (what improvement to expect)"
-        }}
-    ],
-    "technical_seo_recommendations": [
-        {{
-            "technical_area": "string (e.g., 'Image Optimization', 'Mobile Responsiveness', 'Site Structure')",
-            "issue_identified": "string (specific technical issue found)",
-            "recommendation": "string (how to fix it)",
-            "urgency": "string (High/Medium/Low)"
+            "expected_impact": "string (what improvement to expect)",
+            "pages_affected": ["string (specific page URLs if applicable)"]
         }}
     ],
     "content_strategy_insights": [
         {{
-            "insight": "string (key insight about content strategy)",
-            "action_items": ["string", "string"] 
+            "insight": "string (key insight about content strategy based on analysis)",
+            "supporting_data": "string (specific data that supports this insight)",
+            "action_items": [
+                {{
+                    "action_type": "string (Article/Product/Page Update/Technical Fix)",
+                    "page_url": "string (target page URL or 'new page')",
+                    "title": "string (suggested title)",
+                    "description": "string (detailed action description)",
+                    "social_media_opportunity": "string (optional - social media angle)",
+                    "media_suggestions": "string (image/video recommendations)",
+                    "headings_structure": ["string (suggested H1, H2, H3 structure)"],
+                    "priority": "string (High/Medium/Low)"
+                }}
+            ]
+        }}
+    ],
+    "article_content_tasks": [
+        {{
+            "focus_keyword": "string (primary keyword for the article)",
+            "content_length": "string (Small: 300-500 words, Medium: 500-1000 words, Long: 1000-2000 words, Very Long: 2000+ words)",
+            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "additional_keywords": ["string (optional supporting keywords)"],
+            "suggested_title": "string (SEO-optimized title)",
+            "target_page_url": "string (where this content should be published)",
+            "content_gap_addressed": "string (what gap this content fills)",
+            "target_audience": "string (specific audience this targets)"
+        }}
+    ],
+    "product_content_tasks": [
+        {{
+            "product_name": "string (product/service name)",
+            "product_details": {{
+                "features": ["string (list of key features)"],
+                "benefits": ["string (list of key benefits)"],
+                "target_audience": "string (specific target audience)"
+            }},
+            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
+            "description_length": "string (Short: 50-150 words, Medium: 150-300 words, Long: 300+ words)",
+            "target_page_url": "string (where this product content should appear)",
+            "seo_keywords": ["string (relevant keywords for this product)"],
+            "competitive_advantage": "string (what makes this product unique based on analysis)"
         }}
     ]
 }}
 
-REQUIREMENTS:
-1. Provide 3-5 strategic recommendations covering different aspects (SEO, content, technical, UX).
-2. Include 4-6 specific SEO & content optimization suggestions.
-3. Based on technical_statistics, provide 2-4 technical SEO recommendations addressing specific issues found.
-4. Give 2-4 content strategy insights with actionable items.
-5. Base all recommendations on the actual website data provided. Be specific and actionable, not generic.
-6. Consider the identified target audiences, topic categories, and content tones.
-7. Address any content gaps or opportunities you identify from the summaries and keyword data.
-8. Pay special attention to technical issues like alt text coverage, mobile optimization, and site structure.
-9. If the website content (keywords, summaries) appears to be primarily in Turkish, respond entirely in Turkish.
+CRITICAL REQUIREMENTS:
 
-Output ONLY the JSON object with no additional text or formatting.
+1. **Language Detection**: If website content (keywords, summaries, topic categories) is primarily in Turkish, respond entirely in Turkish. Otherwise, use English.
+
+2. **Data-Driven Recommendations**: Base ALL recommendations on the actual technical_statistics and website analysis provided. Reference specific metrics, issues, or opportunities found in the data.
+
+3. **Strategic Focus Areas** (provide 3-5 recommendations covering):
+   - SEO technical issues (alt text coverage, mobile optimization, site speed)
+   - Content gaps identified from keyword analysis
+   - User experience improvements based on site structure
+   - Conversion optimization opportunities
+
+4. **Specific Technical Issues to Address**:
+   - Alt text coverage percentage from technical_statistics
+   - Mobile responsiveness issues
+   - Site structure and navigation problems
+   - Page loading performance
+   - Internal linking opportunities
+
+5. **Content Strategy Requirements**:
+   - Identify content gaps from keyword analysis
+   - Consider target audiences and topic categories found
+   - Address content tone consistency issues
+   - Suggest specific page improvements with URLs
+
+6. **Actionable Items Must Include**:
+   - Specific page URLs where applicable
+   - Exact keywords to target
+   - Measurable outcomes expected
+   - Implementation timeline/difficulty
+   - Social media integration opportunities
+
+7. **No Generic Advice**: Every recommendation must reference specific data points from the analysis. Avoid generic SEO advice not tied to the actual website data.
+
+8. **Prioritization**: Rank recommendations by potential impact and implementation difficulty based on the technical and content analysis provided.
+
+Output ONLY the JSON object with no additional text, markdown, or formatting.
 """
-            
-            self.logger.info(f"Generating AI-powered recommendations for main URL: {website_data_summary['main_page_url']}")
-            ai_response_str = await self._call_gemini_api(prompt)
+        
+        ai_response_str = None
+        llm_provider_recs = "N/A"
+        error_message_for_recs = "AI recommendations failed for both primary and fallback LLMs."
+
+        try:
+            if primary_llm_available:
+                self.logger.info(f"Generating AI-powered recommendations (Gemini attempt) for main URL: {website_data_summary['main_page_url']}")
+                ai_response_str = await self._call_gemini_api(prompt)
+                llm_provider_recs = "Gemini"
+
+            if not ai_response_str:
+                if primary_llm_available:
+                     self.logger.warning("Gemini returned empty response for AI recommendations. Attempting Mistral fallback.")
+                else: # Gemini not available
+                     self.logger.info("Gemini not available. Attempting AI recommendations with Mistral.")
+
+                if fallback_llm_available:
+                    mistral_response, mistral_error = await self._call_mistral_api(prompt, purpose="ai_recommendations_fallback")
+                    if mistral_error:
+                        self.logger.error(f"Mistral fallback for AI recommendations also failed: {mistral_error}")
+                        error_message_for_recs = f"Primary LLM (Gemini) failed/not configured; Mistral fallback for recommendations failed: {mistral_error}"
+                    elif mistral_response:
+                        ai_response_str = mistral_response
+                        llm_provider_recs = "Mistral (fallback)"
+                        self.logger.info("Successfully used Mistral as fallback for AI recommendations.")
+                    else:
+                        self.logger.error("Mistral fallback for AI recommendations returned empty response without explicit error.")
+                        error_message_for_recs = "Primary LLM (Gemini) failed/not configured; Mistral fallback for recommendations returned empty."
+                else:
+                    self.logger.warning("Primary LLM failed/not configured for recommendations, and Mistral is not configured.")
+                    error_message_for_recs = "Primary LLM (Gemini) failed/not configured for recommendations; Mistral fallback not configured."
             
             if not ai_response_str:
-                self.logger.error("AI recommendations generation failed - empty response from LLM")
-                return "AI recommendations could not be generated due to API response issues."
+                self.logger.error(f"All LLM attempts for AI recommendations failed. Final error state: {error_message_for_recs}")
+                return f"AI recommendations could not be generated. {error_message_for_recs}"
             
+            # Proceed with parsing if ai_response_str is populated
             try:
                 cleaned_response = ai_response_str.strip()
                 if cleaned_response.startswith("```json"):
@@ -408,6 +592,7 @@ Output ONLY the JSON object with no additional text or formatting.
                 
                 recommendations_data = json.loads(cleaned_response)
                 
+                # Enhanced formatting logic for new JSON structure
                 formatted_recommendations = []
                 
                 strategic_recs = recommendations_data.get('strategic_recommendations', [])
@@ -419,9 +604,12 @@ Output ONLY the JSON object with no additional text or formatting.
                         description = rec.get('description', '')
                         priority = rec.get('priority', 'Medium')
                         difficulty = rec.get('implementation_difficulty', 'Medium')
+                        based_on_data = rec.get('based_on_data', '')
                         
                         formatted_recommendations.append(f"#### {i}. {title} ({category})")
                         formatted_recommendations.append(f"**Priority**: {priority} | **Implementation**: {difficulty}")
+                        if based_on_data:
+                            formatted_recommendations.append(f"**Data Source**: {based_on_data}")
                         formatted_recommendations.append(description)
                         formatted_recommendations.append("")
                 
@@ -430,29 +618,19 @@ Output ONLY the JSON object with no additional text or formatting.
                     formatted_recommendations.append("### SEO & Content Optimization")
                     for rec in seo_recs:
                         focus_area = rec.get('focus_area', 'SEO Suggestion')
+                        current_issue = rec.get('current_issue', '')
                         recommendation = rec.get('recommendation', '')
                         expected_impact = rec.get('expected_impact', '')
+                        pages_affected = rec.get('pages_affected', [])
                         
                         formatted_recommendations.append(f"#### {focus_area}")
+                        if current_issue:
+                            formatted_recommendations.append(f"**Current Issue**: {current_issue}")
                         formatted_recommendations.append(f"**Recommendation**: {recommendation}")
                         if expected_impact:
                             formatted_recommendations.append(f"**Expected Impact**: {expected_impact}")
-                        formatted_recommendations.append("")
-                
-                technical_recs = recommendations_data.get('technical_seo_recommendations', [])
-                if technical_recs:
-                    formatted_recommendations.append("### Technical SEO Recommendations")
-                    for rec in technical_recs:
-                        technical_area = rec.get('technical_area', 'Technical SEO')
-                        issue_identified = rec.get('issue_identified', '')
-                        recommendation = rec.get('recommendation', '')
-                        urgency = rec.get('urgency', 'Medium')
-                        
-                        formatted_recommendations.append(f"#### {technical_area}")
-                        if issue_identified:
-                            formatted_recommendations.append(f"**Issue Identified**: {issue_identified}")
-                        formatted_recommendations.append(f"**Recommendation**: {recommendation}")
-                        formatted_recommendations.append(f"**Urgency**: {urgency}")
+                        if pages_affected:
+                            formatted_recommendations.append(f"**Pages Affected**: {', '.join(pages_affected)}")
                         formatted_recommendations.append("")
                 
                 content_insights = recommendations_data.get('content_strategy_insights', [])
@@ -460,25 +638,87 @@ Output ONLY the JSON object with no additional text or formatting.
                     formatted_recommendations.append("### Content Strategy Insights")
                     for i, insight_data in enumerate(content_insights, 1):
                         insight = insight_data.get('insight', '')
+                        supporting_data = insight_data.get('supporting_data', '')
                         action_items = insight_data.get('action_items', [])
                         
                         formatted_recommendations.append(f"#### Insight {i}: {insight}")
+                        if supporting_data:
+                            formatted_recommendations.append(f"**Supporting Data**: {supporting_data}")
                         if action_items:
                             formatted_recommendations.append("**Action Items:**")
                             for item in action_items:
-                                formatted_recommendations.append(f"- {item}")
+                                action_type = item.get('action_type', 'Action')
+                                page_url = item.get('page_url', 'N/A')
+                                title = item.get('title', 'N/A')
+                                description = item.get('description', '')
+                                priority = item.get('priority', 'Medium')
+                                
+                                formatted_recommendations.append(f"- **{action_type}** ({priority} Priority)")
+                                formatted_recommendations.append(f"  - **Page**: {page_url}")
+                                formatted_recommendations.append(f"  - **Title**: {title}")
+                                formatted_recommendations.append(f"  - **Description**: {description}")
+                                
+                                if item.get('social_media_opportunity'):
+                                    formatted_recommendations.append(f"  - **Social Media**: {item.get('social_media_opportunity')}")
+                                if item.get('media_suggestions'):
+                                    formatted_recommendations.append(f"  - **Media**: {item.get('media_suggestions')}")
+                                if item.get('headings_structure'):
+                                    formatted_recommendations.append(f"  - **Suggested Headings**: {', '.join(item.get('headings_structure'))}")
+                        formatted_recommendations.append("")
+
+                # New sections for article and product tasks
+                article_tasks = recommendations_data.get('article_content_tasks', [])
+                if article_tasks:
+                    formatted_recommendations.append("### Article Content Tasks")
+                    for i, task in enumerate(article_tasks, 1):
+                        formatted_recommendations.append(f"#### Article Task {i}")
+                        formatted_recommendations.append(f"**Focus Keyword**: {task.get('focus_keyword', 'N/A')}")
+                        formatted_recommendations.append(f"**Content Length**: {task.get('content_length', 'Medium')}")
+                        formatted_recommendations.append(f"**Tone**: {task.get('article_tone', 'Professional')}")
+                        formatted_recommendations.append(f"**Suggested Title**: {task.get('suggested_title', 'N/A')}")
+                        formatted_recommendations.append(f"**Target Page**: {task.get('target_page_url', 'New page')}")
+                        formatted_recommendations.append(f"**Content Gap Addressed**: {task.get('content_gap_addressed', 'N/A')}")
+                        formatted_recommendations.append(f"**Target Audience**: {task.get('target_audience', 'General')}")
+                        
+                        additional_keywords = task.get('additional_keywords', [])
+                        if additional_keywords:
+                            formatted_recommendations.append(f"**Additional Keywords**: {', '.join(additional_keywords)}")
+                        formatted_recommendations.append("")
+
+                product_tasks = recommendations_data.get('product_content_tasks', [])
+                if product_tasks:
+                    formatted_recommendations.append("### Product Content Tasks")
+                    for i, task in enumerate(product_tasks, 1):
+                        formatted_recommendations.append(f"#### Product Task {i}")
+                        formatted_recommendations.append(f"**Product Name**: {task.get('product_name', 'N/A')}")
+                        formatted_recommendations.append(f"**Tone**: {task.get('tone', 'Professional')}")
+                        formatted_recommendations.append(f"**Description Length**: {task.get('description_length', 'Medium')}")
+                        formatted_recommendations.append(f"**Target Page**: {task.get('target_page_url', 'N/A')}")
+                        formatted_recommendations.append(f"**Competitive Advantage**: {task.get('competitive_advantage', 'N/A')}")
+                        
+                        product_details = task.get('product_details', {})
+                        if product_details.get('features'):
+                            formatted_recommendations.append(f"**Features**: {', '.join(product_details.get('features'))}")
+                        if product_details.get('benefits'):
+                            formatted_recommendations.append(f"**Benefits**: {', '.join(product_details.get('benefits'))}")
+                        if product_details.get('target_audience'):
+                            formatted_recommendations.append(f"**Target Audience**: {product_details.get('target_audience')}")
+                        
+                        seo_keywords = task.get('seo_keywords', [])
+                        if seo_keywords:
+                            formatted_recommendations.append(f"**SEO Keywords**: {', '.join(seo_keywords)}")
                         formatted_recommendations.append("")
                 
                 if not formatted_recommendations:
-                    self.logger.warning("AI generated data, but no specific recommendation sections were populated.")
-                    return "AI generated data, but it was not in the expected format or was empty."
+                    self.logger.warning(f"AI ({llm_provider_recs}) generated data for recommendations, but no specific sections were populated.")
+                    return f"AI ({llm_provider_recs}) generated data, but it was not in the expected format or was empty."
 
-                self.logger.info("Successfully generated and formatted AI-powered recommendations.")
+                self.logger.info(f"Successfully generated and formatted AI-powered recommendations using {llm_provider_recs}.")
                 return "\n".join(formatted_recommendations)
                 
             except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse AI recommendations JSON: {e}. Raw response: '{ai_response_str[:500]}'")
-                return f"AI recommendations were generated but could not be parsed properly. Raw response (first 500 chars): {ai_response_str[:500]}..."
+                self.logger.error(f"Failed to parse AI recommendations JSON from {llm_provider_recs}: {e}. Raw response: '{ai_response_str[:500]}'")
+                return f"AI recommendations were generated by {llm_provider_recs} but could not be parsed properly. Raw response (first 500 chars): {ai_response_str[:500]}..."
                 
         except Exception as e:
             self.logger.error(f"Error generating AI recommendations: {e}", exc_info=True)
@@ -498,11 +738,13 @@ Output ONLY the JSON object with no additional text or formatting.
         
         # Add technical statistics section early in the report
         tech_sections = self._format_technical_statistics_section(technical_stats)
-        report_sections.extend(tech_sections)
+        report_sections.extend(tech_sections) # Moved tech_sections earlier
+        report_sections.append("")
         
         if main_page_analysis:
             main_url_display = main_page_analysis.get('url', 'Main Page Analysis (URL not found in analysis data)')
-            report_sections.append(f"## Main Page Analysis: {main_url_display}")
+            llm_provider_main = main_page_analysis.get('llm_provider', 'N/A')
+            report_sections.append(f"## Main Page Analysis: {main_url_display} (via {llm_provider_main})")
             if main_page_analysis.get("error"):
                  report_sections.append(f"**Note:** Main page analysis encountered an error: {main_page_analysis['error']}")
             
@@ -594,7 +836,8 @@ Output ONLY the JSON object with no additional text or formatting.
             report_sections.append("### Individual Subpage Highlights")
             for page_key, page_analysis_item in other_pages.items():
                 page_url_display = page_analysis_item.get('url', page_key)
-                report_sections.append(f"#### Page: {page_url_display}")
+                llm_provider_sub = page_analysis_item.get('llm_provider', 'N/A')
+                report_sections.append(f"#### Page: {page_url_display} (via {llm_provider_sub})")
                 
                 if page_analysis_item.get("error"):
                     report_sections.append(f"  **Note:** Analysis for this page encountered an error: {page_analysis_item['error']}")
@@ -648,6 +891,7 @@ Output ONLY the JSON object with no additional text or formatting.
                          report_sections.append("    No specific contact information or key mentions identified on this subpage.")
                 report_sections.append("")
             
+            # ... (Site-Wide Subpage Analysis sections - unchanged) ...
             if all_subpage_keywords:
                 keyword_count = {k: all_subpage_keywords.count(k) for k in set(all_subpage_keywords) if k}
                 sorted_keywords = sorted(keyword_count.items(), key=lambda x: x[1], reverse=True)

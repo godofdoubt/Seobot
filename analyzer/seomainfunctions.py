@@ -261,6 +261,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     if initial_result['cleaned_text']:
                         raw_initial_cleaned_text = initial_result['cleaned_text'] 
                     
+                        # Store link context for internal use but don't add to report
                         if 'link_context' in initial_result and initial_result['link_context']:
                             initial_page_link_context = initial_result['link_context']
                     
@@ -277,8 +278,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                 analyzer_instance.identified_footer_texts = analyzer_instance.initial_page_llm_report.get("footer", [])
                                 if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts:
                                     print(f"Identified {len(analyzer_instance.identified_header_texts)} header and {len(analyzer_instance.identified_footer_texts)} footer elements via LLM")
-                                if initial_page_link_context: 
-                                    analyzer_instance.initial_page_llm_report['link_context_analysis'] = initial_page_link_context
+                                # Note: link_context is available internally but not added to report
                             else: 
                                 error_msg = analyzer_instance.initial_page_llm_report.get('error', 'Unknown LLM error') if analyzer_instance.initial_page_llm_report else 'No LLM report'
                                 logging.warning(f"LLM analysis for initial page failed: {error_msg}")
@@ -286,8 +286,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                     analyzer_instance.initial_page_llm_report = {}
                                 analyzer_instance.initial_page_llm_report.setdefault('url', actual_initial_url)
                                 analyzer_instance.initial_page_llm_report.setdefault('error', error_msg)
-                                if initial_page_link_context: 
-                                    analyzer_instance.initial_page_llm_report['link_context_analysis'] = initial_page_link_context
 
                         except Exception as e_llm_init:
                             logging.error(f"Error in LLM analysis for initial page: {e_llm_init}")
@@ -296,8 +294,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                 "keywords": [], "content_summary": "", "other_information_and_contacts": [],
                                 "suggested_keywords_for_seo": [], "header": [], "footer": []
                             }
-                            if initial_page_link_context: 
-                                analyzer_instance.initial_page_llm_report['link_context_analysis'] = initial_page_link_context
                         
                         if isinstance(analyzer_instance.initial_page_llm_report, dict):
                             analyzer_instance.initial_page_llm_report['tech_stats'] = initial_page_tech_stats
@@ -505,8 +501,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     "suggested_keywords_for_seo": [], "header": [], "footer": [],
                     "tech_stats": initial_page_tech_stats if initial_page_tech_stats else {}
                 }
-                 if initial_page_link_context:
-                     analysis['llm_analysis']['link_context_analysis'] = initial_page_link_context
             else: 
                 analysis['llm_analysis'] = {
                     "url": analysis_url_input, "error": "Initial page processing failed, LLM analysis critically unavailable.",
@@ -539,8 +533,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     "suggested_keywords_for_seo": [], "header": [], "footer": [],
                     "tech_stats": {} 
                 }
-                if 'initial_page_link_context' in locals() and initial_page_link_context:
-                     final_analysis_data_to_save['llm_analysis']['link_context_analysis'] = initial_page_link_context
             elif 'tech_stats' not in final_analysis_data_to_save.get('llm_analysis', {}):
                  if isinstance(final_analysis_data_to_save.get('llm_analysis'), dict):
                     final_analysis_data_to_save['llm_analysis']['tech_stats'] = {}

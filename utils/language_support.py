@@ -1,4 +1,5 @@
 # SeoTree/utils/language_support.py
+import logging # Added import
 
 class LanguageSupport:
     """Class to manage multi-language support in the application"""
@@ -6,6 +7,12 @@ class LanguageSupport:
     def __init__(self):
         self.translations = {
             "en": {
+                 "seo_helper_prepare_for_article_writer_cta": "\n\nI've identified {0} potential article ideas from this analysis. I can prepare these for you to work on in the Article Writer. Would you like to do that? (Type 'yes' or 'no')",
+                  "seo_helper_cta_yes_article_writer_stay": "Great! I've noted these article suggestions. You can head over to the 'Article Writer' page (from the sidebar) to start developing them when you're ready.",
+                  "seo_helper_cta_no_article_writer": "Alright. Let me know if you change your mind or need help with anything else!",
+                  "seo_helper_cta_invalid_response": "Please respond with 'yes' or 'no' to the previous question about preparing article suggestions.",
+                  "seo_helper_cta_yes_no_tasks": "Okay. It seems there were no specific tasks to prepare. You can still visit the Article Writer page.",
+                  "seo_helper_cta_yes_generic": "Okay!",
                 # Buttons
                 "login_button": "Login",
                 "logout_button": "Logout",
@@ -70,6 +77,7 @@ class LanguageSupport:
                 "llm_analysis_status_unknown": "Status of detailed sub-page analysis is currently unknown. Analyze or refresh if expecting results.",
                 "no_ai_model": "No AI model API key (Gemini or Mistral) is configured. Please set at least one in your environment.",
                 "no_ai_model_configured": "No AI model configured. Please provide either GEMINI_API_KEY or MISTRAL_API_KEY.",
+                "no_ai_api_keys_configured": "No AI API keys configured. Please check your configuration.", # NEW
                 "seo_report_summary_label": "SEO Report Summary",
                 "seo_report_label": "Your Analysis Report is Here",
                 "text_report_not_available": "Text report summary is not available.",
@@ -91,7 +99,7 @@ class LanguageSupport:
                 "processing_request": "Processing your request 🔄",
                 "generating_response": "Generating response",
                 "could_not_generate_description": "Could not generate product description",
-                "error_processing_request": "Error processing request🔄",
+                "error_processing_request": "Error processing request🔄", # As per current usage, no {0} for error detail
                 "Processing_request": "Processing request", # Kept distinct due to capitalization, if used.
                 "analyzing": "Analyzing",
                 "analyze_website_first_product": "Please analyze a website first in the SEO Helper page before I can help with product descriptions.",
@@ -100,7 +108,12 @@ class LanguageSupport:
                 "welcome_article_writer_analyzed": "Welcome to the Article Writer page. Ready to help you write an article based on the analysis of {0}.", # {0} is URL
                 "enter_url_or_question_seo_helper":"Enter Url.....Select Page and generate srategy....I am here to help...",
                 "enter_url_placeholder":"Enter Url.",
-                "report_data_unavailable": "Report data is not available.", # NEW
+                "report_data_unavailable": "Report data is not available.",
+                "invalid_length_in_suggestion_warning": "Warning: The suggested length '{0}' is invalid. Defaulting to '{1}'.",
+                "invalid_tone_in_suggestion_warning": "Warning: The suggested tone '{0}' is invalid. Defaulting to '{1}'.",
+                "unexpected_error_refresh": "An unexpected error occurred. Please refresh the page and try again.", # NEW
+                "fallback_ai_service": "Primary AI service unavailable. Using {0} as fallback...", # NEW
+                "none_value": "None", # NEW - General utility
 
                 # Article Options
                 "article_options_title": "Article Options",
@@ -121,28 +134,68 @@ class LanguageSupport:
                 "custom_keywords_help": "Enter keywords separated by commas",
                 "custom_title": "Custom Title (optional)",
 
-                # Product Options
+                # Article Writer UI & Suggestions
+                "suggested_article_tasks_title": "Suggested Article Tasks",
+                "suggested_article_tasks_intro": "We found some article suggestions based on the SEO analysis. Select one to pre-fill the article options:",
+                "suggestion_task_label": "Suggestion", # Used in expander label with index
+                "focus_keyword_label": "Focus Keyword", # Label within suggestion expander
+                "content_length_label": "Content Length", # Label within suggestion expander
+                "article_tone_label": "Article Tone", # Label within suggestion expander
+                "additional_keywords_label": "Additional Keywords", # Label within suggestion expander
+                "suggested_title_label": "Suggested Title", # Label within suggestion expander
+                "use_this_suggestion_button": "Use This Suggestion",
+                "suggestion_applied_message": "Suggestion applied! Check the Article Options in the sidebar.",
+                "no_article_suggestions_found": "No specific article suggestions found in the current report's auto_suggestions data, or the data format is unrecognized.",
+                "focus_keyword_required_warning": "Focus Keyword is required to generate an article. Please fill it in the sidebar.",
+
+                # Product Options & Details Formatting
                 "product_options_title": "Product Description Options",
-                "product_name": "Product Name",
+                "product_name": "Product Name", # For input field
                 "product_name_placeholder": "Enter the name of the product",
-                "product_details": "Product Details",
+                "product_details": "Product Details", # For text area
                 "product_details_placeholder": "Enter product features, benefits, specifications, target audience, etc.",
-                "product_tone": "Tone",
-                "product_length": "Description Length",
+                "product_tone": "Tone", # For selectbox label
+                "product_length": "Description Length", # For selectbox label
                 "product_length_short": "Short (~100-150 words)",
                 "product_length_medium": "Medium (~150-250 words)",
                 "product_length_long": "Long (~250-350 words)",
+                "features_label": "Features", # NEW - for formatting product details
+                "benefits_label": "Benefits", # NEW - for formatting product details
+                "target_audience_label": "Target Audience", # NEW - for formatting product details
+                "competitive_advantage_label": "Competitive Advantage", # NEW - for formatting product details
+                "suggested_seo_keywords_label": "Suggested SEO Keywords", # NEW - for formatting product details (distinct from seo_keywords_label for suggestions)
+
+                # Product Writer UI & Suggestions (NEW SECTION)
+                "suggested_product_tasks_title": "Suggested Product Tasks", # NEW
+                "suggested_product_tasks_intro": "We found some product description suggestions based on the SEO analysis. Select one to pre-fill the product options:", # NEW
+                "untitled_suggestion": "Untitled Suggestion", # NEW
+                "product_name_label": "Product Name", # NEW - Label for product name within a suggestion expander
+                "product_description_length_label": "Description Length", # NEW - Label for length within a suggestion expander
+                "tone_label": "Tone", # NEW - Label for tone within a suggestion expander
+                "seo_keywords_label": "SEO Keywords", # NEW - Label for keywords within a suggestion expander
+                "product_details_summary_label": "Product Details Summary", # NEW
+                "no_product_suggestions_found": "No specific product suggestions found in the current report, or the data format is unrecognized.", # NEW
+                "product_name_required_warning": "Product Name is required. Please fill it in the sidebar options.", # NEW
+                "product_details_required_warning": "Product Details are required. Please fill them in the sidebar options.", # NEW
+
 
                 # SEO Suggestions Specific
                 "seo_suggestions_for_pages_label": "SEO Suggestions for Pages:",
                 "select_pages_for_detailed_suggestions": "Select pages or leave empty for general report suggestions✖️ ",
-                "multiselect_seo_help_text_v3": "Select specific pages for focused suggestions. If empty, general suggestions will be generated from the text report. 'main_page' contains the homepage analysis.", # NEW (replaces v2)
-                "text_report_suggestions_only": "Detailed page analysis not available. General suggestions will be generated from the text report.", # NEW
-                "error_no_text_report_available": "Error: No text report available for suggestions.", # NEW
-                "analyze_url_first_for_suggestions": "Analyze a URL to enable SEO suggestions.", # NEW
+                "multiselect_seo_help_text_v3": "Select specific pages for focused suggestions. If empty, general suggestions will be generated from the text report. 'main_page' contains the homepage analysis.",
+                "text_report_suggestions_only": "Detailed page analysis not available. General suggestions will be generated from the text report.",
+                "error_no_text_report_available": "Error: No text report available for suggestions.",
+                "analyze_url_first_for_suggestions": "Analyze a URL to enable SEO suggestions.",
                 "using_text_report_for_suggestions": "No specific pages selected. Generating general suggestions based on the text report.",
-                "using_selected_pages_for_suggestions": "Generating suggestions for selected pages: {0}", # MODIFIED {0} is for page list
+                "using_selected_pages_for_suggestions": "Generating suggestions for selected pages: {0}", # {0} is for page list
                 "error_selected_pages_no_valid_data": "Error: None of the selected pages have data available for suggestions.",
+                "loading_existing_suggestions": "Loading existing SEO suggestions from database...", # NEW
+                "auto_generating_initial_suggestions": "Analysis complete. Automatically generating initial suggestions based on the text report...", # NEW
+                "auto_processing_initial_suggestions": "Auto-generating initial suggestions...", # NEW
+                "no_pages_in_analysis_data": "No pages available in the analysis data.", # NEW
+                "error_all_ai_services_failed": "All AI services failed to generate suggestions. Please try again later.", # NEW
+                "error_auto_suggestions_failed": "Unable to generate automatic suggestions. You can still request manual suggestions using the sidebar.", # NEW
+                "error_generating_suggestions": "An error occurred while generating suggestions. Please try again.", # NEW
             },
 
             "tr": {
@@ -210,6 +263,7 @@ class LanguageSupport:
                 "llm_analysis_status_unknown": "Detaylı alt sayfa analizinin durumu şu anda bilinmiyor. Sonuç bekliyorsanız analiz edin veya yenileyin.",
                 "no_ai_model": "Hiçbir AI modeli API anahtarı (Gemini veya Mistral) yapılandırılmamış. Lütfen ortamınızda en az birini ayarlayın.",
                 "no_ai_model_configured": "Yapılandırılmış bir AI modeli yok. Lütfen GEMINI_API_KEY veya MISTRAL_API_KEY sağlayın.",
+                "no_ai_api_keys_configured": "AI API anahtarları yapılandırılmamış. Lütfen yapılandırmanızı kontrol edin.", # NEW
                 "seo_report_summary_label": "SEO Rapor Özeti",
                 "seo_report_label": "Analiz Raporunuz Burada",
                 "text_report_not_available": "Metin rapor özeti mevcut değil.",
@@ -231,7 +285,7 @@ class LanguageSupport:
                 "processing_request": "İsteğiniz işleniyor🔄",
                 "generating_response": "Yanıt oluşturuluyor 🔄",
                 "could_not_generate_description": "Ürün açıklaması oluşturulamadı",
-                "error_processing_request": "İstek işlenirken hata oluştu",
+                "error_processing_request": "İstek işlenirken hata oluştu", # As per current usage, no {0} for error detail
                 "Processing_request": "İstek işleniyor..🔄", # Kept distinct due to capitalization, if used.
                 "analyzing": "Analiz ediliyor",
                 "analyze_website_first_product": "Ürün açıklamalarıyla yardımcı olabilmem için lütfen önce SEO Yardımcısı sayfasında bir web sitesi analiz edin.",
@@ -240,7 +294,12 @@ class LanguageSupport:
                 "welcome_article_writer_analyzed": "Makale Yazarı sayfasına hoş geldiniz. {0} analizine dayalı bir makale yazmanıza yardımcı olmaya hazırım.", # {0} is URL
                 "enter_url_or_question_seo_helper":" Url Gir ve Analiz Değiştir...Sayfa Seç Öneri yarat.....Sana Yardım etmek için buradayım......",
                 "enter_url_placeholder":"Web sitenizin adresini girin.",
-                "report_data_unavailable": "Rapor verisi mevcut değil.", # NEW
+                "report_data_unavailable": "Rapor verisi mevcut değil.",
+                "invalid_length_in_suggestion_warning": "Uyarı: Önerilen '{0}' uzunluğu geçersiz. Varsayılan '{1}' olarak ayarlandı.",
+                "invalid_tone_in_suggestion_warning": "Uyarı: Önerilen '{0}' tonu geçersiz. Varsayılan '{1}' olarak ayarlandı.",
+                "unexpected_error_refresh": "Beklenmeyen bir hata oluştu. Lütfen sayfayı yenileyin ve tekrar deneyin.", # NEW
+                "fallback_ai_service": "Birincil AI servisi kullanılamıyor. Yedek olarak {0} kullanılıyor...", # NEW
+                "none_value": "Yok", # NEW - General utility
 
                 # Article Options
                 "article_options_title": "Makale Seçenekleri",
@@ -261,41 +320,81 @@ class LanguageSupport:
                 "custom_keywords_help": "Anahtar kelimeleri virgülle ayırarak girin",
                 "custom_title": "Özel Başlık (isteğe bağlı)",
 
-                # Product Options
+                # Article Writer UI & Suggestions / Makale Yazarı Arayüzü ve Önerileri
+                "suggested_article_tasks_title": "Önerilen Makale Görevleri",
+                "suggested_article_tasks_intro": "SEO analizine dayanarak bazı makale önerileri bulduk. Makale seçeneklerini önceden doldurmak için birini seçin:",
+                "suggestion_task_label": "Öneri", # İndeks ile genişletici etiketinde kullanılır
+                "focus_keyword_label": "Odak Anahtar Kelime", # Öneri genişleticisi içindeki etiket
+                "content_length_label": "İçerik Uzunluğu", # Öneri genişleticisi içindeki etiket
+                "article_tone_label": "Makale Tonu", # Öneri genişleticisi içindeki etiket
+                "additional_keywords_label": "Ek Anahtar Kelimeler", # Öneri genişleticisi içindeki etiket
+                "suggested_title_label": "Önerilen Başlık", # Öneri genişleticisi içindeki etiket
+                "use_this_suggestion_button": "Bu Öneriyi Kullan",
+                "suggestion_applied_message": "Öneri uygulandı! Kenar çubuğundaki Makale Seçeneklerini kontrol edin.",
+                "no_article_suggestions_found": "Mevcut raporun otomatik öneri verilerinde belirli bir makale önerisi bulunamadı veya veri formatı tanınmıyor.",
+                "focus_keyword_required_warning": "Makale oluşturmak için Odak Anahtar Kelime gereklidir. Lütfen kenar çubuğunda doldurun.",
+
+                # Product Options & Details Formatting
                 "product_options_title": "Ürün Açıklaması Seçenekleri",
-                "product_name": "Ürün Adı",
+                "product_name": "Ürün Adı", # Giriş alanı için
                 "product_name_placeholder": "Ürünün adını girin",
-                "product_details": "Ürün Detayları",
+                "product_details": "Ürün Detayları", # Metin alanı için
                 "product_details_placeholder": "Ürün özelliklerini, faydalarını, spesifikasyonlarını, hedef kitlesini vb. girin",
-                "product_tone": "Ton",
-                "product_length": "Açıklama Uzunluğu",
+                "product_tone": "Ton", # Seçim kutusu etiketi için
+                "product_length": "Açıklama Uzunluğu", # Seçim kutusu etiketi için
                 "product_length_short": "Kısa (~100-150 kelime)",
                 "product_length_medium": "Orta (~150-250 kelime)",
                 "product_length_long": "Uzun (~250-350 kelime)",
+                "features_label": "Özellikler", # YENİ - ürün detaylarını formatlamak için
+                "benefits_label": "Faydalar", # YENİ - ürün detaylarını formatlamak için
+                "target_audience_label": "Hedef Kitle", # YENİ - ürün detaylarını formatlamak için
+                "competitive_advantage_label": "Rekabet Avantajı", # YENİ - ürün detaylarını formatlamak için
+                "suggested_seo_keywords_label": "Önerilen SEO Anahtar Kelimeleri", # YENİ - ürün detaylarını formatlamak için
+
+                # Product Writer UI & Suggestions (YENİ BÖLÜM)
+                "suggested_product_tasks_title": "Önerilen Ürün Görevleri", # YENİ
+                "suggested_product_tasks_intro": "SEO analizine dayanarak bazı ürün açıklaması önerileri bulduk. Ürün seçeneklerini önceden doldurmak için birini seçin:", # YENİ
+                "untitled_suggestion": "Başlıksız Öneri", # YENİ
+                "product_name_label": "Ürün Adı", # YENİ - Öneri genişleticisi içindeki ürün adı etiketi
+                "product_description_length_label": "Açıklama Uzunluğu", # YENİ - Öneri genişleticisi içindeki uzunluk etiketi
+                "tone_label": "Ton", # YENİ - Öneri genişleticisi içindeki ton etiketi
+                "seo_keywords_label": "SEO Anahtar Kelimeleri", # YENİ - Öneri genişleticisi içindeki anahtar kelimeler etiketi
+                "product_details_summary_label": "Ürün Detayları Özeti", # YENİ
+                "no_product_suggestions_found": "Mevcut raporda belirli bir ürün önerisi bulunamadı veya veri formatı tanınmıyor.", # YENİ
+                "product_name_required_warning": "Ürün Adı gereklidir. Lütfen kenar çubuğundaki seçeneklerden doldurun.", # YENİ
+                "product_details_required_warning": "Ürün Detayları gereklidir. Lütfen kenar çubuğundaki seçeneklerden doldurun.", # YENİ
 
                 # SEO Suggestions Specific
                 "seo_suggestions_for_pages_label": "Seo Önerileri Sayfaları:",
                 "select_pages_for_detailed_suggestions": "Sayfa Seç Yada genel öneri için boş bırak✖️ ",
-                "multiselect_seo_help_text_v3": "Odaklanmış öneriler için belirli sayfaları seçin. Boş bırakılırsa, genel öneriler metin raporundan oluşturulur. 'main_page' ana sayfa analizini içerir.", # NEW (replaces v2)
-                "text_report_suggestions_only": "Detaylı sayfa analizi mevcut değil. Genel öneriler metin raporundan oluşturulacaktır.", # NEW
-                "error_no_text_report_available": "Hata: Öneriler için metin raporu mevcut değil.", # NEW
-                "analyze_url_first_for_suggestions": "SEO önerilerini etkinleştirmek için bir URL analiz edin.", # NEW
+                "multiselect_seo_help_text_v3": "Odaklanmış öneriler için belirli sayfaları seçin. Boş bırakılırsa, genel öneriler metin raporundan oluşturulur. 'main_page' ana sayfa analizini içerir.",
+                "text_report_suggestions_only": "Detaylı sayfa analizi mevcut değil. Genel öneriler metin raporundan oluşturulacaktır.",
+                "error_no_text_report_available": "Hata: Öneriler için metin raporu mevcut değil.",
+                "analyze_url_first_for_suggestions": "SEO önerilerini etkinleştirmek için bir URL analiz edin.",
                 "using_text_report_for_suggestions": "Belirli bir sayfa seçilmedi. Metin raporuna göre genel öneriler oluşturuluyor.",
-                "using_selected_pages_for_suggestions": "Seçili sayfalar için öneriler oluşturuluyor: {0}", # MODIFIED {0} is for page list
+                "using_selected_pages_for_suggestions": "Seçili sayfalar için öneriler oluşturuluyor: {0}", # {0} is for page list
                 "error_selected_pages_no_valid_data": "Hata: Seçili sayfaların hiçbirinde öneri için kullanılabilir veri bulunmuyor.",
+                "loading_existing_suggestions": "Mevcut SEO önerileri veritabanından yükleniyor...", # NEW
+                "auto_generating_initial_suggestions": "Analiz tamamlandı. Metin raporuna göre ilk öneriler otomatik olarak oluşturuluyor...", # NEW
+                "auto_processing_initial_suggestions": "İlk öneriler otomatik olarak işleniyor...", # NEW
+                "no_pages_in_analysis_data": "Analiz verilerinde uygun sayfa bulunamadı.", # NEW
+                "error_all_ai_services_failed": "Tüm AI servisleri öneri oluşturmada başarısız oldu. Lütfen daha sonra tekrar deneyin.", # NEW
+                "error_auto_suggestions_failed": "Otomatik öneriler oluşturulamadı. Yan menüyü kullanarak manuel öneriler talep edebilirsiniz.", # NEW
+                "error_generating_suggestions": "Öneriler oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.", # NEW
             }
         }
 
 
-    def get_text(self, key, lang="en", *args, fallback=None):
+    def get_text(self, key, lang="en", *args, fallback=None, **kwargs): # Added **kwargs
         """
         Get translated text for the given key in the specified language
 
         Parameters:
             key (str): The translation key to look up
             lang (str): The language code (e.g., "en", "tr")
-            *args: Arguments to format into the translated string
+            *args: Positional arguments to format into the translated string
             fallback (str, optional): Fallback text if the key is not found
+            **kwargs: Keyword arguments to format into the translated string
 
         Returns:
             str: Translated text
@@ -303,26 +402,50 @@ class LanguageSupport:
         if lang not in self.translations:
             lang = "en"  # Default to English if language not supported
 
-        # Prioritize language-specific translation
         translation_template = self.translations[lang].get(key)
 
-        # If not found in specific language, try English as a fallback
         if translation_template is None and lang != "en":
             translation_template = self.translations["en"].get(key)
         
-        # If still not found, use the provided fallback or the key itself
         if translation_template is None:
-            if fallback is not None:
-                # If fallback is provided, format it if args are present
-                return fallback.format(*args) if args and isinstance(fallback, str) else fallback
-            # Format the key itself if it might contain placeholders and args are provided
-            return key.format(*args) if args and isinstance(key, str) else key
+            # Determine the string to format (fallback or key itself)
+            text_to_format = fallback if fallback is not None else key
+            
+            if isinstance(text_to_format, str):
+                try:
+                    if args and kwargs:
+                        return text_to_format.format(*args, **kwargs)
+                    elif args:
+                        return text_to_format.format(*args)
+                    elif kwargs:
+                        return text_to_format.format(**kwargs)
+                    else:
+                        return text_to_format # No arguments to format with
+                except (KeyError, IndexError, TypeError) as e:
+                    logging.warning(
+                        f"Failed to format fallback/key string for key '{key}'. "
+                        f"String: '{text_to_format}', Args: {args}, Kwargs: {kwargs}. Error: {e}"
+                    )
+                    return text_to_format # Return unformatted string on error
+            return text_to_format # If not a string, return as is
 
-
-        # Format the string with any provided arguments
-        if args:
-            return translation_template.format(*args)
-        return translation_template
+        # Format the found translation template
+        if isinstance(translation_template, str):
+            try:
+                if args and kwargs:
+                    return translation_template.format(*args, **kwargs)
+                elif args:
+                    return translation_template.format(*args)
+                elif kwargs:
+                    return translation_template.format(**kwargs)
+                return translation_template # No arguments to format with
+            except (KeyError, IndexError, TypeError) as e:
+                logging.warning(
+                    f"Failed to format translation for key '{key}'. "
+                    f"Template: '{translation_template}', Args: {args}, Kwargs: {kwargs}. Error: {e}"
+                )
+                return translation_template # Return unformatted template on error
+        return translation_template # If not a string, return as is
 
     def get_available_languages(self):
         """Return a list of available languages"""

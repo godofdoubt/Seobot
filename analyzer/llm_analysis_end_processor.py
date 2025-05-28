@@ -10,6 +10,11 @@ import google.generativeai as genai
 import threading
 from .llm_analysis_process import LLMAnalysisProcess
 
+# It's good practice to also import any client libraries for Mistral if you use them directly
+# e.g., from mistralai.client import MistralClient
+# For this example, Mistral calls will be encapsulated in LLMAnalysisProcess, potentially using httpx.
+
+
 class LLMAnalysisEndProcessor:
     def __init__(self):
         # Configure logging
@@ -30,25 +35,38 @@ class LLMAnalysisEndProcessor:
 
         # Configure Gemini API
         self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        if not self.gemini_api_key:
-            self.logger.error("GEMINI_API_KEY must be set.")
-            raise ValueError("GEMINI_API_KEY must be set.")
+        if self.gemini_api_key:
+            try:
+                genai.configure(api_key=self.gemini_api_key)
+                self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                self.logger.info("Gemini model initialized ('gemini-1.5-flash-latest').")
+            except Exception as e:
+                self.logger.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
+        else:
+            self.logger.warning("GEMINI_API_KEY not set. Gemini functionalities will be unavailable unless Mistral is primary.")
+
+        # Configure Mistral API
+        self.mistral_api_key = os.getenv('MISTRAL_API_KEY')
+        self.mistral_model_name = os.getenv('MISTRAL_MODEL_NAME', 'mistral-small-latest') # Default if not set
         
-        self.model = None # Initialize model to None
-        try:
-            genai.configure(api_key=self.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        except Exception as e:
-            self.logger.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
-            # self.model remains None
+        if self.mistral_api_key:
+            self.logger.info(f"Mistral API key found. Mistral model '{self.mistral_model_name}' can be used.")
+        else:
+            self.logger.warning("MISTRAL_API_KEY not set. Mistral fallback/functionalities will be unavailable.")
 
-        if not self.model:
-             self.logger.error("Failed to initialize Gemini model. LLM functionalities will be unavailable.")
-             # Depending on strictness, could raise RuntimeError here.
-             # For now, allow instantiation but log error. API calls will fail gracefully.
-
+        if not self.model and not self.mistral_api_key:
+             self.logger.error("Neither Gemini nor Mistral API keys are configured. LLM functionalities will be unavailable.")
+             raise ValueError("At least one LLM (Gemini or Mistral) API key must be set.")
+        elif not self.model:
+             self.logger.warning("Gemini model failed to initialize or key not set. Will rely on Mistral if configured.")
+        
         # Initialize the analysis process handler
-        self.analysis_process = LLMAnalysisProcess(self.model, self.logger)
+        self.analysis_process = LLMAnalysisProcess(
+            gemini_model=self.model, 
+            mistral_api_key=self.mistral_api_key,
+            mistral_model_name=self.mistral_model_name,
+            logger=self.logger
+        )
 
     def _extract_technical_statistics(self, report_json_blob: dict) -> dict:
         """Extract technical statistics from the report JSON blob."""

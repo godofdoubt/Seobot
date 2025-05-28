@@ -2,6 +2,7 @@
 import streamlit as st
 import asyncio
 import os
+import logging # Import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 # Ensure update_page_history is imported
@@ -42,6 +43,53 @@ def check_auth():
         if st.button(language_manager.get_text("go_to_login", lang)): # Added a button to go to main
             st.switch_page("main.py")
         st.stop()
+
+def format_product_details_for_textarea(details_dict, seo_keywords_list, lang="en"):
+    """Formats structured product details and SEO keywords into a string for a textarea."""
+    if not isinstance(details_dict, dict):
+        details_dict = {}
+    if not isinstance(seo_keywords_list, list):
+        seo_keywords_list = []
+
+    output_parts = []
+
+    # Features
+    features = details_dict.get("features", [])
+    if features:
+        output_parts.append(f"**{language_manager.get_text('features_label', lang, fallback='Features')}:**")
+        for item in features:
+            output_parts.append(f"- {item}")
+        output_parts.append("")
+
+    # Benefits
+    benefits = details_dict.get("benefits", [])
+    if benefits:
+        output_parts.append(f"**{language_manager.get_text('benefits_label', lang, fallback='Benefits')}:**")
+        for item in benefits:
+            output_parts.append(f"- {item}")
+        output_parts.append("")
+
+    # Target Audience
+    target_audience = details_dict.get("target_audience")
+    if target_audience:
+        output_parts.append(f"**{language_manager.get_text('target_audience_label', lang, fallback='Target Audience')}:**")
+        output_parts.append(target_audience)
+        output_parts.append("")
+    
+    # Competitive Advantage
+    competitive_advantage = details_dict.get("competitive_advantage") # As per example structure
+    if competitive_advantage:
+        output_parts.append(f"**{language_manager.get_text('competitive_advantage_label', lang, fallback='Competitive Advantage')}:**")
+        output_parts.append(competitive_advantage)
+        output_parts.append("")
+
+    # SEO Keywords
+    if seo_keywords_list:
+        output_parts.append(f"**{language_manager.get_text('suggested_seo_keywords_label', lang, fallback='Suggested SEO Keywords')}:**")
+        output_parts.append(", ".join(seo_keywords_list))
+        output_parts.append("")
+
+    return "\n".join(output_parts).strip()
         
 
 async def main():
@@ -68,14 +116,12 @@ async def main():
     check_auth()
 
     # --- START: Fix for Product Writer Welcome Message ---
-    # This logic ensures the correct welcome message for the Product Writer page,
-    # updating the first message in the chat if necessary.
     target_welcome_message_product = ""
     if st.session_state.get("url") and st.session_state.get("text_report"):
         target_welcome_message_product = language_manager.get_text(
             "welcome_product_writer_analyzed",
             lang,
-            st.session_state.url,  # Pass URL as an argument for formatting
+            st.session_state.url,
             fallback=f"Welcome to the Product Writer page.\nUsing analysis for: **{st.session_state.url}**"
         )
     else:
@@ -86,21 +132,129 @@ async def main():
         )
 
     if "messages" not in st.session_state or not st.session_state.messages:
-        # If messages list doesn't exist or is empty, initialize with the welcome message.
         st.session_state.messages = [{"role": "assistant", "content": target_welcome_message_product}]
     elif st.session_state.messages and st.session_state.messages[0].get("role") == "assistant":
-        # If the first message is an assistant message but not the correct current welcome message, update it.
         if st.session_state.messages[0].get("content") != target_welcome_message_product:
             st.session_state.messages[0]["content"] = target_welcome_message_product
     # --- END: Fix for Product Writer Welcome Message ---
 
+    # --- NEW: Automated Product Suggestion Tasks ---
+    display_suggestions_condition = (
+        st.session_state.get("url") and
+        st.session_state.get("text_report") and
+        st.session_state.get("auto_suggestions_data") and
+        st.session_state.get("current_report_url_for_suggestions") == st.session_state.get("url")
+    )
 
-    # --- NEW Right Sidebar for Product Description Options ---
-    if st.session_state.full_report and st.session_state.url:
+    if display_suggestions_condition:
+        auto_suggestions = st.session_state.auto_suggestions_data
+        product_tasks = []
+
+        if auto_suggestions and \
+           isinstance(auto_suggestions, dict) and \
+           "content_creation_ideas" in auto_suggestions and \
+           isinstance(auto_suggestions.get("content_creation_ideas"), dict) and \
+           "product_content_tasks" in auto_suggestions.get("content_creation_ideas", {}) and \
+           isinstance(auto_suggestions.get("content_creation_ideas", {}).get("product_content_tasks"), list):
+            product_tasks = auto_suggestions["content_creation_ideas"]["product_content_tasks"]
+        
+        if product_tasks:
+            st.subheader(language_manager.get_text("suggested_product_tasks_title", lang, fallback="Suggested Product Tasks"))
+            st.markdown(language_manager.get_text("suggested_product_tasks_intro", lang, fallback="We found some product description suggestions based on the SEO analysis. Select one to pre-fill the product options:"))
+
+            if "last_url_for_product_suggestion_selection" not in st.session_state or \
+               st.session_state.last_url_for_product_suggestion_selection != st.session_state.url:
+                st.session_state.selected_auto_suggestion_product_task_index = None
+                st.session_state.last_url_for_product_suggestion_selection = st.session_state.url
+
+            for i, task in enumerate(product_tasks):
+                if not isinstance(task, dict):
+                    logging.warning(f"Product Writer: Skipping non-dict product task at index {i}: {task}")
+                    continue
+                
+                task_product_name = task.get('product_name', language_manager.get_text('untitled_suggestion', lang, fallback='Untitled Suggestion'))
+                if not task_product_name: task_product_name = language_manager.get_text('untitled_suggestion', lang, fallback='Untitled Suggestion')
+
+                with st.expander(f"{language_manager.get_text('suggestion_task_label', lang, fallback='Suggestion')} {i+1}: {task_product_name}",
+                                 expanded=(st.session_state.selected_auto_suggestion_product_task_index == i)):
+                    
+                    st.markdown(f"**{language_manager.get_text('product_name_label', lang, fallback='Product Name')}:** {task.get('product_name', 'N/A')}")
+                    st.markdown(f"**{language_manager.get_text('product_description_length_label', lang, fallback='Description Length')}:** {task.get('description_length', 'N/A')}")
+                    st.markdown(f"**{language_manager.get_text('tone_label', lang, fallback='Tone')}:** {task.get('tone', 'N/A')}")
+                    
+                    seo_keywords_display = task.get('seo_keywords', [])
+                    if isinstance(seo_keywords_display, list):
+                        seo_keywords_display = ", ".join(seo_keywords_display) if seo_keywords_display else language_manager.get_text('none_value', lang, fallback="None")
+                    elif not seo_keywords_display:
+                        seo_keywords_display = language_manager.get_text('none_value', lang, fallback="None")
+                    st.markdown(f"**{language_manager.get_text('seo_keywords_label', lang, fallback='SEO Keywords')}:** {seo_keywords_display}")
+
+                    # Display a summary of product details
+                    product_details_summary = format_product_details_for_textarea(task.get('product_details', {}), [], lang) # keywords handled separately above
+                    if product_details_summary:
+                        st.markdown(f"**{language_manager.get_text('product_details_summary_label', lang, fallback='Product Details Summary')}:**")
+                        st.markdown(f"> {product_details_summary.replace(chr(10), chr(10) + '> ')}") # Indent summary
+
+                    if st.button(language_manager.get_text("use_this_suggestion_button", lang, fallback="Use This Suggestion"), key=f"use_product_suggestion_{i}"):
+                        if "product_options" not in st.session_state:
+                            st.session_state.product_options = {}
+
+                        st.session_state.product_options["product_name"] = task.get("product_name", "")
+                        
+                        valid_lengths = ["Short", "Medium", "Long"]
+                        task_length_val = task.get("description_length")
+                        if task_length_val in valid_lengths:
+                            st.session_state.product_options["length"] = task_length_val
+                        else:
+                            st.warning(language_manager.get_text(
+                                "invalid_length_in_suggestion_warning",
+                                lang,
+                                task_length_val,
+                                "Medium",
+                                fallback="Warning: The suggested length '{0}' is invalid. Defaulting to '{1}'."
+                            ))
+                            logging.warning(f"Product Writer: Invalid length '{task_length_val}' in suggestion for task {i}. Defaulting to Medium.")
+                            st.session_state.product_options["length"] = "Medium"
+
+                        valid_tones = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"]
+                        task_tone_val = task.get("tone")
+                        if task_tone_val in valid_tones:
+                            st.session_state.product_options["tone"] = task_tone_val
+                        else:
+                            st.warning(language_manager.get_text(
+                                "invalid_tone_in_suggestion_warning",
+                                lang,
+                                task_tone_val,
+                                "Professional",
+                                fallback="Warning: The suggested tone '{0}' is invalid. Defaulting to '{1}'."
+                            ))
+                            logging.warning(f"Product Writer: Invalid tone '{task_tone_val}' in suggestion for task {i}. Defaulting to Professional.")
+                            st.session_state.product_options["tone"] = "Professional"
+                        
+                        product_details_dict = task.get("product_details", {})
+                        seo_keywords_list = task.get("seo_keywords", [])
+                        st.session_state.product_options["product_details"] = format_product_details_for_textarea(product_details_dict, seo_keywords_list, lang)
+                        
+                        st.session_state.selected_auto_suggestion_product_task_index = i 
+                        # st.success(language_manager.get_text("suggestion_applied_message", lang, fallback="Suggestion applied! Check the Product Options in the sidebar."))
+                        
+                        # --- MODIFICATION: Trigger product description generation ---
+                        st.session_state.product_description_requested = True
+                        # --- END MODIFICATION ---
+                        st.rerun()
+            st.divider()
+        elif display_suggestions_condition:
+            st.info(language_manager.get_text("no_product_suggestions_found", lang, fallback="No specific product suggestions found in the current report, or the data format is unrecognized."))
+
+    # --- END Automated Product Suggestion Tasks ---
+
+    # --- Right Sidebar for Product Description Options ---
+    # Ensure full_report and url exist before showing options sidebar
+    if st.session_state.get("full_report") and st.session_state.get("url"): 
         with st.sidebar:
-            #st.markdown(f"### {language_manager.get_text('product_options_title', lang)}") 
+            st.markdown(f"### {language_manager.get_text('product_options_title', lang, fallback='Product Options')}") 
 
-            if "product_options" not in st.session_state:
+            if "product_options" not in st.session_state or not isinstance(st.session_state.product_options, dict):
                 st.session_state.product_options = {
                     "product_name": "",
                     "product_details": "",
@@ -118,7 +272,7 @@ async def main():
                 label=language_manager.get_text("product_details", lang, fallback="Product Details"),
                 value=st.session_state.product_options.get("product_details", ""),
                 placeholder=language_manager.get_text("product_details_placeholder", lang, fallback="Enter product features, benefits, specifications, target audience, etc."),
-                height=150
+                height=250 # Increased height for potentially longer pre-filled content
             )
 
             tone_keys = ["tone_professional", "tone_casual", "tone_enthusiastic", "tone_technical", "tone_friendly"]
@@ -130,10 +284,12 @@ async def main():
                 "Technical": language_manager.get_text("tone_technical", lang),
                 "Friendly": language_manager.get_text("tone_friendly", lang),
             }
-            current_display_value_tone = internal_to_display_map_tone.get(st.session_state.product_options["tone"], tone_display_options[0]) 
+            current_tone_internal = st.session_state.product_options.get("tone", "Professional")
+            current_display_value_tone = internal_to_display_map_tone.get(current_tone_internal, tone_display_options[0]) 
             try:
                 current_index_tone = tone_display_options.index(current_display_value_tone)
             except ValueError:
+                 logging.warning(f"Product Writer: Tone '{current_display_value_tone}' (internal: '{current_tone_internal}') not in display options. Defaulting index.")
                  current_index_tone = 0 
 
             selected_tone_display = st.selectbox(
@@ -151,10 +307,12 @@ async def main():
                 "Medium": language_manager.get_text("product_length_medium", lang),
                 "Long": language_manager.get_text("product_length_long", lang),
             }
-            current_display_value_length = internal_to_display_map_length.get(st.session_state.product_options["length"], length_display_options[1]) 
+            current_length_internal = st.session_state.product_options.get("length", "Medium")
+            current_display_value_length = internal_to_display_map_length.get(current_length_internal, length_display_options[1]) 
             try:
                 current_index_length = length_display_options.index(current_display_value_length)
             except ValueError:
+                 logging.warning(f"Product Writer: Length '{current_display_value_length}' (internal: '{current_length_internal}') not in display options. Defaulting index.")
                  current_index_length = 1 
 
             selected_length_display = st.selectbox(
@@ -166,48 +324,64 @@ async def main():
             st.session_state.product_options["length"] = display_to_internal_map_length.get(selected_length_display, "Medium")
 
             if st.sidebar.button(language_manager.get_text("generate_product_description", lang, fallback="Generate Product Description")):
-                if not st.session_state.product_options.get("product_name"):
-                    st.sidebar.warning("Please enter a Product Name.")
-                elif not st.session_state.product_options.get("product_details"):
-                     st.sidebar.warning("Please enter Product Details.")
-                else:
-                    st.session_state.product_description_requested = True
-                    st.rerun()
+                # Validation moved to the main generation block below
+                st.session_state.product_description_requested = True
+                # No st.rerun() here, let the flag be processed below
 
+        # This block should be outside the `with st.sidebar:`
         if st.session_state.product_description_requested:
-            if "product_options" in st.session_state:
+            current_product_options = st.session_state.get("product_options", {})
+            if not isinstance(current_product_options, dict):
+                logging.error("Product Writer: product_options is not a dict. Resetting to default for generation.")
+                current_product_options = {
+                    "product_name": "", "product_details": "", "tone": "Professional", "length": "Medium"
+                }
+                st.session_state.product_options = current_product_options # also update session_state
+
+            # --- ADDED/MOVED VALIDATION ---
+            product_name_valid = current_product_options.get("product_name", "").strip()
+            product_details_valid = current_product_options.get("product_details", "").strip()
+
+            if not product_name_valid:
+                st.warning(language_manager.get_text("product_name_required_warning", lang, fallback="Product Name is required. Please fill it in the sidebar options."))
+                st.session_state.product_description_requested = False # Reset flag
+                st.rerun() 
+            elif not product_details_valid:
+                st.warning(language_manager.get_text("product_details_required_warning", lang, fallback="Product Details are required. Please fill them in the sidebar options."))
+                st.session_state.product_description_requested = False # Reset flag
+                st.rerun()
+            else:
+            # --- END VALIDATION ---
                 with st.spinner(language_manager.get_text("generating_product_description", lang, fallback="Generating product description...")):
                     try:
                         description = generate_product_description(
                             st.session_state.text_report, 
-                            st.session_state.product_options 
+                            current_product_options # Use the validated/defaulted options
                         )
                         st.session_state.messages.append({"role": "assistant", "content": description})
                     except Exception as e:
-                        st.error(f"{language_manager.get_text('error_processing_request', lang)}: {e}")
+                        logging.error(f"Error generating product description: {e}", exc_info=True)
+                        error_msg = language_manager.get_text('error_processing_request', lang, error=str(e))
+                        st.error(error_msg) # Show error in main page
                         st.session_state.messages.append({"role": "assistant", "content": language_manager.get_text('could_not_generate_description', lang)})
 
                 st.session_state.product_description_requested = False
-                st.rerun() 
-            else:
-                 st.error("Product options not found. Cannot generate description.")
-                 st.session_state.product_description_requested = False
+                st.rerun() # Rerun to display the new message and clear spinner
 
 
     st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
-    common_sidebar()
-
+    
     if "messages" in st.session_state:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    if not st.session_state.text_report:
+    if not st.session_state.get("text_report"):
         st.warning(language_manager.get_text("analyze_website_first_product", lang, fallback="Please analyze a website first in the SEO Helper page before I can help with product descriptions."))
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button(language_manager.get_text("seo_helper_button", lang, fallback="SEO Helper"), key="seo_helper_button"):
+            if st.button(language_manager.get_text("seo_helper_button", lang, fallback="SEO Helper"), key="seo_helper_button_redirect_product"):
                 update_page_history("seo")
                 st.switch_page("pages/1_SEO_Helper.py")
 
@@ -216,7 +390,7 @@ async def main():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        if not st.session_state.text_report:
+        if not st.session_state.get("text_report"):
             with st.chat_message("assistant"):
                 response = language_manager.get_text("analyze_website_first_chat_product", lang, fallback="Please analyze a website first in the SEO Helper page before I can help with product writing.")
                 st.markdown(response)
@@ -226,10 +400,13 @@ async def main():
 
             await process_chat_input(
                 prompt,
-                MISTRAL_API_KEY=st.session_state.MISTRAL_API_KEY,
-                GEMINI_API_KEY=st.session_state.GEMINI_API_KEY,
+                MISTRAL_API_KEY=st.session_state.get("MISTRAL_API_KEY"),
+                GEMINI_API_KEY=st.session_state.get("GEMINI_API_KEY"),
                 message_list="messages" 
             )
+            st.rerun() # Rerun to display the processed chat and AI response
+
+    common_sidebar()
 
 if __name__ == "__main__":
     asyncio.run(main())
