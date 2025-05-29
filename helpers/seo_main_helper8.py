@@ -449,9 +449,9 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
     
     genai.configure(api_key=GEMINI_API_KEY)
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-2.0-flash')
     except Exception as e:
-        logging.error(f"Failed to initialize Gemini model with 'gemini-1.5-flash-latest': {e}. Falling back to 'gemini-pro'.")
+        logging.error(f"Failed to initialize Gemini model with 'gemini-2.0-flash: {e}. Falling back to 'gemini-pro'.")
         try:
             model = genai.GenerativeModel('gemini-pro') # Fallback
         except Exception as e_pro:

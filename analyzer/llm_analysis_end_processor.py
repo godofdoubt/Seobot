@@ -38,8 +38,8 @@ class LLMAnalysisEndProcessor:
         if self.gemini_api_key:
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                self.logger.info("Gemini model initialized ('gemini-1.5-flash-latest').")
+                self.model = genai.GenerativeModel('gemini-2.0-flash')
+                self.logger.info("Gemini model initialized ('gemini-2.0-flash').")
             except Exception as e:
                 self.logger.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
         else:

@@ -1,5 +1,3 @@
-
-
 # Base: "shows and correctly does article tasks" version.
 # Goal: Offer article tasks first. If product tasks also exist,
 #       prepare to offer them after article tasks are handled.
@@ -592,7 +590,7 @@ async def main_seo_helper():
                             "current_task_index": 0,
                             "secondary_tasks_info": cta_secondary_info # Store secondary info
                         }
-                        logging.info(f"CTA activated after auto-suggestion. Primary: {cta_task_type}. Context: {st.session_state.seo_helper_cta_context}")
+                        logging.info(f"CTA activated after auto-suggestion. Primary: {cta_task_type}. ") # Context: {st.session_state.seo_helper_cta_context}
                     # --- END OF MODIFIED CTA HANDLING ---
 
                 if suggestions_to_display_in_chat:
@@ -634,6 +632,7 @@ async def main_seo_helper():
         st.markdown(language_manager.get_text("logged_in_as", lang, username_display))
         common_sidebar()
         
+        # --- Logic to determine content for the task panel (moved from below message display) ---
         active_cta_context_display = st.session_state.get("seo_helper_cta_context")
         paused_cta_context_display = st.session_state.get("paused_cta_context")
 
@@ -677,9 +676,58 @@ async def main_seo_helper():
             elif tasks_for_panel_display and isinstance(tasks_for_panel_display, list) and current_task_idx_panel_display >= len(tasks_for_panel_display):
                 show_task_panel_display = True 
                 panel_status_message_display = language_manager.get_text("cta_all_tasks_addressed_panel", lang, fallback="All content tasks in this batch have been addressed.")
-                is_paused_panel_display = False
+                is_paused_panel_display = False # Ensure pause flag is off if all tasks done
 
+        # --- Chat Messages Display ---
+        if st.session_state.get("messages"):
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+        
+        # --- Chat Input Placeholder Logic ---
+        placeholder_text_key = "enter_url_or_question_seo_helper"
+        if st.session_state.get("awaiting_seo_helper_cta_response"):
+            current_cta_ctx = st.session_state.get("seo_helper_cta_context")
+            task_name_for_placeholder = "current task"
+            if current_cta_ctx:
+                tasks = current_cta_ctx.get("tasks", [])
+                current_idx = current_cta_ctx.get("current_task_index", 0)
+                if 0 <= current_idx < len(tasks):
+                    current_task_item = tasks[current_idx]
+                    task_type_for_ph = current_cta_ctx.get("type")
+                    if task_type_for_ph == "article_writer":
+                        task_name_for_placeholder = current_task_item.get("suggested_title", f"article {current_idx+1}")
+                    elif task_type_for_ph == "product_writer":
+                        task_name_for_placeholder = current_task_item.get("product_name", f"product {current_idx+1}")
+            placeholder_text_key = "seo_helper_cta_input_placeholder_extended" 
+            placeholder_text = language_manager.get_text(placeholder_text_key, lang, task_name=task_name_for_placeholder, fallback=f"Your response for '{task_name_for_placeholder}' (yes/skip/stop)...")
+        else:
+            placeholder_text = language_manager.get_text(placeholder_text_key, lang, fallback="Enter URL to analyze, or ask an SEO question...")
 
+        # --- Chat Input ---
+        if prompt := st.chat_input(placeholder_text):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            if main_process_url is None: 
+                st.error("URL processing functionality is not available due to an import error.")
+            else:
+                has_mistral_key = bool(os.getenv("MISTRAL_API_KEY"))
+                has_gemini_key = bool(os.getenv("GEMINI_API_KEY"))
+                
+                if not has_mistral_key and not has_gemini_key:
+                    error_msg = language_manager.get_text("no_ai_api_keys_configured", lang, fallback="No AI API keys configured. Please check your configuration.")
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                else:
+                    await process_chat_input(
+                        prompt=prompt,
+                        process_url_from_main=lambda url, lang_code: main_process_url(url, lang_code), 
+                        message_list="messages"
+                    )
+        
+        # --- Content Generation Tasks Progress Expander (MOVED TO BOTTOM) ---
         if show_task_panel_display and tasks_for_panel_display:
             expander_title_key_display = "content_tasks_expander_title"
             expander_title_text_display = language_manager.get_text(expander_title_key_display, lang, fallback="Content Generation Tasks Progress")
@@ -687,7 +735,7 @@ async def main_seo_helper():
                 if panel_status_message_display:
                     st.info(panel_status_message_display)
 
-                if not (current_task_idx_panel_display >= len(tasks_for_panel_display) and not is_paused_panel_display):
+                if not (current_task_idx_panel_display >= len(tasks_for_panel_display) and not is_paused_panel_display): # Only show list if tasks remain or paused
                     for i, task_item_display in enumerate(tasks_for_panel_display):
                         item_style_display = "font-style: italic; color: gray;" 
                         prefix_icon_display = "📝"
@@ -807,53 +855,6 @@ async def main_seo_helper():
                         st.session_state.messages.append({"role": "assistant", "content": resume_message_chat_display})
                         logging.info(f"CTA Resumed from panel button. Re-prompting for task: {resumed_task_title_chat_prompt} (Type: {task_type_panel_display})")
                         st.rerun()
-
-        if st.session_state.get("messages"):
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-        
-        placeholder_text_key = "enter_url_or_question_seo_helper"
-        if st.session_state.get("awaiting_seo_helper_cta_response"):
-            current_cta_ctx = st.session_state.get("seo_helper_cta_context")
-            task_name_for_placeholder = "current task"
-            if current_cta_ctx:
-                tasks = current_cta_ctx.get("tasks", [])
-                current_idx = current_cta_ctx.get("current_task_index", 0)
-                if 0 <= current_idx < len(tasks):
-                    current_task_item = tasks[current_idx]
-                    task_type_for_ph = current_cta_ctx.get("type")
-                    if task_type_for_ph == "article_writer":
-                        task_name_for_placeholder = current_task_item.get("suggested_title", f"article {current_idx+1}")
-                    elif task_type_for_ph == "product_writer":
-                        task_name_for_placeholder = current_task_item.get("product_name", f"product {current_idx+1}")
-            placeholder_text_key = "seo_helper_cta_input_placeholder_extended" 
-            placeholder_text = language_manager.get_text(placeholder_text_key, lang, task_name=task_name_for_placeholder, fallback=f"Your response for '{task_name_for_placeholder}' (yes/skip/stop)...")
-        else:
-            placeholder_text = language_manager.get_text(placeholder_text_key, lang, fallback="Enter URL to analyze, or ask an SEO question...")
-
-
-        if prompt := st.chat_input(placeholder_text):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            if main_process_url is None: 
-                st.error("URL processing functionality is not available due to an import error.")
-            else:
-                has_mistral_key = bool(os.getenv("MISTRAL_API_KEY"))
-                has_gemini_key = bool(os.getenv("GEMINI_API_KEY"))
-                
-                if not has_mistral_key and not has_gemini_key:
-                    error_msg = language_manager.get_text("no_ai_api_keys_configured", lang, fallback="No AI API keys configured. Please check your configuration.")
-                    st.error(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
-                else:
-                    await process_chat_input(
-                        prompt=prompt,
-                        process_url_from_main=lambda url, lang_code: main_process_url(url, lang_code), 
-                        message_list="messages"
-                    )
                     
     except Exception as e:
         logging.error(f"Error in main_seo_helper: {str(e)}", exc_info=True) 

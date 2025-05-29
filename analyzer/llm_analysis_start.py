@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Configure Gemini API
 # Ensure your GEMINI_API_KEY environment variable is set.
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 async def _call_gemini_api(prompt_text: str) -> str:
     """Helper function to make the blocking Gemini API call in a separate thread."""

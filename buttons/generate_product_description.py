@@ -18,8 +18,8 @@ try:
     if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
         # Aligning model name with other parts of the application
-        model = genai.GenerativeModel('gemini-1.5-flash-latest') 
-        logging.info("Gemini API configured with gemini-1.5-flash-latest.")
+        model = genai.GenerativeModel('gemini-2.0-flash') 
+        logging.info("Gemini API configured with gemini-2.0-flash")
     else:
         model = None
         logging.warning("GEMINI_API_KEY not found. Gemini model not configured.")

@@ -1,4 +1,5 @@
-#SeoTree/buttons/generate_seo_suggestions.py
+
+# SeoTree/buttons/generate_seo_suggestions.py
 import google.generativeai as genai
 import json
 import logging
@@ -14,7 +15,10 @@ load_dotenv()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+# model = genai.GenerativeModel('gemini-2.0-flash') # Original model
+
 model = genai.GenerativeModel('gemini-2.0-flash')
+
 
 # Initialize Supabase client
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -201,13 +205,18 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
     "product_content_tasks": [
         {{
             "product_name": "string (product/service name)",
-            "product_details": "string (features, benefits, specifications for the product writer)",
+            "product_details": {{
+                "features": ["string (list of 2-3 key product features, e.g., 'Durable material', 'Easy to clean')"],
+                "benefits": ["string (list of 2-3 key product benefits, e.g., 'Saves time', 'Improves sleep quality')"],
+                "target_audience": "string (brief description of the primary target audience for this product, e.g., 'Busy professionals')",
+                "competitive_advantage": "string (brief description of a competitive edge specific to this product's description, e.g., 'Unique patented technology')"
+            }},
             "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
             "description_length": "string (Short/Medium/Long)",
             "target_page_url": "string (product page URL)",
             "seo_keywords": ["string (2-5 SEO keywords)"],
-            "competitive_advantage": "string (unique selling points)",
-            "target_customer": "string (ideal customer profile)"
+            "competitive_advantage": "string (overall unique selling points of the product/service, broader than the one in product_details)",
+            "target_customer": "string (ideal customer profile for the product/service)"
         }}
     ]
 }}
@@ -215,6 +224,11 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
 
 **Guidelines for Task Generation:**
 - Generate 3-8 article tasks and 2-5 product tasks based on the report findings
+- For `product_details` object:
+    - `features`: List key tangible aspects.
+    - `benefits`: List advantages for the customer.
+    - `target_audience`: Describe who the product is for, to guide copy.
+    - `competitive_advantage`: Note a specific angle for the description.
 - Focus on high-impact opportunities identified in the analysis
 - Ensure each task is specific and actionable
 - Keywords should be based on actual opportunities found in the report
@@ -267,14 +281,19 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
     "product_content_tasks": [
         {{
             "product_name": "string (product/service name from page data)",
-            "product_details": "string (comprehensive details for the product writer)",
+            "product_details": {{
+                "features": ["string (list of 2-3 key product features based on page data, e.g., 'Eco-friendly material', 'Handmade quality')"],
+                "benefits": ["string (list of 2-3 key product benefits based on page data, e.g., 'Supports local artisans', 'Reduces carbon footprint')"],
+                "target_audience": "string (description of the target audience for this product, from page data if available)",
+                "competitive_advantage": "string (description of a competitive edge for this product, from page data if available)"
+            }},
             "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
             "description_length": "string (Short/Medium/Long)",
             "target_page_url": "string (specific product page URL)",
             "seo_keywords": ["string (keywords from page analysis)"],
-            "competitive_advantage": "string (unique selling points identified)",
-            "target_customer": "string (customer profile from page data)",
-            "key_features_to_highlight": ["string (specific features to emphasize)"]
+            "competitive_advantage": "string (overall unique selling points identified for the product/service, broader than in product_details)",
+            "target_customer": "string (customer profile from page data for the product/service)",
+            "key_features_to_highlight": ["string (specific features to emphasize in marketing, can overlap with product_details.features)"]
         }}
     ]
 }}
@@ -282,6 +301,11 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
 
 **Guidelines for Task Generation:**
 - Generate 2-6 article tasks and 1-4 product tasks based on the specific pages analyzed
+- For `product_details` object:
+    - `features`: List key tangible aspects from page data.
+    - `benefits`: List advantages for the customer from page data.
+    - `target_audience`: Describe who the product is for, based on page data.
+    - `competitive_advantage`: Note a specific angle for the description from page data.
 - Focus on opportunities directly identified in the page data
 - Use keywords and topics already present in the analysis
 - Ensure tasks complement the existing page structure
@@ -359,13 +383,18 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
     "product_content_tasks": [
         {{
             "product_name": "string (product/service name)",
-            "product_details": "string (features, benefits, specifications for the product writer)",
+            "product_details": {{
+                "features": ["string (list of 2-3 key product features, e.g., 'Durable material', 'Easy to clean')"],
+                "benefits": ["string (list of 2-3 key product benefits, e.g., 'Saves time', 'Improves sleep quality')"],
+                "target_audience": "string (brief description of the primary target audience for this product, e.g., 'Busy professionals')",
+                "competitive_advantage": "string (brief description of a competitive edge specific to this product's description, e.g., 'Unique patented technology')"
+            }},
             "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
             "description_length": "string (Short/Medium/Long)",
             "target_page_url": "string (product page URL)",
             "seo_keywords": ["string (2-5 SEO keywords)"],
-            "competitive_advantage": "string (unique selling points)",
-            "target_customer": "string (ideal customer profile)"
+            "competitive_advantage": "string (overall unique selling points of the product/service, broader than the one in product_details)",
+            "target_customer": "string (ideal customer profile for the product/service)"
         }}
     ]
 }}
@@ -373,6 +402,11 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
 
 **Guidelines for Task Generation:**
 - Generate 3-8 article tasks and 2-5 product tasks based on the report findings
+- For `product_details` object:
+    - `features`: List key tangible aspects.
+    - `benefits`: List advantages for the customer.
+    - `target_audience`: Describe who the product is for, to guide copy.
+    - `competitive_advantage`: Note a specific angle for the description.
 - Focus on high-impact opportunities identified in the analysis
 - Ensure each task is specific and actionable
 - Keywords should be based on actual opportunities found in the report
@@ -425,14 +459,19 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
     "product_content_tasks": [
         {{
             "product_name": "string (product/service name from page data)",
-            "product_details": "string (comprehensive details for the product writer)",
+            "product_details": {{
+                "features": ["string (list of 2-3 key product features based on page data, e.g., 'Eco-friendly material', 'Handmade quality')"],
+                "benefits": ["string (list of 2-3 key product benefits based on page data, e.g., 'Supports local artisans', 'Reduces carbon footprint')"],
+                "target_audience": "string (description of the target audience for this product, from page data if available)",
+                "competitive_advantage": "string (description of a competitive edge for this product, from page data if available)"
+            }},
             "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
             "description_length": "string (Short/Medium/Long)",
             "target_page_url": "string (specific product page URL)",
             "seo_keywords": ["string (keywords from page analysis)"],
-            "competitive_advantage": "string (unique selling points identified)",
-            "target_customer": "string (customer profile from page data)",
-            "key_features_to_highlight": ["string (specific features to emphasize)"]
+            "competitive_advantage": "string (overall unique selling points identified for the product/service, broader than in product_details)",
+            "target_customer": "string (customer profile from page data for the product/service)",
+            "key_features_to_highlight": ["string (specific features to emphasize in marketing, can overlap with product_details.features)"]
         }}
     ]
 }}
@@ -440,6 +479,11 @@ You MUST provide a JSON object with specific tasks for content creation tools. F
 
 **Guidelines for Task Generation:**
 - Generate 2-6 article tasks and 1-4 product tasks based on the specific pages analyzed
+- For `product_details` object:
+    - `features`: List key tangible aspects from page data.
+    - `benefits`: List advantages for the customer from page data.
+    - `target_audience`: Describe who the product is for, based on page data.
+    - `competitive_advantage`: Note a specific angle for the description from page data.
 - Focus on opportunities directly identified in the page data
 - Use keywords and topics already present in the analysis
 - Ensure tasks complement the existing page structure
@@ -466,7 +510,7 @@ Here is the page analysis data:
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 3500
+        "max_tokens": 3500 # Increased slightly in case structured JSON takes more tokens
     }
 
     response = requests.post(url, headers=headers, json=data)
