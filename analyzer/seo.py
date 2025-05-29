@@ -307,7 +307,7 @@ class SEOAnalyzer:
         """Wait for dynamic content to load before extracting links."""
         print(f"Waiting for dynamic content on {page.url} (max {max_wait_seconds}s)...")
         try:
-            network_idle_timeout_ms = max_wait_seconds * 1000 * 0.7 
+            network_idle_timeout_ms = max_wait_seconds * 10000 * 0.7 
             await page.wait_for_load_state('networkidle', timeout=network_idle_timeout_ms)
             
             js_stability_check_timeout_seconds = max_wait_seconds * 0.3
