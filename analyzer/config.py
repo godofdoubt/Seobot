@@ -6,8 +6,8 @@ analyzer/config.py
 
 # Crawling and Analysis Limits
 MAX_PAGES_TO_ANALYZE = 25
-MAX_LINKS_TO_DISCOVER = 1829
-PAGE_TIMEOUT = 200000  # milliseconds
+MAX_LINKS_TO_DISCOVER = 182928
+PAGE_TIMEOUT = 60000  # milliseconds
 
 #MAX_CATEGORY_PAGES_TO_SCAN = 25
 CRAWL_DELAY_MIN = 2
@@ -222,7 +222,7 @@ EXCLUDE_PATTERNS = [
 PRODUCT_PATTERNS = ['/product/', '/urun/', '/ürün/', '/item/','/shop']
 
 # Resource Types to Block When Crawling (for performance)
-BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media']
+BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media','other_resource_type_if_not_needed']
 
 # Domains to Block When Crawling (analytics, ads, etc.)
 BLOCKED_DOMAINS = [

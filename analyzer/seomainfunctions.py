@@ -374,8 +374,17 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     logging.error(f"Error creating batch tasks: {e_batch_create}")
                     return [e_batch_create] * len(batch_urls_to_crawl), pages_for_batch
 
-            batch_size = min(8, config.MAX_PAGES_TO_ANALYZE if config.MAX_PAGES_TO_ANALYZE > 0 else 1)
-            if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0
+            # batch_size = min(8, config.MAX_PAGES_TO_ANALYZE if config.MAX_PAGES_TO_ANALYZE > 0 else 1)
+            # if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0
+            
+            # TRY THIS FIRST:
+            batch_size = 1 # Process one page at a time to see if it even works
+            # THEN TRY:
+            # batch_size = 2 
+            # THEN TRY:
+            # batch_size = 3
+            # Find what your Render instance can handle.
+            if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0 # Keep this for the "don't crawl" case
 
             while urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE and \
                   len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER and batch_size > 0:
