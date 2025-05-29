@@ -378,11 +378,11 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
             # if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0
             
             # TRY THIS FIRST:
-            batch_size = 1 # Process one page at a time to see if it even works
+            #batch_size = 1 # Process one page at a time to see if it even works
             # THEN TRY:
             # batch_size = 2 
             # THEN TRY:
-            # batch_size = 3
+            batch_size = 3
             # Find what your Render instance can handle.
             if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0 # Keep this for the "don't crawl" case
 
