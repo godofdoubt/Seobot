@@ -473,7 +473,7 @@ def check_and_update_report_status(supabase: Client, report_id: int, lang: str =
                  st.session_state.detailed_analysis_info["status_message"] = "Report not found."
             return False, "error", "Report not found"
         
-        logging.info(f"check_and_update_report_status: Data found for report ID {report_id}. Raw report_data from DB: {report_data}")
+        logging.info(f"check_and_update_report_status: Data found for report ID {report_id}.") ##Raw report_data from DB: {report_data}
 
         llm_analysis_completed = report_data.get('llm_analysis_all_completed', False)
         llm_analysis_error = report_data.get('llm_analysis_all_error')

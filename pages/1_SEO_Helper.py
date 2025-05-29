@@ -421,7 +421,7 @@ def handle_seo_suggestions_generation(lang):
                             "current_task_index": 0,
                             "secondary_tasks_info": cta_secondary_info # Store secondary info
                         }
-                        logging.info(f"CTA activated after manual suggestion. Primary: {cta_task_type}. Context: {st.session_state.seo_helper_cta_context}")
+                        logging.info(f"CTA activated after manual suggestion. Primary: {cta_task_type}.") #Context: {st.session_state.seo_helper_cta_context}
                     # --- END OF MODIFIED CTA HANDLING ---
                     
                     last_message_content = st.session_state.messages[-1]["content"] if st.session_state.messages else None

@@ -1,4 +1,6 @@
 
+
+
 #pages/3_Product_Writer.py
 import streamlit as st
 import asyncio
@@ -374,8 +376,8 @@ async def main():
                         st.session_state.product_options["product_details"] = format_product_details_for_textarea(product_details_dict, seo_keywords_list, lang)
                         
                         st.session_state.selected_auto_suggestion_product_task_index = i 
-                        st.session_state.product_description_requested = True
-                        st.rerun()
+                        # st.session_state.product_description_requested = True # MODIFIED: Do not auto-request generation
+                        st.rerun() # Rerun to update sidebar with pre-filled options
             st.divider()
         elif display_suggestions_condition: # Condition met but no product_tasks
             st.info(language_manager.get_text("no_product_suggestions_found", lang, fallback="No specific product suggestions found in the current report, or the data format is unrecognized."))
