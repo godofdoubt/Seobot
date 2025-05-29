@@ -8,195 +8,76 @@ import re
 
 def parse_auto_suggestions(suggestions_text: str) -> dict:
     """
-    Parse the auto-generated suggestions text into structured JSON format,
-    with improved handling for embedded JSON blocks, various heading types,
-    and prose content.
+    Parse the AI-generated suggestions text, focusing on extracting the JSON block
+    for content tasks and capturing surrounding text.
     
     Args:
         suggestions_text: Raw text from AI suggestion generation
         
     Returns:
-        dict: Structured JSON with categorized suggestions.
+        dict: Structured JSON with content tasks and surrounding prose.
     """
     try:
         structured_suggestions = {
-            "introduction_prose": [],
-            "seo_analysis": {},
-            "content_creation_ideas": {},
-            # "unclassified_body_prose": [], # Will be added if needed
+            "pre_json_prose": None, # Text before the JSON block
+            "content_creation_ideas": {}, # Parsed JSON tasks
+            "post_json_prose": None, # Text after the JSON block
             "generated_timestamp": datetime.now().isoformat(),
-            "raw_suggestions": suggestions_text # Keep raw text for reference
+            # "raw_suggestions" is intentionally removed as per requirement
         }
         
-        temp_suggestions_text = suggestions_text
-
-        # 1. Handle embedded JSON block for content creation ideas
-        json_block_outer_pattern = re.compile(
-            r"(^\s*\*\*(?:[^\*\n]*?(?:İÇERİK OLUŞTURMA|CONTENT CREATION|İÇERİK GÖREVLERİ|CONTENT TASKS)[^\*\n]*?)\*\*\s*\n)?(```json\s*([\s\S]*?)\s*```)",
-            re.IGNORECASE | re.MULTILINE
+        # Pattern to find the JSON block and capture text before and after.
+        # This pattern assumes the JSON block is enclosed in ```json ... ```
+        json_block_pattern = re.compile(
+            r"^(.*?)(```json\s*([\s\S]*?)\s*```)(.*)$",
+            re.DOTALL | re.MULTILINE
         )
         
-        json_block_match = json_block_outer_pattern.search(temp_suggestions_text)
+        match = json_block_pattern.search(suggestions_text)
         
-        if json_block_match:
+        if match:
             logging.info("JSON block found in suggestions.")
-            full_match_text = json_block_match.group(0)
-            json_content_str = json_block_match.group(3)
+            pre_json_text = match.group(1).strip()
+            json_content_str = match.group(3).strip() # This is the content within ```json ... ```
+            post_json_text = match.group(4).strip()
+
+            if pre_json_text:
+                structured_suggestions["pre_json_prose"] = pre_json_text
+            
+            if post_json_text:
+                structured_suggestions["post_json_prose"] = post_json_text
 
             try:
                 parsed_json_data = json.loads(json_content_str)
                 logging.info("Successfully parsed JSON block.")
                 # Merging parsed_json_data into content_creation_ideas
-                # This handles various keys like "article_content_tasks", "product_content_tasks" etc.
                 for key, value in parsed_json_data.items():
                     structured_suggestions["content_creation_ideas"][key] = value
                 
                 structured_suggestions["content_creation_ideas"]["_source"] = "json_block"
-                temp_suggestions_text = temp_suggestions_text.replace(full_match_text, "", 1)
                 
             except json.JSONDecodeError as e:
                 logging.warning(f"Failed to parse JSON block from suggestions: {e}")
                 structured_suggestions["content_creation_ideas"]["parsing_error_detail"] = f"JSON block parsing failed: {e}"
-                # If JSON parsing fails, it might be processed by the text parser if it resembles text structure.
+                structured_suggestions["content_creation_ideas"]["raw_unparsed_json_block"] = json_content_str
+        else:
+            logging.warning("No JSON block (```json ... ```) found in suggestions_text. Treating all text as pre-prose.")
+            # If no JSON block, all text goes to pre_json_prose.
+            # content_creation_ideas will be empty or indicate no block was found.
+            if suggestions_text and suggestions_text.strip():
+                 structured_suggestions["pre_json_prose"] = suggestions_text.strip()
+            structured_suggestions["content_creation_ideas"]["_source"] = "no_json_block_found"
 
-        # 2. Process the remaining text part
-        lines = temp_suggestions_text.split('\n')
-        current_section_key = None       # e.g., "seo_analysis"
-        current_subsection_key = None    # e.g., "technical_issues"
+        # Clean up: remove prose fields if they are None or empty strings after strip
+        if not structured_suggestions.get("pre_json_prose"): # Use .get for safety
+            if "pre_json_prose" in structured_suggestions: del structured_suggestions["pre_json_prose"]
+        if not structured_suggestions.get("post_json_prose"): # Use .get for safety
+            if "post_json_prose" in structured_suggestions: del structured_suggestions["post_json_prose"]
         
-        accumulated_item_lines = []
-        body_processing_started = False # True once the first known text heading is processed
+        # Ensure content_creation_ideas is not removed even if empty, for consistency.
+        if not structured_suggestions["content_creation_ideas"]: # e.g. if no json block and it was empty
+             structured_suggestions["content_creation_ideas"] = {"_source": "no_json_block_found_or_empty"}
 
-        # Expanded pattern for various section headings
-        block_heading_pattern = re.compile(
-            r"^\s*\*\*(?:\d+\.\s*)?"
-            r"(ÖZET ANALİZ|SUMMARY ANALYSIS|"
-            r"GELİŞMİŞ SEO VE İÇERİK STRATEJİSİ ÖNERİLERİ|ADVANCED SEO AND CONTENT STRATEGY RECOMMENDATIONS|"
-            r"SAYFA İÇİ SEO|ON-PAGE SEO|"
-            r"SAYFA DIŞI SEO|OFF-PAGE SEO|"
-            r"TEKNİK SEO|TECHNICAL SEO|"
-            r"İÇERİK STRATEJİSİ|CONTENT STRATEGY|"
-            r"İÇERİK ÖNERİLERİ|CONTENT RECOMMENDATIONS|" # More general content recommendations
-            r"PERFORMANS|PERFORMANCE INSIGHTS|" # Performance can be too broad, use PERFORMANCE INSIGHTS for clarity
-            r"ANAHTAR KELİME|KEYWORD OPPORTUNITIES|" # Keyword can be too broad
-            r"EK ÖNERİLER|ADDITIONAL RECOMMENDATIONS|"
-            r"SEO ANALİZİ)" # General SEO Analysis heading
-            r"(?:.*?)\*\*\s*$",
-            re.IGNORECASE
-        )
-
-        def flush_accumulated_item_to_structure():
-            nonlocal accumulated_item_lines
-            if accumulated_item_lines and current_section_key and current_subsection_key:
-                target_section = structured_suggestions.get(current_section_key)
-                if isinstance(target_section, dict):
-                    target_list = target_section.get(current_subsection_key)
-                    if isinstance(target_list, list):
-                        full_item_text = "\n".join(line.strip() for line in accumulated_item_lines if line.strip()).strip()
-                        if full_item_text:
-                            target_list.append(full_item_text)
-                    else:
-                        logging.warning(f"Attempted to add item to non-list subsection: {current_section_key}.{current_subsection_key}")
-                else:
-                     logging.warning(f"Attempted to add item to non-dict section: {current_section_key}")
-            accumulated_item_lines = []
-
-        for line in lines:
-            line_stripped = line.strip()
-
-            if not line_stripped: # Blank line
-                flush_accumulated_item_to_structure()
-                continue
-
-            heading_match = block_heading_pattern.match(line_stripped)
-            if heading_match:
-                flush_accumulated_item_to_structure()
-                body_processing_started = True
-                
-                heading_text_upper = heading_match.group(1).upper()
-                current_section_key = "seo_analysis" # Most text headings will fall under SEO analysis
-
-                new_subsection_key = None
-                if any(kw in heading_text_upper for kw in ["ÖZET ANALİZ", "SUMMARY ANALYSIS"]):
-                    new_subsection_key = "summary_analysis_details"
-                elif any(kw in heading_text_upper for kw in ["GELİŞMİŞ SEO VE İÇERİK STRATEJİSİ ÖNERİLERİ", "ADVANCED SEO AND CONTENT STRATEGY RECOMMENDATIONS"]):
-                    new_subsection_key = "strategy_overview"
-                elif any(kw in heading_text_upper for kw in ["SAYFA İÇİ SEO", "ON-PAGE SEO"]):
-                    new_subsection_key = "on_page_seo"
-                elif any(kw in heading_text_upper for kw in ["SAYFA DIŞI SEO", "OFF-PAGE SEO"]):
-                    new_subsection_key = "off_page_seo"
-                elif any(kw in heading_text_upper for kw in ["TEKNİK SEO", "TECHNICAL SEO"]):
-                    new_subsection_key = "technical_issues"
-                elif any(kw in heading_text_upper for kw in ["İÇERİK STRATEJİSİ", "CONTENT STRATEGY"]):
-                    new_subsection_key = "content_strategy"
-                elif any(kw in heading_text_upper for kw in ["İÇERİK ÖNERİLERİ", "CONTENT RECOMMENDATIONS"]): # General term
-                    new_subsection_key = "general_content_recommendations"
-                elif any(kw in heading_text_upper for kw in ["PERFORMANS", "PERFORMANCE INSIGHTS"]):
-                    new_subsection_key = "performance_insights"
-                elif any(kw in heading_text_upper for kw in ["ANAHTAR KELİME", "KEYWORD OPPORTUNITIES"]):
-                    new_subsection_key = "keyword_opportunities"
-                elif any(kw in heading_text_upper for kw in ["EK ÖNERİLER", "ADDITIONAL RECOMMENDATIONS"]):
-                    new_subsection_key = "additional_recommendations"
-                elif "SEO ANALİZİ" in heading_text_upper: # Broad "SEO Analysis" heading
-                     new_subsection_key = "general_seo_analysis_notes"
-                else: # Fallback for a matched heading pattern without specific keyword mapping
-                    # This case should be rare if pattern is comprehensive
-                    normalized_fallback_key = re.sub(r'\W+', '_', heading_text_upper.lower()) + "_details"
-                    new_subsection_key = normalized_fallback_key
-                    logging.info(f"Heading '{line_stripped}' mapped to new subsection: '{new_subsection_key}'.")
-
-                current_subsection_key = new_subsection_key
-                structured_suggestions[current_section_key].setdefault(current_subsection_key, [])
-                continue
-
-            # If not a heading:
-            if not body_processing_started:
-                if line_stripped:
-                    structured_suggestions["introduction_prose"].append(line_stripped)
-                continue
-
-            # If body_processing_started and not a heading:
-            is_list_item_start = line_stripped.startswith(('-', '•', '*'))
-            
-            if is_list_item_start:
-                flush_accumulated_item_to_structure() 
-                accumulated_item_lines.append(line_stripped.lstrip('-•* '))
-            elif accumulated_item_lines: # Continuing a multi-line list item
-                accumulated_item_lines.append(line_stripped)
-            elif current_section_key and current_subsection_key: # Prose line within an active section/subsection
-                if line_stripped:
-                    # Ensure subsection list exists (should have been by heading processing)
-                    if isinstance(structured_suggestions.get(current_section_key), dict) and \
-                       isinstance(structured_suggestions[current_section_key].get(current_subsection_key), list):
-                        structured_suggestions[current_section_key][current_subsection_key].append(line_stripped)
-                    else: # Should not happen if logic is correct
-                        logging.warning(f"Prose line '{line_stripped}' could not be added. Target {current_section_key}.{current_subsection_key} invalid.")
-                        structured_suggestions.setdefault("unclassified_body_prose", []).append(f"[Context Lost: {current_section_key}.{current_subsection_key}] {line_stripped}")
-            elif line_stripped: # Fallback for unclassified prose after body_processing_started
-                structured_suggestions.setdefault("unclassified_body_prose", []).append(line_stripped)
-                logging.debug(f"Line '{line_stripped}' added to 'unclassified_body_prose'.")
-        
-        flush_accumulated_item_to_structure() # Ensure the last item is processed
-
-        # Clean up empty lists from initial structure or dynamically added, but preserve special keys
-        special_keys = ["raw_suggestions", "parsing_error_detail", "generated_timestamp", "_source"]
-        
-        if not structured_suggestions["introduction_prose"]:
-            del structured_suggestions["introduction_prose"]
-        if "unclassified_body_prose" in structured_suggestions and not structured_suggestions["unclassified_body_prose"]:
-            del structured_suggestions["unclassified_body_prose"]
-
-        for section_name, section_data in list(structured_suggestions.items()): # Iterate copy for safe deletion
-            if section_name in special_keys: continue
-
-            if isinstance(section_data, dict):
-                for sub_key in list(section_data.keys()):
-                    if sub_key not in special_keys and isinstance(section_data[sub_key], list) and not section_data[sub_key]:
-                        del section_data[sub_key]
-                if not section_data and section_name not in ["content_creation_ideas"]: # Keep content_creation_ideas even if empty, for consistency
-                    del structured_suggestions[section_name]
-            elif isinstance(section_data, list) and not section_data:
-                 del structured_suggestions[section_name] # e.g. empty introduction_prose
 
         return structured_suggestions
         
@@ -204,11 +85,10 @@ def parse_auto_suggestions(suggestions_text: str) -> dict:
         logging.error(f"Critical error in parse_auto_suggestions: {str(e)}", exc_info=True)
         # Fallback structure in case of major error
         return {
-            "seo_analysis": {"raw_content_on_error": suggestions_text, "parsing_error": f"Outer parser error: {str(e)}"},
-            "content_creation_ideas": {"raw_content_on_error": suggestions_text, "parsing_error": f"Outer parser error: {str(e)}"},
+            "content_creation_ideas": {"parsing_error": f"Outer parser error: {str(e)}"},
             "generated_timestamp": datetime.now().isoformat(),
-            "parsing_error": f"Outer parser error: {str(e)}",
-            "raw_suggestions": suggestions_text
+            "parsing_error_outer": f"Outer parser error: {str(e)}",
+            "failed_input_text_on_error": suggestions_text # Store the problematic input
         }
 
 def load_auto_suggestions_from_supabase(url: str, supabase_client, parse_fn) -> dict | None:
@@ -232,15 +112,30 @@ def load_auto_suggestions_from_supabase(url: str, supabase_client, parse_fn) -> 
         
         if response.data and response.data.get('auto_suggestions'):
             auto_suggestions_data = response.data['auto_suggestions']
-            # Ensure it's a dict, parse if it's a string
+            # Ensure it's a dict, parse if it's a string (e.g. old format or error)
             if isinstance(auto_suggestions_data, str):
                 try:
-                    auto_suggestions_data = json.loads(auto_suggestions_data)
+                    # First, try to load as JSON directly (if it was stored as a JSON string)
+                    loaded_data = json.loads(auto_suggestions_data)
+                    if isinstance(loaded_data, dict): # Check if it's a dictionary as expected
+                        auto_suggestions_data = loaded_data
+                    else: # If not a dict, it's likely raw text needing full parsing by parse_fn
+                        logging.info(f"Loaded auto_suggestions for {url} as string, but not a dict. Re-parsing with parse_fn.")
+                        auto_suggestions_data = parse_fn(auto_suggestions_data)
                 except json.JSONDecodeError as je:
-                    logging.error(f"Error decoding JSON from Supabase auto_suggestions for {url}: {je}")
-                    # Fallback: try to parse it as if it's raw text
-                    return parse_fn(auto_suggestions_data) 
+                    logging.warning(f"Error decoding JSON from Supabase auto_suggestions for {url}: {je}. Attempting to parse with parse_fn.")
+                    # Fallback: try to parse it as if it's raw text using the provided parse_fn
+                    auto_suggestions_data = parse_fn(auto_suggestions_data) 
             
+            # At this point, auto_suggestions_data should be a dictionary
+            # (either loaded directly, or parsed from string by json.loads or parse_fn)
+            # We ensure it has the expected top-level keys for the new structure if it was an old format.
+            # However, if it's already structured (new or old), we use it.
+            # The main check is that it's a dict.
+            if not isinstance(auto_suggestions_data, dict):
+                 logging.error(f"Auto suggestions for {url} could not be resolved to a dictionary. Data: {auto_suggestions_data}")
+                 return None # Or attempt one last parse_fn if it somehow became a string again.
+
             logging.info(f"Loaded existing auto suggestions for URL: {url}")
             return auto_suggestions_data
         
@@ -270,7 +165,7 @@ def save_auto_suggestions_to_supabase(url: str, structured_suggestions: dict, su
             return False
         
         update_data = {
-            'auto_suggestions': structured_suggestions,
+            'auto_suggestions': structured_suggestions, # This will be a dict
             'auto_suggestions_timestamp': datetime.now().isoformat()
         }
         
@@ -282,25 +177,15 @@ def save_auto_suggestions_to_supabase(url: str, structured_suggestions: dict, su
         else:
             logging.warning(f"Failed to save auto suggestions to Supabase for URL: {url}. Response: {response.error if response.error else 'No data returned'}")
             # Attempt to insert if update failed (basic upsert logic)
-            # This assumes user_id is available and needed for insert if RLS or table constraints demand it.
-            if user_id: # Example: Only attempt insert if user_id is known AND relevant for your schema
+            if user_id: 
                 insert_data = {
                     'url': url,
                     # 'user_id': user_id, # Uncomment if 'user_id' is a required column
                     'auto_suggestions': structured_suggestions,
                     'auto_suggestions_timestamp': datetime.now().isoformat(),
-                    'timestamp': datetime.now().isoformat() # Ensure timestamp for new records
-                    # Add other necessary fields for a new record if any, e.g. 'report': {}
+                    'timestamp': datetime.now().isoformat() 
                 }
-                # This is a simplified insert. A robust upsert is more complex.
-                # For this example, we focus on the update path.
-                # insert_response = supabase_client.table('seo_reports').insert(insert_data).execute()
-                # if insert_response.data and len(insert_response.data) > 0:
-                #    logging.info(f"Successfully inserted auto suggestions for new URL: {url}")
-                #    return True
-                # else:
-                #    logging.warning(f"Insert attempt also failed for {url}. Error: {insert_response.error}")
-                logging.info(f"Update failed for {url}. An insert attempt could be made here if schema supports it and base record is missing (user_id provided: {bool(user_id)}).")
+                logging.info(f"Update failed for {url}. An insert attempt could be made here if schema supports it and base record is missing (user_id provided: {bool(user_id)}). This part is illustrative.")
             return False
             
     except Exception as e:

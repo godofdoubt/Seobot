@@ -17,10 +17,9 @@ try:
     gemini_api_key = os.getenv('GEMINI_API_KEY')
     if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
-        # Check available models, adjust if 'gemini-2.0-flash' is not right or available
-        # For example: model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        model = genai.GenerativeModel('gemini-2.0-flash') # Using a potentially more current model
-        logging.info("Gemini API configured.")
+        # Aligning model name with other parts of the application
+        model = genai.GenerativeModel('gemini-1.5-flash-latest') 
+        logging.info("Gemini API configured with gemini-1.5-flash-latest.")
     else:
         model = None
         logging.warning("GEMINI_API_KEY not found. Gemini model not configured.")
@@ -29,12 +28,12 @@ except Exception as e:
     logging.error(f"Error configuring Gemini API: {e}")
 
 
-# This function might be less needed now but kept for potential context
 def extract_products_from_keywords(text_report: str) -> str:
     """Extracts a potential product-related focus keyword from the text report."""
-    # ... (keep the existing logic for this function if you still want it as fallback/context)
-    # For simplicity in the main generation, we'll prioritize user input.
-    # You could potentially use this to add context like "Relevant keywords from analysis: ..."
+    if not text_report or not isinstance(text_report, str): # Added check for valid text_report
+        logging.warning("extract_products_from_keywords: text_report is None or not a string.")
+        return "related products"
+        
     try:
         # Prioritize "Top Keywords" section
         match = re.search(r"Top Keywords by Frequency:(.*?)(\n|\Z)", text_report, re.DOTALL | re.IGNORECASE)
@@ -60,7 +59,6 @@ def extract_products_from_keywords(text_report: str) -> str:
 
 
         # General keyword extraction as fallback (less reliable for products)
-        # Consider if this is still useful or generates noise
         keywords = re.findall(r'\b[a-zA-Z]{4,}\b', text_report) # Min 4 letters
         if keywords:
             common_words = set(["the", "and", "for", "with", "this", "that", "from", "report", "analysis", "website", "page", "content", "keywords", "search", "engine", "google", "results", "traffic", "recommendations"])
@@ -69,7 +67,6 @@ def extract_products_from_keywords(text_report: str) -> str:
                 if word.lower() not in common_words and not word.isdigit()
             ]
             if filtered_keywords:
-                # Maybe weight keywords appearing multiple times? Simple random choice for now.
                 return random.choice(filtered_keywords)
 
         return "related products" # Generic fallback
@@ -111,8 +108,10 @@ def generate_product_description(text_report: str, product_options: dict) -> str
         else:
             length_guidance = "a moderate length" # Default if mapping fails
 
-        # Extract a keyword for context (optional enrichment)
-        seo_context_keyword = extract_products_from_keywords(text_report)
+        # Extract a keyword for context (optional enrichment) & prepare report context
+        seo_context_keyword = extract_products_from_keywords(text_report) if text_report else "related products"
+        report_context_for_prompt = text_report[:1500] if text_report and isinstance(text_report, str) else "No additional site context available."
+
 
         # Construct the prompt using the provided options
         prompt = f"""
@@ -132,24 +131,29 @@ Act as an expert copywriter. Write a compelling product description based on the
 6.  **Do not** mention the SEO report explicitly. You can subtly incorporate relevant themes or keywords like '{seo_context_keyword}' if they fit naturally with the product description, but prioritize describing the product based on the provided details.
 
 **[Optional Context from SEO Report Summary - Use subtly if relevant]:**
-{text_report[:1500]}  # Provide a snippet for context, not the whole report
+{report_context_for_prompt}
 
 Generate the product description now:
 """
         logging.info(f"Generating Gemini description for: {product_name}")
         response = model.generate_content(prompt)
-        # Add basic check for response content
-        if response.parts:
+        
+        if hasattr(response, 'parts') and response.parts: # More robust check for Gemini's response structure
+             return response.text
+        elif hasattr(response, 'text') and response.text: # Fallback for simpler text responses
              return response.text
         else:
              # Log safety feedback if available
-             logging.warning(f"Gemini response blocked or empty. Safety feedback: {response.prompt_feedback}")
-             return "Error: Could not generate description (response blocked or empty)."
+             safety_feedback_message = ""
+             if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                 safety_feedback_message = f"Safety feedback: {response.prompt_feedback}"
+             logging.warning(f"Gemini response blocked or empty for '{product_name}'. {safety_feedback_message}")
+             return f"Error: Could not generate description for '{product_name}' (response blocked or empty). {safety_feedback_message}".strip()
 
 
     except Exception as e:
-        logging.error(f"Error generating Gemini product description: {e}")
-        return f"Error: Could not generate product description via Gemini ({e})."
+        logging.error(f"Error generating Gemini product description for '{product_name}': {e}", exc_info=True)
+        return f"Error: Could not generate product description for '{product_name}' via Gemini ({e})."
 
 
 # *** UPDATED Mistral Function ***
@@ -159,7 +163,7 @@ def generate_product_description_with_mistral(text_report: str, product_options:
 
     headers = {
         "Content-Type": "application/json",
-        "Accept": "application/json", # Good practice
+        "Accept": "application/json", 
         "Authorization": f"Bearer {api_key}"
     }
 
@@ -181,7 +185,7 @@ def generate_product_description_with_mistral(text_report: str, product_options:
 
         # Map length option to word count guidance
         length_guidance = ""
-        max_tokens_map = { "Short": 200, "Medium": 350, "Long": 500 } # Adjusted max_tokens estimates
+        max_tokens_map = { "Short": 200, "Medium": 350, "Long": 500 } 
         if length_option == "Short":
             length_guidance = "around 100-150 words"
         elif length_option == "Medium":
@@ -191,8 +195,9 @@ def generate_product_description_with_mistral(text_report: str, product_options:
         else:
             length_guidance = "a moderate length"
 
-        # Extract a keyword for context (optional enrichment)
-        seo_context_keyword = extract_products_from_keywords(text_report)
+        # Extract a keyword for context (optional enrichment) & prepare report context
+        seo_context_keyword = extract_products_from_keywords(text_report) if text_report else "related products"
+        report_context_for_prompt = text_report[:1500] if text_report and isinstance(text_report, str) else "No additional site context available."
 
         # System Prompt
         system_prompt = f"""You are an expert copywriter. Your task is to write a compelling product description.
@@ -213,23 +218,22 @@ def generate_product_description_with_mistral(text_report: str, product_options:
 {product_details}
 
 **[Optional Context from SEO Report Summary]:**
-{text_report[:1500]}
+{report_context_for_prompt}
 """
 
         data = {
-            "model": "mistral-large-latest",  # Or choose another suitable model
+            "model": "mistral-large-latest", 
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
             "temperature": 0.7,
-             # Adjust max_tokens based on length, add buffer
             "max_tokens": max_tokens_map.get(length_option, 350)
         }
 
         logging.info(f"Generating Mistral description for: {product_name}")
-        response = requests.post(url, headers=headers, json=data, timeout=60) # Added timeout
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response = requests.post(url, headers=headers, json=data, timeout=60) 
+        response.raise_for_status() 
 
         response_json = response.json()
 
@@ -238,69 +242,67 @@ def generate_product_description_with_mistral(text_report: str, product_options:
              if content:
                  return content.strip()
              else:
-                 logging.warning("Mistral response missing content.")
-                 return "Error: Could not generate description (empty content)."
+                 logging.warning(f"Mistral response missing content for '{product_name}'.")
+                 return f"Error: Could not generate description for '{product_name}' (empty content from Mistral)."
         else:
-             logging.warning(f"Unexpected Mistral response format: {response_json}")
-             return "Error: Could not parse Mistral response."
+             logging.warning(f"Unexpected Mistral response format for '{product_name}': {response_json}")
+             return f"Error: Could not parse Mistral response for '{product_name}'."
 
 
     except requests.exceptions.RequestException as e:
-         logging.error(f"Mistral API request error: {e}")
-         # Attempt to get more detail from response if available
+         logging.error(f"Mistral API request error for '{product_name}': {e}", exc_info=True)
          error_detail = ""
          if e.response is not None:
              try:
                  error_detail = e.response.json()
-             except ValueError: # Handle cases where response is not JSON
+             except ValueError: 
                  error_detail = e.response.text
-         return f"Error: Could not connect to Mistral API. {error_detail}"
+         return f"Error: Could not connect to Mistral API for '{product_name}'. Details: {error_detail}"
     except Exception as e:
-        logging.error(f"Error generating Mistral product description: {e}")
-        return f"Error: Could not generate product description via Mistral ({e})."
+        logging.error(f"Error generating Mistral product description for '{product_name}': {e}", exc_info=True)
+        return f"Error: Could not generate product description for '{product_name}' via Mistral ({e})."
 
 # *** UPDATED API Choice Function ***
 def generate_product_description_with_api_choice(text_report: str, product_options: dict) -> str:
     """Generates product description using either Gemini or Mistral based on availability and user preference."""
 
-    # Retrieve keys securely
     gemini_api_key = os.getenv('GEMINI_API_KEY')
     mistral_api_key = os.getenv('MISTRAL_API_KEY')
 
-    # Determine preferred model (assuming 'use_mistral' might be in session_state, default to True if Mistral key exists)
-    # You might want a more explicit model selection UI element
-    prefer_mistral = st.session_state.get("use_mistral", True) # Example preference check
+    # Check product_options upfront for required keys
+    product_name = product_options.get("product_name")
+    product_details = product_options.get("product_details")
+
+    if not product_name or not product_details:
+         logging.error(f"generate_product_description_with_api_choice: Missing product_name ('{product_name}') or product_details.")
+         return "Error: Missing required product information (Name and Details)."
+    
+    # Determine preferred model
+    prefer_mistral = st.session_state.get("use_mistral", True) 
 
     can_use_mistral = mistral_api_key is not None
-    can_use_gemini = gemini_api_key is not None and model is not None # Check model is configured
+    can_use_gemini = gemini_api_key is not None and model is not None 
 
-    use_mistral = can_use_mistral and (prefer_mistral or not can_use_gemini)
-    use_gemini = can_use_gemini and not use_mistral
+    use_mistral_flag = can_use_mistral and (prefer_mistral or not can_use_gemini)
+    use_gemini_flag = can_use_gemini and not use_mistral_flag
 
-    # Basic validation of input options
-    if not product_options or not product_options.get("product_name") or not product_options.get("product_details"):
-         return "Error: Missing required product information (Name and Details)."
 
     try:
-        if use_mistral:
-            logging.info("Using Mistral API for product description.")
+        if use_mistral_flag:
+            logging.info(f"Using Mistral API for product description: {product_name}")
             return generate_product_description_with_mistral(text_report, product_options, mistral_api_key)
-        elif use_gemini:
-            logging.info("Using Gemini API for product description.")
+        elif use_gemini_flag:
+            logging.info(f"Using Gemini API for product description: {product_name}")
             return generate_product_description(text_report, product_options)
         else:
-            logging.error("No suitable API key found or model configured.")
-            # Provide specific message based on which keys are missing
-            if not can_use_mistral and not can_use_gemini:
-                 return "Error: No API key found for Mistral or Gemini."
-            elif not can_use_mistral:
-                 return "Error: MISTRAL_API_KEY not found."
-            elif not can_use_gemini:
-                 return "Error: GEMINI_API_KEY not found or Gemini model failed to configure."
-            else: # Should not happen with the logic above, but as a safeguard
-                 return "Error: Could not determine API to use."
+            error_messages = []
+            if not can_use_mistral: error_messages.append("MISTRAL_API_KEY not found or invalid.")
+            if not can_use_gemini: error_messages.append("GEMINI_API_KEY not found or Gemini model failed to configure.")
+            
+            final_error_msg = "Error: No suitable API available for product generation. " + " ".join(error_messages)
+            logging.error(final_error_msg + f" (Product: {product_name})")
+            return final_error_msg
 
     except Exception as e:
-        # Catch any unexpected errors during the choice/call process
-        logging.error(f"Error in API choice logic or function call: {e}")
-        return f"Error: An unexpected issue occurred during generation ({e})."
+        logging.error(f"Error in API choice logic or function call for '{product_name}': {e}", exc_info=True)
+        return f"Error: An unexpected issue occurred during generation for '{product_name}' ({e})."

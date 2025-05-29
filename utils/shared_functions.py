@@ -1,3 +1,4 @@
+
 # utils/shared_functions.py
 import streamlit as st
 import os
@@ -8,9 +9,7 @@ from analyzer.seo import SEOAnalyzer
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 
-# ... (other parts of the file, including existing init_shared_session_state) ...
 
-#1
 def init_shared_session_state():
     """Initialize shared session state variables across all pages"""
     if "messages" not in st.session_state:
@@ -71,16 +70,40 @@ def init_shared_session_state():
         st.session_state.seo_helper_cta_context = None
     if "completed_tasks_article" not in st.session_state: 
         st.session_state.completed_tasks_article = []
-    # NEW STATE for signalling Article Writer page
-    if "display_newly_generated_article_on_aw" not in st.session_state:
-        st.session_state.display_newly_generated_article_on_aw = None    
-# ... (rest of shared_functions.py) ...
+    
+    # NEW STATES for product writer CTA flow
+    if "trigger_product_suggestion_from_seo_helper" not in st.session_state:
+        st.session_state.trigger_product_suggestion_from_seo_helper = False
+    if "product_suggestion_to_trigger_details" not in st.session_state:
+        st.session_state.product_suggestion_to_trigger_details = None
+    if "completed_tasks_product" not in st.session_state: 
+        st.session_state.completed_tasks_product = []
+    if "products_pending_display_on_pw" not in st.session_state: # New for direct product gen
+        st.session_state.products_pending_display_on_pw = []
+
+
+    if "articles_pending_display_on_aw" not in st.session_state:
+        st.session_state.articles_pending_display_on_aw = [] 
+        
+    if "paused_cta_context" not in st.session_state:
+        st.session_state.paused_cta_context = None
+    # ... add other session state initializations as needed
 
 
 def update_page_history(page_name):
     lang = st.session_state.get("language", "en") 
 
     if st.session_state.current_page and st.session_state.current_page != page_name:
+        # If leaving a page where a CTA might have been active but not completed,
+        # it might be desirable to pause it automatically.
+        if st.session_state.current_page == "seo" and \
+           st.session_state.get("awaiting_seo_helper_cta_response") and \
+           st.session_state.get("seo_helper_cta_context"):
+            st.session_state.paused_cta_context = st.session_state.seo_helper_cta_context
+            st.session_state.awaiting_seo_helper_cta_response = False
+            st.session_state.seo_helper_cta_context = None
+            logging.info(f"Paused active SEO Helper CTA due to page switch from 'seo'.")
+
         st.session_state.page_history[st.session_state.current_page] = st.session_state.messages.copy()
         logging.info(f"Saved chat history for '{st.session_state.current_page}' (length: {len(st.session_state.messages)})")
 
@@ -90,6 +113,10 @@ def update_page_history(page_name):
     if page_name in st.session_state.page_history:
         st.session_state.messages = st.session_state.page_history[page_name].copy()
         logging.info(f"Restored chat history for '{page_name}' (length: {len(st.session_state.messages)})")
+        
+        # If returning to SEO Helper and a CTA was paused, offer to resume or show its state.
+        # The SEO Helper page itself will handle displaying the paused CTA panel.
+        # No explicit message needed here, the panel should be enough.
     else:
         welcome_message = ""
         # Page-specific welcome message logic is primarily handled within each page now
@@ -99,16 +126,18 @@ def update_page_history(page_name):
             # This will be set by 1_SEO_Helper.py based on its state
             welcome_message = language_manager.get_text("welcome_authenticated", lang, st.session_state.get("username", "user"))
         elif page_name == "article":
-            # This will be set by 2_Article_Writer.py based on its state
-            welcome_message = language_manager.get_text("welcome_article_writer_not_analyzed", lang)
+            # This will be (or should be) set by 2_Article_Writer.py based on its state
+            # Fallback for initial load if page hasn't set it yet.
+            welcome_message = language_manager.get_text("welcome_article_writer_not_analyzed", lang, fallback="Welcome to the Article Writer page. Analyze a site first.")
         elif page_name == "main": 
             if st.session_state.get("authenticated"):
                 welcome_message = language_manager.get_text("welcome_authenticated", lang, st.session_state.get("username", "user"))
             else:
                 welcome_message = language_manager.get_text("welcome_seo", lang)
         elif page_name == "product": 
-            # This will be set by 3_Product_Writer.py based on its state
-             welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang)
+            # This will be (or should be) set by 3_Product_Writer.py based on its state
+            # Fallback for initial load.
+            welcome_message = language_manager.get_text("welcome_product_writer_not_analyzed", lang, fallback="Welcome to the Product Writer page. Analyze a site first.")
         else:
             welcome_message = language_manager.get_text("generic_page_welcome", lang, page_name=page_name.replace('_', ' ').title())
             if not welcome_message or welcome_message.startswith("generic_page_welcome"): 
@@ -144,10 +173,11 @@ You can select one of the following services from the sidebar pages:
     
     st.rerun()
     
-def common_sidebar():
+def common_sidebar(page_specific_content_func=None):
     lang = st.session_state.get("language", "en")
-    st.sidebar.title(language_manager.get_text("main_settings_title", lang))
-
+    
+    # --- TOP NAVIGATION ---
+    st.sidebar.title(language_manager.get_text("main_settings_title", lang, fallback="Navigation")) # Changed fallback for clarity
     is_analysis_in_progress = st.session_state.get("analysis_in_progress", False)
 
     st.sidebar.page_link("main.py", label=language_manager.get_text("home_page_label", lang))
@@ -171,6 +201,14 @@ def common_sidebar():
         )
     
     st.sidebar.divider()
+
+    # --- PAGE-SPECIFIC CONTENT (MIDDLE) ---
+    if page_specific_content_func:
+        page_specific_content_func() # This function will render UI elements using st.sidebar.X
+        st.sidebar.divider()
+
+    # --- GLOBAL SETTINGS (BOTTOM) ---
+    # Title for this section can be added if desired, e.g., st.sidebar.markdown("--- \n**Global Settings**")
     disable_interactive_elements = is_analysis_in_progress
 
     languages = language_manager.get_available_languages()
@@ -261,7 +299,7 @@ def common_sidebar():
     if is_analysis_in_progress:
         st.sidebar.info(language_manager.get_text("analysis_running_sidebar_info", lang))
     
-    st.sidebar.divider()
+    st.sidebar.divider() # Divider before logout
 
     if st.sidebar.button(
         language_manager.get_text("logout_button", lang), 
@@ -285,9 +323,14 @@ def common_sidebar():
             'auto_suggestions_data', 'current_report_url_for_suggestions', 
             'selected_auto_suggestion_task_index', 'last_url_for_suggestion_selection',
             'awaiting_seo_helper_cta_response', 'trigger_article_suggestion_from_seo_helper', 
-            'article_suggestion_to_trigger_details', 
-            'completed_tasks_article',
-            'display_newly_generated_article_on_aw' # Ensure new state is cleared
+            'article_suggestion_to_trigger_details', 'completed_tasks_article',
+            'trigger_product_suggestion_from_seo_helper', 'product_suggestion_to_trigger_details', 'completed_tasks_product',
+            'products_pending_display_on_pw', # Added new state for product gen
+            'seo_helper_cta_context', 'paused_cta_context', 
+            'articles_pending_display_on_aw', 
+            'product_options', 'article_options', 
+            'selected_auto_suggestion_product_task_index', 
+            'last_url_for_product_suggestion_selection'
         ]
         for key_to_del in keys_to_clear_on_logout:
             if key_to_del in st.session_state:
@@ -296,8 +339,7 @@ def common_sidebar():
         st.query_params.clear() 
         st.switch_page("main.py")
 
-# ... (rest of shared_functions.py) ...
-
+        
 async def analyze_website(url: str, supabase: Client):
     analyzer = SEOAnalyzer()
     try:
@@ -413,9 +455,7 @@ def load_saved_report(url: str, supabase: Client):
         logging.error(f"load_saved_report: Set session auto_suggestions_data and current_report_url_for_suggestions to None due to EXCEPTION for {url}.")
         return None, None
 
-# utils/shared_functions.py
 
-# ... (other parts of the file) ...
 
 def check_and_update_report_status(supabase: Client, report_id: int, lang: str = "en"):
     try:
