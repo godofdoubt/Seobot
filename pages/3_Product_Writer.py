@@ -1,6 +1,3 @@
-
-
-
 #pages/3_Product_Writer.py
 import streamlit as st
 import asyncio
@@ -353,7 +350,7 @@ async def main():
                             st.session_state.product_options["length"] = task_length_val
                         else:
                             st.warning(language_manager.get_text(
-                                "invalid_length_in_suggestion_warning", lang, task_length_val, "Medium",
+                                "invalid_length_in_suggestion_warning", lang, task_length_val, "Medium", # Pass as positional args
                                 fallback=f"Warning: The suggested length '{task_length_val}' is invalid. Defaulting to 'Medium'."
                             ))
                             logging.warning(f"Product Writer: Invalid length '{task_length_val}' in suggestion for task {i}. Defaulting to Medium.")
@@ -365,7 +362,7 @@ async def main():
                             st.session_state.product_options["tone"] = task_tone_val
                         else:
                             st.warning(language_manager.get_text(
-                                "invalid_tone_in_suggestion_warning", lang, task_tone_val, "Professional",
+                                "invalid_tone_in_suggestion_warning", lang, task_tone_val, "Professional", # Pass as positional args
                                 fallback=f"Warning: The suggested tone '{task_tone_val}' is invalid. Defaulting to 'Professional'."
                             ))
                             logging.warning(f"Product Writer: Invalid tone '{task_tone_val}' in suggestion for task {i}. Defaulting to Professional.")
@@ -375,9 +372,32 @@ async def main():
                         seo_keywords_list = task.get("seo_keywords", [])
                         st.session_state.product_options["product_details"] = format_product_details_for_textarea(product_details_dict, seo_keywords_list, lang)
                         
-                        st.session_state.selected_auto_suggestion_product_task_index = i 
-                        # st.session_state.product_description_requested = True # MODIFIED: Do not auto-request generation
-                        st.rerun() # Rerun to update sidebar with pre-filled options
+                        st.session_state.selected_auto_suggestion_product_task_index = i
+                        
+                        # --- MODIFICATION START: Auto-request generation if inputs are valid ---
+                        populated_name = st.session_state.product_options.get("product_name", "").strip()
+                        populated_details = st.session_state.product_options.get("product_details", "").strip()
+                        can_auto_generate = True
+
+                        if not populated_name:
+                            st.warning(language_manager.get_text("product_name_missing_in_suggestion_for_auto_gen", lang, 
+                                                                fallback="Product name is missing in this suggestion. Please provide one in the sidebar to generate."))
+                            logging.warning(f"Product Writer: Suggestion used, but product name from task is missing. Not auto-requesting generation.")
+                            can_auto_generate = False
+                        
+                        # Check details only if name was present, to avoid multiple primary warnings
+                        if can_auto_generate and not populated_details:
+                            st.warning(language_manager.get_text("product_details_missing_in_suggestion_for_auto_gen", lang, 
+                                                                fallback="Product details are missing or effectively empty in this suggestion. Please review in the sidebar to generate."))
+                            logging.warning(f"Product Writer: Suggestion used (name: '{populated_name}'), but formatted product details are empty. Not auto-requesting generation.")
+                            can_auto_generate = False
+                        
+                        if can_auto_generate:
+                            st.session_state.product_description_requested = True
+                            logging.info(f"Product Writer: Suggestion for '{populated_name}' used. Auto-requesting description generation.")
+                        # --- MODIFICATION END ---
+                        
+                        st.rerun() # Rerun to update sidebar with pre-filled options & potentially trigger generation
             st.divider()
         elif display_suggestions_condition: # Condition met but no product_tasks
             st.info(language_manager.get_text("no_product_suggestions_found", lang, fallback="No specific product suggestions found in the current report, or the data format is unrecognized."))
@@ -400,14 +420,12 @@ async def main():
         if not product_name_valid:
             st.warning(language_manager.get_text("product_name_required_warning", lang, fallback="Product Name is required. Please fill it in the sidebar options."))
             st.session_state.product_description_requested = False 
-            # No rerun here if a product description was auto-requested from suggestions,
-            # as the sidebar options would have just been pre-filled. Let user review.
-            # However, if triggered by direct "Generate" button and it's empty, a rerun might be okay.
-            # For now, consistency: no rerun on validation fail here.
         elif not product_details_valid:
             st.warning(language_manager.get_text("product_details_required_warning", lang, fallback="Product Details are required. Please fill them in the sidebar options."))
             st.session_state.product_description_requested = False
-            # Same logic as above for rerun.
+        elif not st.session_state.get("text_report"): # Added check for text_report before attempting generation
+            st.warning(language_manager.get_text("analyze_website_first_product_gen", lang, fallback="Please analyze a website in SEO Helper before generating product descriptions."))
+            st.session_state.product_description_requested = False
         else:
             with st.spinner(language_manager.get_text("generating_product_description", lang, fallback="Generating product description...")):
                 try:
@@ -451,7 +469,7 @@ async def main():
 
         if not st.session_state.get("text_report"):
             with st.chat_message("assistant"):
-                response = language_manager.get_text("analyze_website_first_chat_product", lang, fallback="Please analyze a website first in the SEO Helper page before I can help with product writing.")
+                response = language_manager.get_text("analyze_website_first_chat_product", lang, fallback="Please analyze a website first in the SEO Helper page before I can help with article writing.")
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
         else:
