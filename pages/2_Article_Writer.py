@@ -321,9 +321,10 @@ async def main():
                     logging.warning(f"Article Writer: Skipping non-dict article task at index {i}: {task}")
                     continue
 
+                # task_data is used for populating sidebar options, keep it as is
                 task_data = {}
-                required_keys = ["focus_keyword", "content_length", "article_tone", "additional_keywords", "suggested_title"]
-                for r_key in required_keys:
+                required_keys_for_sidebar = ["focus_keyword", "content_length", "article_tone", "additional_keywords", "suggested_title"]
+                for r_key in required_keys_for_sidebar:
                     task_data[r_key] = task.get(r_key, "N/A (Key Missing)" if r_key != "additional_keywords" else [])
 
                 task_title_display = task_data.get('suggested_title', 'Untitled Suggestion')
@@ -331,17 +332,50 @@ async def main():
 
                 with st.expander(f"{language_manager.get_text('suggestion_task_label', lang, fallback='Suggestion')} {i+1}: {task_title_display}",
                                  expanded=(st.session_state.selected_auto_suggestion_task_index == i)):
+                    st.markdown(f"**{language_manager.get_text('suggested_title_label', lang, fallback='Suggested Title')}:** {task_data.get('suggested_title', 'N/A')}")
                     st.markdown(f"**{language_manager.get_text('focus_keyword_label', lang, fallback='Focus Keyword')}:** {task_data.get('focus_keyword', 'N/A')}")
                     st.markdown(f"**{language_manager.get_text('content_length_label', lang, fallback='Content Length')}:** {task_data.get('content_length', 'N/A')}")
-                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {task_data.get('article_tone', 'N/A')}")
+                    
+                    # Display tone using the mapped display name if possible
+                    tone_internal_options_display = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"] # Used for matching
+                    tone_display_map_expander = {
+                        "Professional": language_manager.get_text("tone_professional", lang, fallback="Professional"),
+                        "Casual": language_manager.get_text("tone_casual", lang, fallback="Casual"),
+                        "Enthusiastic": language_manager.get_text("tone_enthusiastic", lang, fallback="Enthusiastic"),
+                        "Technical": language_manager.get_text("tone_technical", lang, fallback="Technical"),
+                        "Friendly": language_manager.get_text("tone_friendly", lang, fallback="Friendly"),
+                    }
+                    task_tone_val_expander = task_data.get('article_tone', 'N/A')
+                    display_tone = tone_display_map_expander.get(task_tone_val_expander, task_tone_val_expander)
+                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {display_tone}")
+
 
                     add_keywords_val_display = task_data.get('additional_keywords', [])
                     if isinstance(add_keywords_val_display, list):
                         add_keywords_val_display = ", ".join(add_keywords_val_display) if add_keywords_val_display else "None"
-                    elif not add_keywords_val_display:
+                    elif not add_keywords_val_display: # Handle "N/A (Key Missing)" or other non-list but empty values
                         add_keywords_val_display = "None"
                     st.markdown(f"**{language_manager.get_text('additional_keywords_label', lang, fallback='Additional Keywords')}:** {add_keywords_val_display}")
-                    st.markdown(f"**{language_manager.get_text('suggested_title_label', lang, fallback='Suggested Title')}:** {task_data.get('suggested_title', 'N/A')}")
+
+                    # --- MODIFICATION START: Display additional fields ---
+                    target_page_url_val = task.get('target_page_url')
+                    if target_page_url_val: # Only display if not None or empty
+                        st.markdown(f"**{language_manager.get_text('target_page_url_label', lang, fallback='Target Page URL')}:** {target_page_url_val}")
+
+                    content_gap_val = task.get('content_gap')
+                    if content_gap_val:
+                        st.markdown(f"**{language_manager.get_text('content_gap_label', lang, fallback='Content Gap')}:** {content_gap_val}")
+                    
+                    target_audience_val = task.get('target_audience')
+                    if target_audience_val:
+                        st.markdown(f"**{language_manager.get_text('target_audience_label', lang, fallback='Target Audience')}:** {target_audience_val}")
+
+                    outline_preview_val = task.get('outline_preview')
+                    if outline_preview_val:
+                        st.markdown(f"**{language_manager.get_text('outline_preview_label', lang, fallback='Outline Preview')}:**")
+                        # Using blockquote style for potentially longer/multi-line outline
+                        st.markdown(f"> {str(outline_preview_val).replace(chr(10), chr(10) + '> ')}")
+                    # --- MODIFICATION END ---
 
                     if st.button(language_manager.get_text("use_this_suggestion_button", lang, fallback="Use This Suggestion"), key=f"use_suggestion_{i}"):
                         if "article_options" not in st.session_state: st.session_state.article_options = {}

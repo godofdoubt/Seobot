@@ -1,13 +1,193 @@
 
+
+
 # utils/shared_functions.py
 import streamlit as st
 import os
 import logging
 import time
 from supabase import Client
-from analyzer.seo import SEOAnalyzer
+from analyzer.seo import SEOAnalyzer # Assuming SEOAnalyzer class is defined elsewhere
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
+import re # For generate_text_report_from_structured_data if used for parsing within it
+import traceback # For logging errors in analyze_website
+
+# Helper functions for generate_text_report_from_structured_data
+def _get_status_emoji(value, good_is_true=True, true_emoji="✅", false_emoji="❌", unknown_emoji="❓"):
+    if value is None:
+        return unknown_emoji
+    return true_emoji if value == good_is_true else false_emoji
+
+def _get_check_emoji(present, good_if_present=True, details=""):
+    status_emoji = ""
+    if present is None: 
+        status_emoji = "❓" # Data point not available
+    elif present: # Item is present or condition is true
+        status_emoji = "✅" if good_if_present else "⚠️" # Good if present (e.g. SSL), Warning if present (e.g. an error flag)
+    else: # Item is not present or condition is false
+        status_emoji = "❌" if good_if_present else "✅" # Bad if not present (e.g. SSL), Good if not present (e.g. an error flag)
+    
+    return f"{status_emoji} {details}".strip()
+
+
+def generate_text_report_from_structured_data(data: dict) -> str:
+    lines = []
+    main_url = data.get('url', 'N/A') # This should be the primary URL analyzed
+    lines.append(f"# SEO Analysis Summary for: {main_url}")
+    lines.append(f"Analysis Timestamp: {data.get('timestamp', 'N/A')}") # Timestamp of the analysis itself
+    lines.append("---")
+
+    # SEO Score
+    seo_score_val = None
+    if 'llm_analysis' in data and isinstance(data['llm_analysis'], dict): # Check if llm_analysis exists and is a dict
+        seo_score_val = data['llm_analysis'].get('overall_seo_score') or \
+                        data['llm_analysis'].get('seo_score') or \
+                        data['llm_analysis'].get('score')
+    if not seo_score_val: # Fallback to top-level keys if not in llm_analysis
+        seo_score_val = data.get('overall_seo_score') or data.get('seo_score')
+
+    if seo_score_val is not None:
+        try:
+            # Attempt to format as int if it's numeric, otherwise use as is
+            score_num = float(seo_score_val)
+            lines.append(f"Overall SEO Score: {int(score_num)}/100")
+        except (ValueError, TypeError):
+            lines.append(f"Overall SEO Score: {seo_score_val} (Note: May not be a standard 0-100 scale)")
+    else:
+        lines.append("Overall SEO Score: Not explicitly found in structured data.")
+    lines.append("---")
+
+    # Technical SEO
+    lines.append("## Technical SEO Checklist:")
+    robots_found = data.get('robots_txt_found')
+    lines.append(f"Robots.txt Found: {_get_status_emoji(robots_found, True, '✅ Found', '❌ Not Found', '❓ Status Unknown')}")
+
+    sitemaps_discovered_count = data.get('sitemap_urls_discovered_count') # Allow 0
+    if sitemaps_discovered_count is not None:
+        sitemaps_discovered = sitemaps_discovered_count > 0
+        lines.append(f"Sitemap Discovered: {_get_status_emoji(sitemaps_discovered, True, '✅ Yes', '❌ No', '❓ Status Unknown')} ({sitemaps_discovered_count} sitemap URLs found in robots.txt or common paths)")
+    else:
+        lines.append(f"Sitemap Discovered: ❓ Status Unknown (data not available)")
+
+
+    ssl_valid = data.get('ssl_is_valid') # Assuming SEOAnalyzer might add this key
+    if ssl_valid is not None:
+         lines.append(f"HTTPS/SSL Enabled and Valid: {_get_status_emoji(ssl_valid, True, '✅ Yes', '❌ No or Invalid', '❓ Status Unknown')}")
+    else: # Basic inference from URL
+        if main_url.startswith("https://"):
+            lines.append(f"HTTPS/SSL Enabled: ✅ Yes (URL uses https; validation status not explicitly provided)")
+        else:
+            lines.append(f"HTTPS/SSL Enabled: ❌ No (URL does not use https, or status not explicitly provided)")
+
+
+    total_crawled = data.get('crawled_internal_pages_count')
+    mobile_viewport_pages = data.get('pages_with_mobile_viewport_count')
+
+    if total_crawled is not None and mobile_viewport_pages is not None and total_crawled > 0:
+        is_mobile_friendly_site = (mobile_viewport_pages == total_crawled)
+        lines.append(f"Mobile-Friendly (Viewport Meta): {_get_status_emoji(is_mobile_friendly_site, True, '✅ Good', '⚠️ Partial or Issues', '❓ Status Unknown')} ({mobile_viewport_pages}/{total_crawled} pages confirmed with viewport)")
+    elif total_crawled == 0:
+        lines.append(f"Mobile-Friendly (Viewport Meta): ❓ No pages crawled to assess viewport.")
+    else: # total_crawled or mobile_viewport_pages is None
+        lines.append(f"Mobile-Friendly (Viewport Meta): ❓ Data missing for full assessment.")
+    lines.append("---")
+
+    # Content Metrics
+    lines.append("## Content Metrics (Site-wide Averages/Totals):")
+    lines.append(f"Total Crawled Pages: {total_crawled if total_crawled is not None else 'N/A'}")
+    lines.append(f"Total Images Found: {data.get('total_images_count', 'N/A')}")
+    
+    missing_alt_tags = data.get('total_missing_alt_tags_count')
+    if missing_alt_tags is not None:
+        priority_alt_text = "Low"
+        if missing_alt_tags > 0: 
+            # Heuristic for priority based on percentage of images missing alt text
+            total_images = data.get('total_images_count', 0)
+            if total_images > 0:
+                percentage_missing = (missing_alt_tags / total_images) * 100
+                if percentage_missing > 50: priority_alt_text = "Critical"
+                elif percentage_missing > 10: priority_alt_text = "High"
+                else: priority_alt_text = "Medium"
+            else: # No images, but missing_alt_tags > 0 (should not happen)
+                priority_alt_text = "Medium" 
+        lines.append(f"Images Missing Alt Text: {missing_alt_tags} (Priority: {priority_alt_text} Issue)")
+    else:
+        lines.append(f"Images Missing Alt Text: N/A")
+
+    lines.append(f"Total Headings Found: {data.get('total_headings_count', 'N/A')}")
+    avg_len = data.get('average_cleaned_content_length_per_page') # This is in characters
+    lines.append(f"Average Content Length per Page: {f'{avg_len:.0f} characters' if isinstance(avg_len, float) else avg_len if avg_len is not None else 'N/A'}")
+    if isinstance(avg_len, (int,float)) and avg_len > 0:
+        # Average characters per word can vary (e.g., 4.7 for English)
+        # Using a general estimate of 5.5 (including space)
+        lines.append(f"Estimated Average Word Count per Page: ~{int(avg_len / 5.5)}") 
+    lines.append("---")
+
+    # On-Page SEO Elements (Main Page example)
+    lines.append(f"## On-Page Elements (Main URL: {main_url}):")
+    # The key for main page data in 'page_analysis' should match 'main_url'
+    main_page_data = data.get('page_analysis', {}).get(main_url)
+
+    if isinstance(main_page_data, dict):
+        # Title Tag
+        title = main_page_data.get('metadata', {}).get('title', '')
+        title_present = bool(title)
+        title_details = f"Length: {len(title)} chars. "
+        if not title_present: title_details = "Missing!"
+        elif not (10 <= len(title) <= 70) : title_details += "Review Length (Optimal: 10-70 chars)." # Common guideline
+        else: title_details += "Good Length."
+        lines.append(f"Title Tag: {_get_check_emoji(title_present, True, title_details)}")
+
+        # Meta Description
+        desc = main_page_data.get('metadata', {}).get('description', '')
+        desc_present = bool(desc)
+        desc_details = f"Length: {len(desc)} chars. "
+        if not desc_present: desc_details = "Missing!"
+        elif not (50 <= len(desc) <= 160): desc_details += "Review Length (Optimal: 50-160 chars)." # Common guideline
+        else: desc_details += "Good Length."
+        lines.append(f"Meta Description: {_get_check_emoji(desc_present, True, desc_details)}")
+        
+        # H1 Tag(s) on Main Page
+        num_h1 = 0
+        page_headings = main_page_data.get('headings', {}) # Expected format: {'H1': ['text1'], 'H2': [...]} or {'h1_count': N}
+        if isinstance(page_headings, dict):
+            if 'h1_count' in page_headings and isinstance(page_headings['h1_count'], int): # Direct count
+                num_h1 = page_headings['h1_count']
+            elif 'H1' in page_headings and isinstance(page_headings['H1'], list): # List of H1 texts
+                num_h1 = len(page_headings['H1'])
+            elif 'h1' in page_headings and isinstance(page_headings['h1'], list): # case-insensitive key
+                num_h1 = len(page_headings['h1'])
+            # Add more ways to find H1 count if structure varies
+
+        h1_optimal = (num_h1 == 1) # General SEO advice: exactly one H1 tag
+        h1_details = f"{num_h1} found. "
+        if num_h1 == 1: h1_details += "Optimal."
+        elif num_h1 == 0: h1_details += "Missing (High Priority Issue)!"
+        else: h1_details += "Multiple found (Review recommended)."
+        lines.append(f"H1 Tag(s) on Main Page: {_get_check_emoji(h1_optimal, True, h1_details)}")
+
+    else:
+        lines.append(f"Main page specific on-page element data not found or in unexpected format. Main URL key used: '{main_url}'")
+    lines.append("---")
+
+    # Placeholder for Issues by Priority if that data becomes available in 'results'
+    # For example, if results['issues_summary'] = {'critical': 1, 'high': 5, 'medium': 2, 'low': 0}
+    if 'issues_summary' in data and isinstance(data['issues_summary'], dict):
+        lines.append("## Detected Issues by Priority (from 'issues_summary' field):")
+        has_issues = False
+        for prio, count in data['issues_summary'].items():
+            if isinstance(count, int) and count > 0:
+                lines.append(f"- {prio.title()} Priority: {count}")
+                has_issues = True
+        if not has_issues: lines.append("No specific issues listed in 'issues_summary'.")
+    else:
+        lines.append("## Detected Issues by Priority:")
+        lines.append("A specific 'issues_summary' field was not found in the structured data. Issues like missing alt text or H1 tags are noted in their respective sections with priority hints.")
+
+    lines.append("\nNote: This is an application-generated summary from structured data. For full details, refer to the complete JSON report if available.")
+    return "\n".join(lines)
+# --- END OF generate_text_report_from_structured_data and its helpers ---
 
 
 def init_shared_session_state():
@@ -341,19 +521,53 @@ def common_sidebar(page_specific_content_func=None):
 
         
 async def analyze_website(url: str, supabase: Client):
-    analyzer = SEOAnalyzer()
+    analyzer = SEOAnalyzer() # Actual SEOAnalyzer class needs to be available
     try:
-        results = await analyzer.analyze_url(url)
-        if results:
-            logging.info(f"analyze_website: Analysis completed for {url}. Preparing to save to Supabase.")
-            normalized_url = normalize_url(url)
+        results = await analyzer.analyze_url(url) # This is where the analysis happens
+        
+        if results and isinstance(results, dict): # Ensure results is a dictionary
+            logging.info(f"analyze_website: Raw analysis results received for {url}. Preparing to process.")
+            # Normalize URL for consistency in storage and retrieval
+            # s10tools.normalize_url should handle common cases like adding scheme, stripping fragments.
+            normalized_url = normalize_url(url) 
+            if not normalized_url: # If normalization fails, log and use original or handle error
+                logging.error(f"analyze_website: URL normalization failed for input: {url}. Using original as fallback.")
+                normalized_url = url # Fallback, though this might indicate an invalid URL
             
-            text_report_from_analysis = results.get('text_report', "Text report not available.")
+            # Attempt to get text_report from analyzer's results
+            text_report_value_from_analyzer = results.get('text_report')
+            
+            # Define minimum length for a "valid" report from analyzer to avoid short/placeholder messages
+            min_analyzer_report_length = 100 # characters, arbitrary threshold
+
+            if not text_report_value_from_analyzer or \
+               str(text_report_value_from_analyzer).strip() == "Text report not available." or \
+               len(str(text_report_value_from_analyzer).strip()) < min_analyzer_report_length:
+                
+                log_message_reason = "not found"
+                if text_report_value_from_analyzer: # If it exists but is short or placeholder
+                    log_message_reason = f"placeholder or too short (length: {len(str(text_report_value_from_analyzer).strip())})"
+
+                logging.warning(
+                    f"analyze_website: 'text_report' from SEOAnalyzer for {url} (normalized: {normalized_url}) is {log_message_reason}. "
+                    f"Generating a new summary from structured data."
+                )
+                # Generate text_report from the structured 'results'
+                text_report_from_analysis = generate_text_report_from_structured_data(results)
+                # Update/add the 'text_report' field within the 'results' object itself for consistency.
+                # This ensures the JSON 'report' column also contains this definitive text_report.
+                results['text_report'] = text_report_from_analysis 
+            else:
+                # Use the text_report provided by the analyzer as it seems valid
+                text_report_from_analysis = str(text_report_value_from_analyzer) # Ensure string type
+                logging.info(f"analyze_website: Using 'text_report' as provided by SEOAnalyzer for {url} (normalized: {normalized_url}).")
+
+            # full_report_from_analysis is the complete 'results' object, now potentially with an updated 'text_report'
             full_report_from_analysis = results 
 
             data_to_upsert = {
-                'url': normalized_url,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'url': normalized_url, # Use the consistently normalized URL
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'), # Consider UTC: datetime.utcnow().isoformat()
                 'report': full_report_from_analysis,
                 'text_report': text_report_from_analysis,
                 'llm_analysis_all_completed': False, # Reset for new/updated analysis
@@ -366,17 +580,27 @@ async def analyze_website(url: str, supabase: Client):
             logging.info(f"analyze_website: Supabase upsert response for {normalized_url}: {upsert_response}")
             if upsert_response.data:
                  logging.info(f"analyze_website: Upsert successful for {normalized_url}.")
+                 # Return the (potentially generated) text_report and the full_report
                  return text_report_from_analysis, full_report_from_analysis
             else:
+                # Log error but still return what was analyzed, as data might be useful even if DB write had issues
                 logging.error(f"analyze_website: Supabase upsert failed or returned no data for {normalized_url}. Error: {upsert_response.error}")
-                return text_report_from_analysis, full_report_from_analysis # Return analyzed data even if DB write had issues
+                return text_report_from_analysis, full_report_from_analysis 
                 
-        else:
-            logging.warning(f"analyze_website: No analysis results for {url}")
-            return None, None
+        elif results is None: # Explicitly handle None return from analyzer
+            logging.warning(f"analyze_website: SEOAnalyzer returned None for {url}. No analysis data.")
+            return None, None # Or return placeholder error reports
+        else: # Handle case where results is not a dict (unexpected)
+             logging.error(f"analyze_website: SEOAnalyzer returned unexpected data type for {url}: {type(results)}. Expected dict.")
+             # Return an error message and a minimal error structure for full_report
+             return "Error: Analysis returned unexpected data type.", {"error": "Analysis returned unexpected data type", "url": url}
+
     except Exception as e:
         logging.error(f"analyze_website: Analysis error for {url}: {e}", exc_info=True)
-        return None, None
+        # Return error messages that can be displayed or logged further
+        error_text_report = f"Error during analysis for {url}: {str(e)}"
+        error_full_report = {"error": str(e), "url": url, "traceback": traceback.format_exc()}
+        return error_text_report, error_full_report
 
 def load_saved_report(url: str, supabase: Client):
     try:

@@ -766,22 +766,65 @@ async def main_seo_helper():
                                 prefix_icon_display = "⏸️"
                                 item_style_display = "font-weight: bold; color: orange;"
                         
+                       
                         if task_type_panel_display == "article_writer":
                             task_title_display = task_item_display.get("suggested_title", f"Article Task {i+1}")
                             st.markdown(f"<div style='{item_style_display}'>{prefix_icon_display} **{task_title_display}**</div>", unsafe_allow_html=True)
                             
                             task_details_list_display = []
-                            if task_item_display.get("focus_keyword"): task_details_list_display.append(f"Focus Keyword: `{task_item_display.get('focus_keyword')}`")
-                            if task_item_display.get("content_length"): task_details_list_display.append(f"Length: {task_item_display.get('content_length')}")
-                            if task_item_display.get("article_tone"): task_details_list_display.append(f"Tone: {task_item_display.get('article_tone')}")
+                            # Core fields
+                            if task_item_display.get("focus_keyword"): 
+                                task_details_list_display.append(f"Focus Keyword: `{task_item_display.get('focus_keyword')}`")
+                            if task_item_display.get("content_length"): 
+                                task_details_list_display.append(f"Length: {task_item_display.get('content_length')}")
+                            if task_item_display.get("article_tone"): 
+                                task_details_list_display.append(f"Tone: {task_item_display.get('article_tone')}")
+                            
                             additional_keywords_display = task_item_display.get("additional_keywords")
-                            if isinstance(additional_keywords_display, list) and additional_keywords_display:
-                                task_details_list_display.append(f"Other Keywords: `{', '.join(additional_keywords_display)}`")
-                            elif isinstance(additional_keywords_display, str) and additional_keywords_display.strip():
-                                 task_details_list_display.append(f"Other Keywords: `{additional_keywords_display}`")
+                            if additional_keywords_display:
+                                kw_str = ""
+                                if isinstance(additional_keywords_display, list):
+                                    kw_str = ", ".join(filter(None, additional_keywords_display))
+                                elif isinstance(additional_keywords_display, str):
+                                    kw_str = additional_keywords_display.strip()
+                                if kw_str:
+                                    task_details_list_display.append(f"Other Keywords: `{kw_str}`")
+
+                            # New "Notes" fields to display
+                            if task_item_display.get("target_page_url"): 
+                                task_details_list_display.append(f"Target Page URL: {task_item_display.get('target_page_url')}")
+                            if task_item_display.get("content_gap_addressed"): 
+                                task_details_list_display.append(f"Content Gap: {task_item_display.get('content_gap_addressed')}")
+                            if task_item_display.get("target_audience"): 
+                                task_details_list_display.append(f"Target Audience: {task_item_display.get('target_audience')}")
+                            
+                            content_outline_display = task_item_display.get("content_outline")
+                            if content_outline_display:
+                                outline_str = ""
+                                if isinstance(content_outline_display, list):
+                                    outline_str = ", ".join(filter(None, [str(item) for item in content_outline_display]))
+                                elif isinstance(content_outline_display, str):
+                                    outline_str = content_outline_display.strip()
+                                if outline_str:
+                                    display_outline = outline_str[:150] + '...' if len(outline_str) > 150 else outline_str
+                                    task_details_list_display.append(f"Outline Preview: {display_outline}")
+
+                            internal_links_display = task_item_display.get("internal_linking_opportunities")
+                            if internal_links_display:
+                                links_str = ""
+                                if isinstance(internal_links_display, list):
+                                    links_str = ", ".join(filter(None, [str(item) for item in internal_links_display]))
+                                elif isinstance(internal_links_display, str):
+                                    links_str = internal_links_display.strip()
+                                if links_str:
+                                    display_links = links_str[:150] + '...' if len(links_str) > 150 else links_str
+                                    task_details_list_display.append(f"Linking Opps Preview: {display_links}")
+
                             if task_details_list_display:
                                 details_html_display = "".join([f"<li style='font-size: small; {item_style_display.replace('font-weight: bold;','')} margin-left: 20px;'>{detail}</li>" for detail in task_details_list_display])
                                 st.markdown(f"<ul>{details_html_display}</ul>", unsafe_allow_html=True)
+# ...
+# (The rest of the file remains the same)
 
                         elif task_type_panel_display == "product_writer":
                             task_product_name_display = task_item_display.get('product_name', f"Product Task {i+1}")
