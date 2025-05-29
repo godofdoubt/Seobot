@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="SEO Helper",
     page_icon="🚀",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 hide_pages_nav = """
 <style>
@@ -731,7 +731,7 @@ async def main_seo_helper():
         if show_task_panel_display and tasks_for_panel_display:
             expander_title_key_display = "content_tasks_expander_title"
             expander_title_text_display = language_manager.get_text(expander_title_key_display, lang, fallback="Content Generation Tasks Progress")
-            with st.expander(expander_title_text_display, expanded=True):
+            with st.expander(expander_title_text_display, expanded=False):
                 if panel_status_message_display:
                     st.info(panel_status_message_display)
 
