@@ -115,6 +115,9 @@ class LLMAnalysisPrompts:
         # Ensure only relevant instructions are included
         instruction_texts_to_include = [instructions[key] for key in core_instruction_keys]
         
+        # Pre-join the instruction texts to avoid complex expression in f-string
+        joined_instruction_details = "\n".join(instruction_texts_to_include)
+        
         prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
     --
     Analyze the following web page content for the URL: {page_url}
@@ -131,7 +134,7 @@ class LLMAnalysisPrompts:
     Output ONLY the JSON object. Do NOT include any explanatory text, markdown formatting, or anything else outside the JSON object itself.
     {json.dumps(json_structure, indent=2, ensure_ascii=False)}
     **Detailed Instructions for populating each field in the JSON object:**
-    {"\n".join(instruction_texts_to_include)}
+    {joined_instruction_details}
     """
         
         # Add main page specific instructions if applicable
