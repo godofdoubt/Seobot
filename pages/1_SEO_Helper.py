@@ -274,116 +274,127 @@ def get_content_creation_cta_text(suggestions_data, lang):
 
 # --- MODIFIED FUNCTION ---
 def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_loaded_suggestions=False):
-    """Helper to build display text from structured suggestions data.
-    If is_loaded_suggestions is True, attempts to display insights from text_report.
     """
-    
-    if is_loaded_suggestions and st.session_state.get("text_report"):
+    Helper to build display text from structured suggestions data.
+    Always attempts to display insights from text_report if available.
+    Then, displays structured suggestions.
+    """
+    display_parts = []
+    insights_displayed_successfully = False
+
+    # --- Try to display AI-Powered Strategic Insights from text_report ---
+    if st.session_state.get("text_report"):
         text_report_content = st.session_state.text_report
-        # Assuming the heading is constant and in English as per user's problem description
         insights_heading = "## AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS" 
-        
         insights_start_index = text_report_content.find(insights_heading)
         
         if insights_start_index != -1:
-            # Extract the relevant part from the text report
             insights_text_from_report = text_report_content[insights_start_index:]
             
-            display_parts = []
-            # Use a title that reflects the source of the content
-            display_parts.append(f"**{title_prefix} Strategic Insights (from Text Report):**\n\n")
-            display_parts.append(insights_text_from_report)
+            insights_section_base_title = "Strategic Insights (from Text Report)"
+            current_insights_title = ""
+            if is_loaded_suggestions and title_prefix: # e.g., title_prefix is "Loaded"
+                current_insights_title = f"**{title_prefix} {insights_section_base_title}**\n\n"
+            else: # For new suggestions (Auto-Generated, Manually Generated) or if title_prefix is empty
+                current_insights_title = f"**{insights_section_base_title}**\n\n"
             
-            # Append timestamp if available (from the original suggestions data, if passed)
-            if structured_data and structured_data.get("generated_timestamp"):
-                generated_time_str = structured_data['generated_timestamp']
-                try:
-                    dt_obj = datetime.fromisoformat(generated_time_str.replace("Z", "+00:00"))
-                    formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M:%S UTC")
-                    display_parts.append(f"\n\n*Suggestions data originally generated/updated: {formatted_time}*")
-                except ValueError:
-                    display_parts.append(f"\n\n*Suggestions data originally generated/updated: {generated_time_str}*")
-            return "".join(display_parts)
+            display_parts.append(current_insights_title)
+            display_parts.append(insights_text_from_report)
+            insights_displayed_successfully = True
         else:
             logging.warning(
-                f"'{insights_heading}' not found in text_report for '{title_prefix}' display. "
-                "Falling back to standard suggestions display for loaded suggestions."
+                f"'{insights_heading}' not found in text_report. "
+                "AI-Powered Strategic Insights section will be skipped."
             )
-            # Fall through to original logic if heading is not found
+    
+    # --- Display Structured SEO Suggestions & Content Ideas ---
+    # Add a separator if insights were displayed and there is structured data (or at least a header for it)
+    if insights_displayed_successfully:
+        display_parts.append("\n\n---\n\n") # Markdown horizontal rule as separator
 
-    # --- Standard suggestions display logic (for new generations or fallback for loaded) ---
-    suggestions_text_parts = [f"**{title_prefix} SEO Suggestions & Content Ideas:**\n"]
+    suggestions_header = f"**{title_prefix} SEO Suggestions & Content Ideas:**\n"
+    display_parts.append(suggestions_header)
 
     if structured_data is None:
-        suggestions_text_parts.append(language_manager.get_text("no_suggestions_data_available", lang, fallback="No suggestion data available to display."))
-        return "".join(suggestions_text_parts)
-        
-    if structured_data.get("pre_json_prose"):
-        suggestions_text_parts.append(f"{structured_data['pre_json_prose']}\n\n")
+        display_parts.append(language_manager.get_text("no_suggestions_data_available", lang, fallback="No suggestion data available to display."))
+        # Timestamp for 'no data' might not be relevant or available from structured_data
+    else:
+        # Pre-JSON prose
+        if structured_data.get("pre_json_prose"):
+            display_parts.append(f"{structured_data['pre_json_prose']}\n\n")
 
-    if structured_data.get("content_creation_ideas"):
-        suggestions_text_parts.append("## Content Tasks\n")
-        content_ideas = structured_data["content_creation_ideas"]
-        
-        article_tasks = content_ideas.get("article_content_tasks")
-        if isinstance(article_tasks, list) and article_tasks:
-            suggestions_text_parts.append(f"**Article Content Tasks:**\n")
-            for item_idx, item_task in enumerate(article_tasks):
-                if isinstance(item_task, dict): 
-                    title_from_task = item_task.get('suggested_title', f"Article Task {item_idx+1}")
-                    suggestions_text_parts.append(f"- **{title_from_task}**\n")
-                    for k, v_task in item_task.items():
-                        if k not in ['suggested_title', 'title']:
-                             suggestions_text_parts.append(f"  - {k.replace('_',' ').title()}: {v_task}\n")
-                else: 
-                    suggestions_text_parts.append(f"- {item_task}\n") 
-            suggestions_text_parts.append("\n")
+        # Content Creation Ideas
+        if structured_data.get("content_creation_ideas"):
+            display_parts.append("## Content Tasks\n") # This is a sub-header under the main suggestions_header
+            content_ideas = structured_data["content_creation_ideas"]
+            
+            article_tasks = content_ideas.get("article_content_tasks")
+            if isinstance(article_tasks, list) and article_tasks:
+                display_parts.append(f"**Article Content Tasks:**\n")
+                for item_idx, item_task in enumerate(article_tasks):
+                    if isinstance(item_task, dict): 
+                        title_from_task = item_task.get('suggested_title', f"Article Task {item_idx+1}")
+                        display_parts.append(f"- **{title_from_task}**\n")
+                        for k, v_task in item_task.items():
+                            if k not in ['suggested_title', 'title']:
+                                 display_parts.append(f"  - {k.replace('_',' ').title()}: {v_task}\n")
+                    else: 
+                        display_parts.append(f"- {item_task}\n") 
+                display_parts.append("\n")
 
-        product_tasks = content_ideas.get("product_content_tasks")
-        if isinstance(product_tasks, list) and product_tasks:
-            suggestions_text_parts.append(f"**Product Content Tasks:**\n")
-            for item_idx, item_task in enumerate(product_tasks):
-                if isinstance(item_task, dict): 
-                    title_from_task = item_task.get('product_name', f"Product Task {item_idx+1}")
-                    suggestions_text_parts.append(f"- **{title_from_task}**\n")
-                    for k, v_task in item_task.items():
-                        if k not in ['product_name']:
-                             suggestions_text_parts.append(f"  - {k.replace('_',' ').title()}: {v_task}\n")
-                else: 
-                    suggestions_text_parts.append(f"- {item_task}\n")
-            suggestions_text_parts.append("\n")
-        
-        other_task_keys = [k for k in content_ideas.keys() if k not in ["article_content_tasks", "product_content_tasks", "_source", "parsing_error_detail", "raw_unparsed_json_block"]]
-        if other_task_keys:
-            suggestions_text_parts.append("**Other Tasks/Ideas:**\n")
-            for key in other_task_keys:
-                suggestions_text_parts.append(f"***{key.replace('_', ' ').title()}:***\n{json.dumps(content_ideas[key], indent=2)}\n\n")
+            product_tasks = content_ideas.get("product_content_tasks")
+            if isinstance(product_tasks, list) and product_tasks:
+                display_parts.append(f"**Product Content Tasks:**\n")
+                for item_idx, item_task in enumerate(product_tasks):
+                    if isinstance(item_task, dict): 
+                        title_from_task = item_task.get('product_name', f"Product Task {item_idx+1}")
+                        display_parts.append(f"- **{title_from_task}**\n")
+                        for k, v_task in item_task.items():
+                            if k not in ['product_name']:
+                                 display_parts.append(f"  - {k.replace('_',' ').title()}: {v_task}\n")
+                    else: 
+                        display_parts.append(f"- {item_task}\n")
+                display_parts.append("\n")
+            
+            other_task_keys = [k for k in content_ideas.keys() if k not in ["article_content_tasks", "product_content_tasks", "_source", "parsing_error_detail", "raw_unparsed_json_block"]]
+            if other_task_keys:
+                display_parts.append("**Other Tasks/Ideas:**\n")
+                for key in other_task_keys:
+                    display_parts.append(f"***{key.replace('_', ' ').title()}:***\n{json.dumps(content_ideas[key], indent=2)}\n\n")
 
-        if content_ideas.get("parsing_error_detail"):
-            suggestions_text_parts.append(f"\n*Note: Error parsing content tasks: {content_ideas['parsing_error_detail']}*")
-            if content_ideas.get("raw_unparsed_json_block"):
-                suggestions_text_parts.append(f"\n*Raw JSON block (could not parse):*\n```json\n{content_ideas['raw_unparsed_json_block']}\n```\n")
-        elif content_ideas.get("_source") == "no_json_block_found" or content_ideas.get("_source") == "no_json_block_found_or_empty":
-            suggestions_text_parts.append("*No specific JSON-formatted content tasks were found in the AI response.*\n")
+            if content_ideas.get("parsing_error_detail"):
+                display_parts.append(f"\n*Note: Error parsing content tasks: {content_ideas['parsing_error_detail']}*")
+                if content_ideas.get("raw_unparsed_json_block"):
+                    display_parts.append(f"\n*Raw JSON block (could not parse):*\n```json\n{content_ideas['raw_unparsed_json_block']}\n```\n")
+            elif content_ideas.get("_source") == "no_json_block_found" or content_ideas.get("_source") == "no_json_block_found_or_empty":
+                display_parts.append("*No specific JSON-formatted content tasks were found in the AI response.*\n")
 
-    if structured_data.get("post_json_prose"):
-        suggestions_text_parts.append(f"\n\n{structured_data['post_json_prose']}\n")
+        # Post-JSON prose
+        if structured_data.get("post_json_prose"):
+            display_parts.append(f"\n\n{structured_data['post_json_prose']}\n")
 
-    if structured_data.get("parsing_error_outer"):
-        suggestions_text_parts.append(f"\n*Note: There was a major error parsing these suggestions.* Error: {structured_data['parsing_error_outer']}\n")
-        if structured_data.get("failed_input_text_on_error"):
-            suggestions_text_parts.append(f"Problematic input text (first 500 chars):\n```\n{structured_data['failed_input_text_on_error'][:500]}...\n```\n")
+        # Outer parsing error
+        if structured_data.get("parsing_error_outer"):
+            display_parts.append(f"\n*Note: There was a major error parsing these suggestions.* Error: {structured_data['parsing_error_outer']}\n")
+            if structured_data.get("failed_input_text_on_error"):
+                display_parts.append(f"Problematic input text (first 500 chars):\n```\n{structured_data['failed_input_text_on_error'][:500]}...\n```\n")
 
-    if structured_data.get("generated_timestamp"):
-        generated_time_str = structured_data['generated_timestamp']
-        try:
-            dt_obj = datetime.fromisoformat(generated_time_str.replace("Z", "+00:00"))
-            formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M:%S UTC")
-            suggestions_text_parts.append(f"\n*Suggestions generated: {formatted_time}*")
-        except ValueError:
-            suggestions_text_parts.append(f"\n*Suggestions generated: {generated_time_str}*")
+        # Timestamp (applies to structured_data)
+        if structured_data.get("generated_timestamp"):
+            generated_time_str = structured_data['generated_timestamp']
+            try:
+                # Ensure correct parsing of ISO format, handling potential 'Z' for UTC
+                if generated_time_str.endswith("Z"):
+                    dt_obj = datetime.fromisoformat(generated_time_str[:-1] + "+00:00")
+                else:
+                    dt_obj = datetime.fromisoformat(generated_time_str)
+                formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M:%S UTC")
+                display_parts.append(f"\n\n*Suggestions data generated/updated: {formatted_time}*")
+            except ValueError:
+                # Fallback if parsing fails, use the raw string
+                display_parts.append(f"\n\n*Suggestions data generated/updated: {generated_time_str}*")
     
-    return "".join(suggestions_text_parts)
+    return "".join(display_parts)
 # --- END OF MODIFIED FUNCTION ---
 
 
@@ -689,8 +700,9 @@ async def main_seo_helper():
             st.sidebar.info(language_manager.get_text("analyze_url_first_for_suggestions", lang, fallback="Analyze a URL to enable SEO suggestions."))
 
         username_display = st.session_state.get("username", "User")
-        st.markdown(language_manager.get_text("logged_in_as", lang, username_display))
-        common_sidebar()
+        #st.markdown(language_manager.get_text("logged_in_as", lang, username_display))
+        st.markdown(language_manager.get_text("logged_in_as", lang, username=username_display))
+        common_sidebar()    
         
         # --- Logic to determine content for the task panel (moved from below message display) ---
         active_cta_context_display = st.session_state.get("seo_helper_cta_context")
@@ -787,6 +799,52 @@ async def main_seo_helper():
                         message_list="messages"
                     )
         
+        # --- Resume Button (if applicable, MOVED HERE, outside expander) ---
+        if is_paused_panel_display and tasks_for_panel_display and \
+           0 <= current_task_idx_panel_display < len(tasks_for_panel_display):
+            
+            task_to_resume_details = tasks_for_panel_display[current_task_idx_panel_display]
+            resume_button_text_btn_display = ""
+            
+            if task_type_panel_display == "article_writer":
+                task_to_resume_title_btn_display = task_to_resume_details.get("suggested_title", "the current article task")
+                resume_button_text_key_btn_display = "resume_article_tasks_button"
+                resume_button_text_btn_display = language_manager.get_text(resume_button_text_key_btn_display, lang, task_title=task_to_resume_title_btn_display, fallback=f"Resume with: '{task_to_resume_title_btn_display}'")
+            elif task_type_panel_display == "product_writer":
+                task_to_resume_title_btn_display = task_to_resume_details.get("product_name", "the current product task")
+                resume_button_text_key_btn_display = "resume_product_tasks_button" 
+                resume_button_text_btn_display = language_manager.get_text(resume_button_text_key_btn_display, lang, task_title=task_to_resume_title_btn_display, fallback=f"Resume with: '{task_to_resume_title_btn_display}'")
+
+            if resume_button_text_btn_display and st.button(resume_button_text_btn_display, key="resume_cta_panel_button"): # Key can remain the same
+                st.session_state.seo_helper_cta_context = st.session_state.paused_cta_context
+                st.session_state.awaiting_seo_helper_cta_response = True
+                st.session_state.paused_cta_context = None
+                
+                resumed_task_display_details = st.session_state.seo_helper_cta_context["tasks"][st.session_state.seo_helper_cta_context["current_task_index"]]
+                resume_message_chat_display = ""
+
+                if task_type_panel_display == "article_writer":
+                    resumed_task_title_chat_prompt = resumed_task_display_details.get("suggested_title", "the selected article suggestion")
+                    resume_chat_prompt_key_btn_display = "seo_helper_cta_resumed_chat_prompt_extended_options"
+                    resume_message_chat_display = language_manager.get_text(
+                        resume_chat_prompt_key_btn_display, lang, task_title=resumed_task_title_chat_prompt,
+                        fallback=(f"Resuming article task preparation. I am now focused on '{resumed_task_title_chat_prompt}'. "
+                                  f"Shall I prepare it, skip to the next, or stop this process? (Type 'yes', 'skip', or 'stop')")
+                    )
+                elif task_type_panel_display == "product_writer":
+                    resumed_task_title_chat_prompt = resumed_task_display_details.get("product_name", "the selected product suggestion")
+                    resume_chat_prompt_key_btn_display = "seo_helper_cta_resumed_chat_prompt_product_extended_options"
+                    resume_message_chat_display = language_manager.get_text(
+                        resume_chat_prompt_key_btn_display, lang, task_title=resumed_task_title_chat_prompt,
+                        fallback=(f"Resuming product task preparation. I am now focused on '{resumed_task_title_chat_prompt}'. "
+                                  f"Shall I prepare it, skip to the next, or stop this process? (Type 'yes', 'skip', or 'stop')")
+                    )
+                
+                if resume_message_chat_display:
+                    st.session_state.messages.append({"role": "assistant", "content": resume_message_chat_display})
+                    logging.info(f"CTA Resumed from panel button. Re-prompting for task: {resumed_task_title_chat_prompt} (Type: {task_type_panel_display})")
+                    st.rerun()
+
         # --- Content Generation Tasks Progress Expander (MOVED TO BOTTOM) ---
         if show_task_panel_display and tasks_for_panel_display:
             expander_title_key_display = "content_tasks_expander_title"
@@ -917,47 +975,8 @@ async def main_seo_helper():
                                 details_html_prod_display = "".join([f"<li style='font-size: small; {item_style_display.replace('font-weight: bold;','')} margin-left: 20px;'>{detail}</li>" for detail in product_task_details_list_display])
                                 st.markdown(f"<ul>{details_html_prod_display}</ul>", unsafe_allow_html=True)
                 
-                if is_paused_panel_display and tasks_for_panel_display and 0 <= current_task_idx_panel_display < len(tasks_for_panel_display):
-                    task_to_resume_details = tasks_for_panel_display[current_task_idx_panel_display]
-                    resume_button_text_btn_display = ""
-                    
-                    if task_type_panel_display == "article_writer":
-                        task_to_resume_title_btn_display = task_to_resume_details.get("suggested_title", "the current article task")
-                        resume_button_text_key_btn_display = "resume_article_tasks_button"
-                        resume_button_text_btn_display = language_manager.get_text(resume_button_text_key_btn_display, lang, task_title=task_to_resume_title_btn_display, fallback=f"Resume with: '{task_to_resume_title_btn_display}'")
-                    elif task_type_panel_display == "product_writer":
-                        task_to_resume_title_btn_display = task_to_resume_details.get("product_name", "the current product task")
-                        resume_button_text_key_btn_display = "resume_product_tasks_button" 
-                        resume_button_text_btn_display = language_manager.get_text(resume_button_text_key_btn_display, lang, task_title=task_to_resume_title_btn_display, fallback=f"Resume with: '{task_to_resume_title_btn_display}'")
-
-                    if st.button(resume_button_text_btn_display, key="resume_cta_panel_button"):
-                        st.session_state.seo_helper_cta_context = st.session_state.paused_cta_context
-                        st.session_state.awaiting_seo_helper_cta_response = True
-                        st.session_state.paused_cta_context = None
-                        
-                        resumed_task_display_details = st.session_state.seo_helper_cta_context["tasks"][st.session_state.seo_helper_cta_context["current_task_index"]]
-                        resume_message_chat_display = ""
-
-                        if task_type_panel_display == "article_writer":
-                            resumed_task_title_chat_prompt = resumed_task_display_details.get("suggested_title", "the selected article suggestion")
-                            resume_chat_prompt_key_btn_display = "seo_helper_cta_resumed_chat_prompt_extended_options"
-                            resume_message_chat_display = language_manager.get_text(
-                                resume_chat_prompt_key_btn_display, lang, task_title=resumed_task_title_chat_prompt,
-                                fallback=(f"Resuming article task preparation. I am now focused on '{resumed_task_title_chat_prompt}'. "
-                                          f"Shall I prepare it, skip to the next, or stop this process? (Type 'yes', 'skip', or 'stop')")
-                            )
-                        elif task_type_panel_display == "product_writer":
-                            resumed_task_title_chat_prompt = resumed_task_display_details.get("product_name", "the selected product suggestion")
-                            resume_chat_prompt_key_btn_display = "seo_helper_cta_resumed_chat_prompt_product_extended_options"
-                            resume_message_chat_display = language_manager.get_text(
-                                resume_chat_prompt_key_btn_display, lang, task_title=resumed_task_title_chat_prompt,
-                                fallback=(f"Resuming product task preparation. I am now focused on '{resumed_task_title_chat_prompt}'. "
-                                          f"Shall I prepare it, skip to the next, or stop this process? (Type 'yes', 'skip', or 'stop')")
-                            )
-                        
-                        st.session_state.messages.append({"role": "assistant", "content": resume_message_chat_display})
-                        logging.info(f"CTA Resumed from panel button. Re-prompting for task: {resumed_task_title_chat_prompt} (Type: {task_type_panel_display})")
-                        st.rerun()
+                # The resume button logic was here, now it's moved outside the expander.
+                # This part is intentionally left empty after moving the button.
                     
     except Exception as e:
         logging.error(f"Error in main_seo_helper: {str(e)}", exc_info=True) 

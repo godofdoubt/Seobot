@@ -195,10 +195,11 @@ async def main():
     # --- START: Fix for Product Writer Welcome Message ---
     target_welcome_message_product = ""
     if st.session_state.get("url") and st.session_state.get("text_report"):
+        # Note: st.session_state.url is passed as a positional argument for {0} in the translation string
         target_welcome_message_product = language_manager.get_text(
             "welcome_product_writer_analyzed",
             lang,
-            st.session_state.url,
+            st.session_state.url, 
             fallback=f"Welcome to the Product Writer page.\nUsing analysis for: **{st.session_state.url}**"
         )
     else:
@@ -446,7 +447,7 @@ async def main():
             st.rerun() # Rerun to display the new description or error
 
 
-    st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
+    st.markdown(language_manager.get_text("logged_in_as", lang, username=st.session_state.username))
     
     if "messages" in st.session_state:
         for message in st.session_state.messages:

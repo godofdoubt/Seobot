@@ -1,5 +1,3 @@
-
-
 #pages/2_Article_Writer.py
 import streamlit as st
 import asyncio
@@ -122,7 +120,7 @@ def render_article_writer_sidebar_options():
         multiselect_default_display = [tone_display_options_map[t] for t in validated_current_tones_internal if t in tone_display_options_map]
 
         selected_tones_display = st.sidebar.multiselect(
-            label=language_manager.get_text("tone", lang, fallback="Article Tone(s)"),
+            label=language_manager.get_text("tone", lang, fallback="Article Tone(s)"), # Changed label slightly for clarity
             options=multiselect_options_display,
             default=multiselect_default_display,
             help=language_manager.get_text("tone_multiselect_help", lang, fallback="Select one or more tones for the article")
@@ -328,6 +326,7 @@ async def main():
 
     common_sidebar(page_specific_content_func=render_article_writer_sidebar_options)
 
+    # --- MODIFIED WELCOME MESSAGE LOGIC ---
     final_welcome_message = ""
     if is_triggered_by_seo_helper and task_title_from_trigger and st.session_state.article_generation_requested:
         final_welcome_message = language_manager.get_text(
@@ -339,8 +338,9 @@ async def main():
             "article_writer_options_prefilled_by_seo_helper", lang, task_title=task_title_from_trigger,
             fallback=f"Article Writer options pre-filled by SEO Helper for: **{task_title_from_trigger}**. Review and click 'Generate Article'."
         )
-    else:
+    else: # Standard navigation (not triggered by SEO helper)
         if st.session_state.get("url") and st.session_state.get("text_report"):
+            # Note: st.session_state.url is passed as a positional argument for {0} in the translation string
             final_welcome_message = language_manager.get_text(
                 "welcome_article_writer_analyzed", lang, st.session_state.url,
                 fallback=f"Welcome to the Article Writer page. Ready to help you write an article based on the analysis of **{st.session_state.url}**."
@@ -354,12 +354,11 @@ async def main():
     if "messages" not in st.session_state or not st.session_state.messages:
         st.session_state.messages = [{"role": "assistant", "content": final_welcome_message}]
     elif st.session_state.messages and st.session_state.messages[0].get("role") == "assistant":
-        current_first_message = st.session_state.messages[0].get("content", "")
-        is_generic_welcome_candidate = any(kw in current_first_message.lower() for kw in ["welcome to the article writer", "welcome back"])
+        # Update the first message if it's different from the newly calculated final_welcome_message
+        if st.session_state.messages[0].get("content") != final_welcome_message:
+            st.session_state.messages[0]["content"] = final_welcome_message
+    # --- END MODIFIED WELCOME MESSAGE LOGIC ---
 
-        if (is_triggered_by_seo_helper and current_first_message != final_welcome_message) or \
-           (not is_triggered_by_seo_helper and is_generic_welcome_candidate and current_first_message != final_welcome_message):
-             st.session_state.messages[0]["content"] = final_welcome_message
 
     articles_processed_in_this_run = False
     articles_to_add_to_chat = []
@@ -536,7 +535,7 @@ async def main():
         elif display_suggestions_condition:
             st.info(language_manager.get_text("no_article_suggestions_found", lang, fallback="No specific article suggestions found in the current report's auto_suggestions data, or the data format is unrecognized."))
 
-    st.markdown(language_manager.get_text("logged_in_as", lang, st.session_state.username))
+    st.markdown(language_manager.get_text("logged_in_as", lang, username=st.session_state.username))
 
     if "messages" in st.session_state and st.session_state.messages:
         for message in st.session_state.messages:

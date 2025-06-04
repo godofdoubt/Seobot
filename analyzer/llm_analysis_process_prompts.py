@@ -4,12 +4,13 @@ import json
 class LLMAnalysisPrompts:
     """
     Centralized prompt management for LLM analysis processes.
-    Contains all prompts used in the LLM analysis workflow.
+    Contains prompts used for single-page LLM analysis.
+    The AI recommendations prompt has been moved to generate_ai_recommendations_prompt.py.
     """
     
     @staticmethod
     def get_detailed_instructions():
-        """Get the detailed instructions for each field in the analysis."""
+        """Get the detailed instructions for each field in the single-page analysis."""
         return {
             "keywords": """1. **"keywords"**:
         * Identify and list the top 7-10 most relevant and frequently occurring keywords or key phrases from the page content and headings.
@@ -69,7 +70,7 @@ class LLMAnalysisPrompts:
     
     @staticmethod
     def get_json_structure(is_main_page: bool = False):
-        """Get the JSON structure template for LLM responses."""
+        """Get the JSON structure template for LLM responses for single-page analysis."""
         base_structure = {
             "keywords": ["string"],
             "content_summary": "string",
@@ -111,7 +112,8 @@ class LLMAnalysisPrompts:
             "keywords", "content_summary", "other_information_and_contacts", 
             "suggested_keywords_for_seo", "overall_tone", "target_audience", "topic_categories"
         ]
-        core_instruction_texts = [instructions[key] for key in core_instruction_keys]
+        # Ensure only relevant instructions are included
+        instruction_texts_to_include = [instructions[key] for key in core_instruction_keys]
         
         prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
     --
@@ -127,12 +129,12 @@ class LLMAnalysisPrompts:
     ---
     Based on the provided text and headings, generate a JSON object strictly adhering to the following structure.
     Output ONLY the JSON object. Do NOT include any explanatory text, markdown formatting, or anything else outside the JSON object itself.
-    {json.dumps(json_structure, indent=2)}
+    {json.dumps(json_structure, indent=2, ensure_ascii=False)}
     **Detailed Instructions for populating each field in the JSON object:**
-    {"\n".join(core_instruction_texts)}
-    """ # Corrected: Used "\n".join for proper spacing between instructions
+    {"\n".join(instruction_texts_to_include)}
+    """
         
-        # Add main page specific instructions
+        # Add main page specific instructions if applicable
         if is_main_page:
             prompt += f"""
     {instructions["header"]}
@@ -144,143 +146,6 @@ class LLMAnalysisPrompts:
         
         return prompt
     
-    @staticmethod
-    def build_ai_recommendations_prompt(website_data_summary: dict) -> str:
-        """
-        Build the comprehensive AI recommendations prompt.
-    
-        Args:
-            website_data_summary: Dictionary containing complete website analysis data
-    
-        Returns:
-            Complete prompt string for AI recommendations
-        """
-        return f"""
-    Based on the comprehensive SEO and content analysis of this website, first, define 3-5 distinct target audience personas. Then, provide strategic recommendations and a few illustrative examples of actionable SEO optimization tasks. The focus is on showcasing a deep understanding of the data and its implications, rather than exhaustive lists of tasks.
-    
-    WEBSITE ANALYSIS DATA:
-    {json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
-    
-    Generate recommendations in the following JSON structure. For task-oriented sections (seo_content_optimization, content_strategy_insights, article_content_tasks, product_content_tasks), provide only 1-2 high-impact, illustrative examples for each:
-    
-    {{
-        "target_audience_personas": [
-            {{
-                "persona_name": "string (e.g., 'Tech-Savvy Tom', 'Budget-Conscious Brenda', 'Araştırmacı Ayşe')",
-                "demographics": "string (e.g., '25-35, Urban, Early Adopter', '40-55, Suburban, Value Seeker')",
-                "occupation_role": "string (e.g., 'Software Developer', 'Small Business Owner', 'Pazarlama Müdürü')",
-                "goals_related_to_site": ["string (what they want to achieve that this website can help with)"],
-                "pain_points_challenges": ["string (challenges they face that this website's content/products can solve)"],
-                "motivations_for_using_site": ["string (why they would choose this site/product over others)"],
-                "information_sources": ["string (where they typically look for information - e.g., Google, Social Media, Forums)"],
-                "key_message_for_persona": "string (a concise message that would resonate with this persona based on the site's offerings)"
-            }}
-        ],
-        "strategic_recommendations": [
-            {{
-                "category": "string (e.g., 'SEO Optimization', 'Content Strategy', 'User Experience', 'Site Structure')",
-                "title": "string (brief title for the recommendation)",
-                "description": "string (detailed explanation and actionable steps)",
-                "priority": "string (High/Medium/Low)",
-                "implementation_difficulty": "string (Easy/Medium/Hard)",
-                "based_on_data": "string (specific data point or metric that led to this recommendation)"
-            }}
-        ],
-        "seo_content_optimization": [ // Provide 1-2 illustrative examples
-            {{
-                "focus_area": "string (e.g., 'Keyword Strategy', 'Content Gaps', 'Internal Linking', 'Meta Optimization')",
-                "current_issue": "string (specific issue found in the data)",
-                "recommendation": "string (specific actionable recommendation)",
-                "expected_impact": "string (what improvement to expect)",
-                "pages_affected": ["string (specific page URLs if applicable)"]
-            }}
-        ],
-        "content_strategy_insights": [ // Provide 1-2 illustrative examples
-            {{
-                "insight": "string (key insight about content strategy based on analysis)",
-                "supporting_data": "string (specific data that supports this insight)",
-                "action_items": [ // For the example insight, provide 1 example action item
-                    {{
-                        "action_type": "string (Article/Product/Page Update/Technical Fix)",
-                        "page_url": "string (target page URL or 'new page')",
-                        "title": "string (suggested title)",
-                        "description": "string (detailed action description)",
-                        "target_persona": "string (which defined persona this action targets)",
-                        "social_media_opportunity": "string (optional - social media angle)",
-                        "media_suggestions": "string (image/video recommendations)",
-                        "headings_structure": ["string (suggested H1, H2, H3 structure)"],
-                        "priority": "string (High/Medium/Low)"
-                    }}
-                ]
-            }}
-        ],
-        "article_content_tasks": [ // Provide 1-2 illustrative examples
-            {{
-                "focus_keyword": "string (primary keyword for the article)",
-                "content_length": "string (Small: 300-500 words, Medium: 500-1000 words, Long: 1000-2000 words, Very Long: 2000+ words)",
-                "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
-                "additional_keywords": ["string (optional supporting keywords)"],
-                "suggested_title": "string (SEO-optimized title)",
-                "target_page_url": "string (where this content should be published)",
-                "content_gap_addressed": "string (what gap this content fills)",
-                "target_audience_persona": "string (name of the persona this article targets)"
-            }}
-        ],
-        "product_content_tasks": [ // Provide 1-2 illustrative examples
-            {{
-                "product_name": "string (product/service name)",
-                "product_details": {{
-                    "features": ["string (list of key features)"],
-                    "benefits": ["string (list of key benefits)"],
-                    "target_audience_persona": "string (name of the persona this product targets)"
-                }},
-                "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
-                "description_length": "string (Short: 50-150 words, Medium: 150-300 words, Long: 300+ words)",
-                "target_page_url": "string (where this product content should appear)",
-                "seo_keywords": ["string (relevant keywords for this product)"],
-                "competitive_advantage": "string (what makes this product unique based on analysis)"
-            }}
-        ]
-    }}
-    
-    CRITICAL REQUIREMENTS:
-    
-    1.  **Language Detection**: If website content (keywords, summaries, topic categories from `website_data_summary`) is primarily in Turkish, respond entirely in Turkish, including persona names and details. Otherwise, use English.
-    
-    2.  **Persona Definition First**: Generate 3-5 detailed `target_audience_personas` based on the `website_data_summary` (keywords, content themes, inferred user intent). These personas should inform subsequent recommendations.
-    
-    3.  **Data-Driven Recommendations**: ALL recommendations and personas MUST be based on the actual `technical_statistics` and `website_analysis_data` provided. Reference specific metrics, issues, or opportunities found in the data.
-    
-    4.  **Illustrative Examples**: For `seo_content_optimization`, `content_strategy_insights`, `article_content_tasks`, and `product_content_tasks`, provide only 1-2 carefully selected, high-impact examples for each category. These examples should demonstrate a strong analytical link to the input data and the defined personas.
-    
-    5.  **Strategic Focus Areas** (provide 3-5 strategic recommendations covering):
-        - SEO technical issues (alt text coverage, mobile optimization, site speed)
-        - Content gaps identified from keyword analysis (and relevant to personas)
-        - User experience improvements based on site structure
-        - Conversion optimization opportunities (considering persona motivations)
-    
-    6.  **Specific Technical Issues to Address** (ensure strategic recommendations consider these if present in data):
-        - Alt text coverage percentage
-        - Mobile responsiveness issues
-        - Site structure and navigation problems
-        - Page loading performance
-        - Internal linking opportunities
-    
-    7.  **Content Strategy Requirements for Examples**:
-        - Illustrate addressing content gaps from keyword analysis relevant to defined personas.
-        - Consider target personas and topic categories found.
-        - If suggesting page improvements, use specific URLs.
-    
-    8.  **Actionable Item Examples Must Include**:
-        - Specific page URLs where applicable.
-        - Exact keywords to target.
-        - Expected outcomes.
-        - Implementation difficulty.
-        - Which persona they are targeting, if applicable.
-    
-    9.  **No Generic Advice**: Every recommendation and example must reference specific data points from the analysis. Avoid generic SEO advice not tied to the actual website data.
-    
-    10. **Prioritization**: Rank `strategic_recommendations` by potential impact and implementation difficulty. Example tasks should ideally be high-impact.
-    
-    Output ONLY the JSON object with no additional text, markdown, or formatting.
-    """
+    # The build_ai_recommendations_prompt method has been moved to 
+    # generate_ai_recommendations_prompt.py
+    # No other changes to this class are needed for this specific request.

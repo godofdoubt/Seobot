@@ -38,15 +38,16 @@ class LanguageSupport:
                 "refresh_comprehensive_report": "🔄 Refresh Comprehensive Report",
                 "recheck_comprehensive_report": "🔄 Re-check Analysis", # NEW (distinct from refresh_comprehensive_report)
                 "go_to_login":"ℹ️Please Login First",
-                "resume_article_tasks_button": "Resume with: '{task_title}'", # NEW - SEO Helper Task Panel
-                "resume_product_tasks_button": "Resume with: '{task_title}'", # NEW - SEO Helper Task Panel
+                "resume_article_tasks_button": "▶Resume with: '{task_title}'▶️", # NEW - SEO Helper Task Panel
+                "resume_product_tasks_button": "▶️Resume with: '{task_title}'▶️", # NEW - SEO Helper Task Panel
 
 
                 # Detailed Analysis Messages
                 "detailed_analysis_init_error": "Error initializing detailed analysis processor. Please check logs or contact support.",
                 "detailed_analysis_runtime_error": "Runtime error during detailed analysis processor setup. Please check logs or contact support.",
                 "detailed_analysis_trigger_error": "Failed to start the detailed site-wide analysis. Please try again or contact support.",
-                "detailed_analysis_error_status": "Detailed analysis for this report encountered an error: {0}. Please check logs or contact support.", # {0} is for the error message
+                #"detailed_analysis_error_status": "Detailed analysis for this report encountered an error: {0}. Please check logs or contact support.", # {0} is for the error message
+                "detailed_analysis_error_status": "Detailed analysis for this report encountered an error: {llm_analysis_error}. Please check logs or contact support.",
                 "detailed_analysis_still_inprogress": "Detailed site-wide LLM analysis is still in progress. Please check back again.",
                 "detailed_analysis_initiated": "Detailed site-wide analysis initiated. This may take some time. You can monitor progress here.", # NEW
                 "error_checking_report_status": "Error checking report status. Please try again.",
@@ -59,7 +60,7 @@ class LanguageSupport:
                 "select_ai_model_label": "Select AI Model:",
                 "model_o10": "o10 (Gemini)",
                 "model_Se10": "Se10 (Mistral)",
-                "view_seo_report_expander_label": "View SEO Report",
+                "view_seo_report_expander_label": "📝 View SEO Report",
                 "your_website_report_label": "Report for: {0}",
                 "no_text_report_available": "No text report available.",
                 "analysis_running_sidebar_info": "Analysis is in progress. Some controls and navigation links are temporarily disabled.",
@@ -72,12 +73,14 @@ class LanguageSupport:
                 "welcome_message": "Welcome nevaR Web Services!",
                 "welcome_seo": "Welcome nevaR Web Services Beta!",
                 "welcome_authenticated": "Welcome, {0}!", # {0} is username
-                "logged_in_as": "Logged in as: **{0}**", # {0} is username
+                #"logged_in_as": "Logged in as: **{0}**", # {0} is username
+                "logged_in_as": "Logged in as: **{username}**",
                 "analysis_complete_message": "✅ Analysis for your URL is complete.",
                 "analyzing_website": "Analyzing your website, please wait...",
                 "found_existing_report": "Found an existing report for this URL.",
                 "analysis_failed": "Failed to analyze the website. Please try again.",
-                "analysis_results_for_url": "Analysis Results for: {0}", # {0} is URL
+                #"analysis_results_for_url": "Analysis Results for: {0}", # {0} is URL
+                "analysis_results_for_url": "Analysis Results for: {url}",
                 "authentication_required": "You need to log in first to use this service.",
                 "login_failed": "Authentication failed. Please check your API key.",
                 "enter_api_key_label": "Please enter your API key to continue:",
@@ -140,7 +143,7 @@ class LanguageSupport:
                 "report_up_to_date_toast": "Report is up-to-date.", # NEW
 
                 # SEO Helper - Task Panel (Content Generation CTA Progress)
-                "content_tasks_expander_title": "Content Generation Tasks Progress", # NEW
+                "content_tasks_expander_title": "📝Content Generation Tasks Progress↕️", # NEW
                 "cta_status_paused_at": "Paused article task preparation at: '{title}'.", # NEW
                 "cta_status_awaiting_response_for": "Awaiting response for article task: '{title}'.", # NEW
                 "cta_status_paused_at_product": "Paused product task preparation at: '{title}'.", # NEW
@@ -275,14 +278,14 @@ class LanguageSupport:
                 "refresh_comprehensive_report": "🔄 Analizi Yenile",
                 "recheck_comprehensive_report": "🔄 Analizi Yeniden Kontrol Et", # NEW
                 "go_to_login":"Lütfen Giriş Yapın.",
-                "resume_article_tasks_button": "Şununla devam et: '{task_title}'", # NEW - SEO Helper Task Panel
-                "resume_product_tasks_button": "Şununla devam et: '{task_title}'", # NEW - SEO Helper Task Panel
+                "resume_article_tasks_button": "İçerik Oluşturmaya devam et: '{task_title}'⏯️  ", # NEW - SEO Helper Task Panel
+                "resume_product_tasks_button": "İçerik Oluşturmaya devam et: '{task_title}'⏯️", # NEW - SEO Helper Task Panel
 
                 # Detailed Analysis Messages
                 "detailed_analysis_init_error": "Detaylı analiz işlemcisi başlatılırken hata oluştu. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
                 "detailed_analysis_runtime_error": "Detaylı analiz işlemcisi kurulumu sırasında çalışma zamanı hatası. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
                 "detailed_analysis_trigger_error": "Detaylı site genelinde analiz başlatılamadı. Lütfen tekrar deneyin veya destek ile iletişime geçin.",
-                "detailed_analysis_error_status": "Bu rapor için detaylı analizde bir hata oluştu: {0}. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
+                "detailed_analysis_error_status": "Bu rapor için detaylı analizde bir hata oluştu: {llm_analysis_error}. Lütfen günlükleri kontrol edin veya destek ile iletişime geçin.",
                 "detailed_analysis_still_inprogress": "Detaylı site genelinde LLM analizi hala devam ediyor. Lütfen tekrar kontrol edin.",
                 "detailed_analysis_initiated": "Detaylı site genelinde analiz başlatıldı. Bu biraz zaman alabilir. İlerlemeyi buradan takip edebilirsiniz.", # NEW
                 "error_checking_report_status": "Rapor durumu kontrol edilirken hata oluştu. Lütfen tekrar deneyin.",
@@ -295,7 +298,7 @@ class LanguageSupport:
                 "select_ai_model_label": "AI Modelini Seçin:",
                 "model_o10": "o10 (Gemini)",
                 "model_Se10": "Se10 (Mistral)",
-                "view_seo_report_expander_label": "SEO Raporunu Görüntüle",
+                "view_seo_report_expander_label": "📝 SEO Raporunu Görüntüle",
                 "your_website_report_label": "Rapor: {0}",
                 "no_text_report_available": "Metin raporu mevcut değil.",
                 "analysis_running_sidebar_info": "Analiz devam ediyor. Bazı kontroller ve gezinme bağlantıları geçici olarak devre dışı bırakıldı.",
@@ -308,12 +311,12 @@ class LanguageSupport:
                 "welcome_message": "nevaR Web Servislerine Hoş Geldiniz!",
                 "welcome_seo": "nevaR Beta'ya Hoş Geldiniz!",
                 "welcome_authenticated": "Hoş geldiniz, {0}!",
-                "logged_in_as": "Giriş yapıldı: **{0}**",
+                "logged_in_as": "Giriş yapıldı: **{username}**",
                 "analysis_complete_message": "✅URL'niz için analiz tamamlandı.",
                 "analyzing_website": "Web siteniz analiz ediliyor, lütfen bekleyin...",
                 "found_existing_report": "Bu URL için mevcut bir rapor bulundu.",
                 "analysis_failed": "Web sitesi analizi başarısız oldu. Lütfen tekrar deneyin.",
-                "analysis_results_for_url": "Şunun için analiz sonuçları: {0}",
+                "analysis_results_for_url": "Şunun için analiz sonuçları: {url}",
                 "authentication_required": "Bu hizmeti kullanmak için önce giriş yapmanız gerekiyor.",
                 "login_failed": "Kimlik doğrulama başarısız oldu. Lütfen API anahtarınızı kontrol edin.",
                 "enter_api_key_label": "Devam etmek için lütfen API anahtarınızı girin:",
@@ -376,7 +379,7 @@ class LanguageSupport:
                 "report_up_to_date_toast": "Rapor güncel.", # NEW
 
                 # SEO Helper - Task Panel (Content Generation CTA Progress)
-                "content_tasks_expander_title": "İçerik Üretim Görevleri İlerlemesi", # NEW
+                "content_tasks_expander_title": "📝 İçerik Üretim Görevleri İlerlemesi ↕️", # NEW
                 "cta_status_paused_at": "Makale görevi hazırlığı '{title}' için duraklatıldı.", # NEW
                 "cta_status_awaiting_response_for": "Makale görevi '{title}' için yanıt bekleniyor.", # NEW
                 "cta_status_paused_at_product": "Ürün görevi hazırlığı '{title}' için duraklatıldı.", # NEW
