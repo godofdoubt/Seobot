@@ -1,8 +1,11 @@
+
+
 #pages/2_Article_Writer.py
 import streamlit as st
 import asyncio
 import os
 import logging
+import re # Added for parsing tone strings
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -19,7 +22,7 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
 # Streamlit Page Configuration
 st.set_page_config(
-    page_title="Article Writer - Se10 AI",
+    page_title="Article Writer - RAIVEN",
     page_icon="✍️",
     layout="wide",
     initial_sidebar_state="auto"
@@ -54,10 +57,16 @@ def render_article_writer_sidebar_options():
             st.session_state.article_options = {
                 "focus_keyword": "",
                 "content_length": "Medium",
-                "tone": "Professional",
-                "keywords": "", # Additional keywords
+                "tone": ["Professional"], # MODIFIED: Default to a list
+                "keywords": "",
                 "custom_title": ""
             }
+        # Ensure 'tone' key exists and is a list, even if article_options dict exists but tone is missing/wrong type
+        elif "tone" not in st.session_state.article_options or \
+             not isinstance(st.session_state.article_options.get("tone"), list) or \
+             not st.session_state.article_options.get("tone"): # Ensure it's not an empty list or None
+            st.session_state.article_options["tone"] = ["Professional"]
+
 
         st.session_state.article_options["focus_keyword"] = st.sidebar.text_input(
             label=language_manager.get_text("focus_keyword", lang, fallback="Focus Keyword"),
@@ -86,27 +95,46 @@ def render_article_writer_sidebar_options():
             k for k, v in content_length_display_options_map.items() if v == selected_length_display
         ][0]
 
-        tone_internal_options = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"]
+        # --- MODIFIED TONE SELECTION ---
+        tone_internal_options = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly", "Informative", "Creative", "Descriptive"]
         tone_display_options_map = {
             "Professional": language_manager.get_text("tone_professional", lang, fallback="Professional"),
             "Casual": language_manager.get_text("tone_casual", lang, fallback="Casual"),
             "Enthusiastic": language_manager.get_text("tone_enthusiastic", lang, fallback="Enthusiastic"),
             "Technical": language_manager.get_text("tone_technical", lang, fallback="Technical"),
             "Friendly": language_manager.get_text("tone_friendly", lang, fallback="Friendly"),
+            "Informative": language_manager.get_text("tone_informative", lang, fallback="Informative"),
+            "Creative": language_manager.get_text("tone_creative", lang, fallback="Creative"),
+            "Descriptive": language_manager.get_text("tone_descriptive", lang, fallback="Descriptive"),
         }
-        current_tone_internal = st.session_state.article_options.get("tone", "Professional")
-        if current_tone_internal not in tone_internal_options:
-            current_tone_internal = "Professional"
-            st.session_state.article_options["tone"] = "Professional"
+        
+        current_tones_internal_list = st.session_state.article_options.get("tone", ["Professional"])
+        if not isinstance(current_tones_internal_list, list): # Defensive: ensure it's a list
+            current_tones_internal_list = [str(current_tones_internal_list)] if current_tones_internal_list else ["Professional"]
+        
+        # Validate current tones against available options
+        validated_current_tones_internal = [t for t in current_tones_internal_list if t in tone_internal_options]
+        if not validated_current_tones_internal: # If list becomes empty after validation
+            validated_current_tones_internal = ["Professional"]
+        st.session_state.article_options["tone"] = validated_current_tones_internal # Update session state
 
-        selected_tone_display = st.sidebar.selectbox(
-            label=language_manager.get_text("tone", lang, fallback="Article Tone"),
-            options=[tone_display_options_map[opt] for opt in tone_internal_options],
-            index=tone_internal_options.index(current_tone_internal)
+        multiselect_options_display = [tone_display_options_map[opt] for opt in tone_internal_options]
+        multiselect_default_display = [tone_display_options_map[t] for t in validated_current_tones_internal if t in tone_display_options_map]
+
+        selected_tones_display = st.sidebar.multiselect(
+            label=language_manager.get_text("tone", lang, fallback="Article Tone(s)"),
+            options=multiselect_options_display,
+            default=multiselect_default_display,
+            help=language_manager.get_text("tone_multiselect_help", lang, fallback="Select one or more tones for the article")
         )
+        
         st.session_state.article_options["tone"] = [
-            k for k, v in tone_display_options_map.items() if v == selected_tone_display
-        ][0]
+            k for k, v in tone_display_options_map.items() if v in selected_tones_display
+        ]
+        # Ensure at least one tone is selected, if not, default to Professional
+        if not st.session_state.article_options["tone"]:
+            st.session_state.article_options["tone"] = ["Professional"]
+        # --- END MODIFIED TONE SELECTION ---
 
         st.session_state.article_options["keywords"] = st.sidebar.text_area(
             label=language_manager.get_text("custom_keywords", lang, fallback="Additional Keywords (optional)"),
@@ -124,10 +152,107 @@ def render_article_writer_sidebar_options():
                 st.sidebar.warning(language_manager.get_text("focus_keyword_required_warning", lang, fallback="Focus Keyword is required to generate an article."))
             else:
                 st.session_state.article_generation_requested = True
-    # else:
-    #     st.sidebar.info(language_manager.get_text("analyze_site_for_article_options", lang,
-    #     fallback="Analyze a site in SEO Helper to see article options."))
 
+# Helper function to convert a display tone string (possibly translated, possibly combined)
+# to an English-based internal tone string for parsing.
+def convert_display_tone_to_internal_string(
+    display_tone_str: str, 
+    internal_tone_options: list, 
+    current_lang: str, 
+    lang_manager_instance # Pass language_manager directly
+) -> str:
+    if not isinstance(display_tone_str, str) or not display_tone_str.strip():
+        return "Professional" # Default internal string if input is invalid
+
+    # 1. Create the display map for the current language: e.g., {"Professional": "Profesyonel", "Informative": "Bilgilendirici"}
+    # The keys for lang_manager_instance.get_text are like "tone_professional", "tone_informative"
+    current_lang_tone_display_map = {
+        opt: lang_manager_instance.get_text(f"tone_{opt.lower().replace(' ', '_')}", current_lang, fallback=opt)
+        for opt in internal_tone_options
+    }
+    
+    # 2. Create the reverse map: e.g., {"Profesyonel": "Professional", "Bilgilendirici": "Informative"}
+    reverse_display_to_internal_map = {v: k for k, v in current_lang_tone_display_map.items()}
+
+    # 3. Split the input display_tone_str by common delimiters
+    parts = re.split(r'\s+(?:and|&)\s+|\s*,\s*', display_tone_str, flags=re.IGNORECASE)
+    
+    processed_internal_parts = []
+    
+    for part_val in parts:
+        part_stripped = part_val.strip()
+        if not part_stripped:
+            continue
+
+        mapped_internal_tone = None
+        # Attempt A: Check if part_stripped is already a valid internal English tone (case-insensitive)
+        for internal_opt in internal_tone_options:
+            if part_stripped.lower() == internal_opt.lower():
+                mapped_internal_tone = internal_opt # Use canonical casing from internal_options
+                break
+        
+        if mapped_internal_tone:
+            processed_internal_parts.append(mapped_internal_tone)
+            continue
+
+        # Attempt B: Check if part_stripped is a translated display name (case-insensitive match with display names)
+        found_in_reverse_map = False
+        for display_name_from_map, internal_name_from_map in reverse_display_to_internal_map.items():
+            if part_stripped.lower() == display_name_from_map.lower():
+                # Use the internal name corresponding to this display name
+                processed_internal_parts.append(internal_name_from_map)
+                found_in_reverse_map = True
+                break
+        
+        if found_in_reverse_map:
+            continue
+            
+        # If a part is not found as internal or translated, it's an unmappable part.
+        # We return the original display_tone_str to let parse_tone_string_to_list handle it.
+        # parse_tone_string_to_list will then likely default or partially map if other parts are valid.
+        return display_tone_str 
+
+    if not processed_internal_parts:
+        # This could happen if display_tone_str was empty or only whitespace after splitting and stripping.
+        return "Professional" # Default if no valid parts were extracted
+
+    # Join unique parts with a comma, which parse_tone_string_to_list can handle
+    return ", ".join(list(dict.fromkeys(processed_internal_parts)))
+
+
+# Helper function to parse tone strings into a list of valid tones
+def parse_tone_string_to_list(tone_str: str, valid_tones_list: list) -> list:
+    if not isinstance(tone_str, str) or not tone_str.strip():
+        return ["Professional"] # Default if input is not string or empty
+
+    # Check if the entire string is a valid single option first (case-insensitive for common single words)
+    # This primarily helps if valid_tones_list has "Professional" and tone_str is "professional"
+    for valid_tone_single in valid_tones_list:
+        if tone_str.lower() == valid_tone_single.lower():
+            return [valid_tone_single] # Return with original casing from valid_tones_list
+    
+    # If the exact string is in the list (e.g. "Professional" in ["Professional", ...])
+    if tone_str in valid_tones_list:
+        return [tone_str]
+
+    # Simple parsing for combined tones (e.g., "Friendly and informative", "Creative, Enthusiastic")
+    # This regex splits by " and ", "&" or "," potentially surrounded by spaces.
+    # Make delimiter matching case-insensitive for "and" / "AND"
+    parts = re.split(r'\s+(?:and|&)\s+|\s*,\s*', tone_str, flags=re.IGNORECASE)
+    parsed_tones = []
+    for part in parts:
+        # Try to match part (case-insensitive) to a valid tone (preserving valid tone's casing)
+        matched_tone = None
+        for valid_opt in valid_tones_list:
+            if part.strip().lower() == valid_opt.lower():
+                matched_tone = valid_opt
+                break
+        if matched_tone:
+            parsed_tones.append(matched_tone)
+
+    if not parsed_tones: # If parsing yielded nothing
+        return ["Professional"] # Default if no valid tones found
+    return list(set(parsed_tones)) # Return unique tones
 
 async def main():
     init_shared_session_state()
@@ -138,12 +263,15 @@ async def main():
 
     is_triggered_by_seo_helper = False
     task_title_from_trigger = None
+    
+    # Define the expanded list of tones for parsing
+    expanded_tone_internal_options = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly", "Informative", "Creative", "Descriptive"]
+
     if st.session_state.get("trigger_article_suggestion_from_seo_helper", False):
         logging.info("Article Writer: Triggered by SEO Helper for option pre-fill / generation.")
         is_triggered_by_seo_helper = True
-        # Pop the trigger details to ensure they are processed once for pre-filling
         task_details = st.session_state.pop("article_suggestion_to_trigger_details", None)
-        st.session_state.trigger_article_suggestion_from_seo_helper = False # Clear trigger
+        st.session_state.trigger_article_suggestion_from_seo_helper = False
 
         if task_details and isinstance(task_details, dict):
             if "article_options" not in st.session_state or not isinstance(st.session_state.article_options, dict):
@@ -157,10 +285,25 @@ async def main():
             st.session_state.article_options["content_length"] = task_length_val if task_length_val in valid_lengths else "Medium"
             if task_length_val not in valid_lengths and task_length_val != "N/A (Key Missing)": logging.warning(f"AW - SEO Helper Trigger: Invalid content length '{task_length_val}'. Defaulting to Medium.")
 
-            valid_tones = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"]
-            task_tone_val = task_details.get("article_tone")
-            st.session_state.article_options["tone"] = task_tone_val if task_tone_val in valid_tones else "Professional"
-            if task_tone_val not in valid_tones and task_tone_val != "N/A (Key Missing)": logging.warning(f"AW - SEO Helper Trigger: Invalid tone '{task_tone_val}'. Defaulting to Professional.")
+            # --- MODIFIED TONE PROCESSING FOR SEO HELPER TRIGGER ---
+            task_tone_val_str = task_details.get("article_tone", "Professional") # Default to "Professional" string
+            
+            # Convert display/mixed tone string to internal English-based string for parsing
+            internal_tone_str_for_parsing = convert_display_tone_to_internal_string(
+                task_tone_val_str,
+                expanded_tone_internal_options,
+                lang, # current language
+                language_manager # language_manager instance
+            )
+            parsed_tones_list = parse_tone_string_to_list(internal_tone_str_for_parsing, expanded_tone_internal_options)
+            
+            st.session_state.article_options["tone"] = parsed_tones_list
+            
+            # Logging condition for original tone string from task_details
+            if task_tone_val_str != "N/A (Key Missing)" and \
+               (not parsed_tones_list or (parsed_tones_list == ["Professional"] and task_tone_val_str.lower() not in ["professional", "Professional"])):
+                logging.warning(f"AW - SEO Helper Trigger: Original suggested tone '{task_tone_val_str}' was processed as {parsed_tones_list}. Original may have been unmappable or was inherently 'Professional'.")
+            # --- END MODIFIED TONE PROCESSING ---
 
             additional_kws_val = task_details.get("additional_keywords", [])
             st.session_state.article_options["keywords"] = ", ".join(additional_kws_val) if isinstance(additional_kws_val, list) else (str(additional_kws_val) if additional_kws_val else "")
@@ -173,12 +316,8 @@ async def main():
                 logging.warning("Article Writer: Triggered by SEO Helper, but focus_keyword is missing. Article generation not auto-requested.")
         else:
             logging.warning("Article Writer: Triggered by SEO Helper, but task_details are missing or invalid.")
-            is_triggered_by_seo_helper = False # Reset as trigger was invalid
+            is_triggered_by_seo_helper = False
         
-        # Ensure these are cleared if they were set by older logic, though pop should handle article_suggestion_to_trigger_details
-        # st.session_state.trigger_article_suggestion_from_seo_helper = False # Already done above
-        # st.session_state.article_suggestion_to_trigger_details = None # Already popped
-
     st.title(language_manager.get_text("article_writer_button", lang, fallback="Article Writer"))
 
     if st.session_state.current_page != "article":
@@ -222,17 +361,13 @@ async def main():
            (not is_triggered_by_seo_helper and is_generic_welcome_candidate and current_first_message != final_welcome_message):
              st.session_state.messages[0]["content"] = final_welcome_message
 
-    # --- MODIFIED BLOCK START: Process list/item(s) of articles from SEO Helper ---
     articles_processed_in_this_run = False
     articles_to_add_to_chat = []
-    processed_article_titles_this_run = set() # To help de-duplicate within this run
+    processed_article_titles_this_run = set() 
 
-    # 1. Process the primary state: articles_pending_display_on_aw (list of dicts)
-    # Use pop to get and remove the data, ensuring it's processed once.
     pending_articles_data = st.session_state.pop("articles_pending_display_on_aw", None) 
 
     if pending_articles_data:
-        # Ensure pending_articles_data is treated as a list
         if not isinstance(pending_articles_data, list):
             logging.warning(f"Article Writer: 'articles_pending_display_on_aw' was not a list (type: {type(pending_articles_data)}). Wrapping in a list. Data: {str(pending_articles_data)[:200]}")
             pending_articles_data = [pending_articles_data]
@@ -245,33 +380,28 @@ async def main():
             else:
                 logging.warning(f"Article Writer: Skipping invalid article_details from 'articles_pending_display_on_aw' source: {article_details}")
     
-    # 2. For backward compatibility/transition: Check the old single-item state `display_newly_generated_article_on_aw`
-    # This is if seo_main_helper8.py is still setting this old variable.
     legacy_article_data = st.session_state.pop("display_newly_generated_article_on_aw", None)
     if legacy_article_data:
         if isinstance(legacy_article_data, dict) and "title" in legacy_article_data and "content" in legacy_article_data:
             legacy_article_title = legacy_article_data.get("title")
-            # Add if not already processed from the primary list (basic title check for de-duplication)
             if legacy_article_title not in processed_article_titles_this_run:
                 logging.info(f"Article Writer: Found and adding article from legacy state 'display_newly_generated_article_on_aw': {legacy_article_title}.")
                 articles_to_add_to_chat.append(legacy_article_data)
-                processed_article_titles_this_run.add(legacy_article_title) # Add to set for this run
+                processed_article_titles_this_run.add(legacy_article_title) 
             else:
                 logging.info(f"Article Writer: Article from legacy state '{legacy_article_title}' was already processed from 'articles_pending_display_on_aw' or is a duplicate. Skipping.")
         else:
              logging.warning(f"Article Writer: Invalid data found and cleared from legacy state 'display_newly_generated_article_on_aw': {legacy_article_data}")
 
     if articles_to_add_to_chat:
-        if "messages" not in st.session_state: # Ensure messages list exists
+        if "messages" not in st.session_state: 
             st.session_state.messages = []
 
         for i, article_details in enumerate(articles_to_add_to_chat):
-            title = article_details.get("title", f"Generated Article {i+1}") # Fallback title
+            title = article_details.get("title", f"Generated Article {i+1}") 
             content = article_details.get("content", "No content.")
             article_display_message_content = f"**{language_manager.get_text('generated_article_from_seo_helper_title', lang, title=title, fallback=f'Generated Article (from SEO Helper): {title}')}**\n\n{content}"
             
-            # Basic check to prevent adding the exact same message if it's already the last one.
-            # This is a simple safeguard against immediate rerun loops if pop() wasn't perfectly timed with reruns.
             is_already_last_message = False
             if st.session_state.messages and \
                st.session_state.messages[-1].get("role") == "assistant" and \
@@ -285,10 +415,8 @@ async def main():
             else:
                 logging.info(f"Article Writer: Article '{title}' (from SEO Helper transfer) appears to be a duplicate of the last message. Skipping append.")
                 
-    if articles_processed_in_this_run: # If any new articles were actually added to chat
+    if articles_processed_in_this_run:
         st.rerun() 
-    # --- MODIFIED BLOCK END ---
-
 
     display_suggestions_condition = (
         st.session_state.get("url") and
@@ -320,8 +448,7 @@ async def main():
                 if not isinstance(task, dict):
                     logging.warning(f"Article Writer: Skipping non-dict article task at index {i}: {task}")
                     continue
-
-                # task_data is used for populating sidebar options, keep it as is
+                
                 task_data = {}
                 required_keys_for_sidebar = ["focus_keyword", "content_length", "article_tone", "additional_keywords", "suggested_title"]
                 for r_key in required_keys_for_sidebar:
@@ -336,30 +463,20 @@ async def main():
                     st.markdown(f"**{language_manager.get_text('focus_keyword_label', lang, fallback='Focus Keyword')}:** {task_data.get('focus_keyword', 'N/A')}")
                     st.markdown(f"**{language_manager.get_text('content_length_label', lang, fallback='Content Length')}:** {task_data.get('content_length', 'N/A')}")
                     
-                    # Display tone using the mapped display name if possible
-                    tone_internal_options_display = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"] # Used for matching
-                    tone_display_map_expander = {
-                        "Professional": language_manager.get_text("tone_professional", lang, fallback="Professional"),
-                        "Casual": language_manager.get_text("tone_casual", lang, fallback="Casual"),
-                        "Enthusiastic": language_manager.get_text("tone_enthusiastic", lang, fallback="Enthusiastic"),
-                        "Technical": language_manager.get_text("tone_technical", lang, fallback="Technical"),
-                        "Friendly": language_manager.get_text("tone_friendly", lang, fallback="Friendly"),
-                    }
-                    task_tone_val_expander = task_data.get('article_tone', 'N/A')
-                    display_tone = tone_display_map_expander.get(task_tone_val_expander, task_tone_val_expander)
-                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {display_tone}")
+                    # Display original tone string from suggestion in expander
+                    task_tone_val_expander_str = task_data.get('article_tone', 'N/A')
+                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {task_tone_val_expander_str}")
 
 
                     add_keywords_val_display = task_data.get('additional_keywords', [])
                     if isinstance(add_keywords_val_display, list):
                         add_keywords_val_display = ", ".join(add_keywords_val_display) if add_keywords_val_display else "None"
-                    elif not add_keywords_val_display: # Handle "N/A (Key Missing)" or other non-list but empty values
+                    elif not add_keywords_val_display: 
                         add_keywords_val_display = "None"
                     st.markdown(f"**{language_manager.get_text('additional_keywords_label', lang, fallback='Additional Keywords')}:** {add_keywords_val_display}")
 
-                    # --- MODIFICATION START: Display additional fields ---
                     target_page_url_val = task.get('target_page_url')
-                    if target_page_url_val: # Only display if not None or empty
+                    if target_page_url_val: 
                         st.markdown(f"**{language_manager.get_text('target_page_url_label', lang, fallback='Target Page URL')}:** {target_page_url_val}")
 
                     content_gap_val = task.get('content_gap')
@@ -373,9 +490,7 @@ async def main():
                     outline_preview_val = task.get('outline_preview')
                     if outline_preview_val:
                         st.markdown(f"**{language_manager.get_text('outline_preview_label', lang, fallback='Outline Preview')}:**")
-                        # Using blockquote style for potentially longer/multi-line outline
                         st.markdown(f"> {str(outline_preview_val).replace(chr(10), chr(10) + '> ')}")
-                    # --- MODIFICATION END ---
 
                     if st.button(language_manager.get_text("use_this_suggestion_button", lang, fallback="Use This Suggestion"), key=f"use_suggestion_{i}"):
                         if "article_options" not in st.session_state: st.session_state.article_options = {}
@@ -386,10 +501,26 @@ async def main():
                         st.session_state.article_options["content_length"] = task_length_val if task_length_val in valid_lengths else "Medium"
                         if task_length_val not in valid_lengths and task_length_val != "N/A (Key Missing)": st.warning(f"Invalid content length '{task_length_val}' in suggestion. Defaulting to Medium.")
 
-                        valid_tones = ["Professional", "Casual", "Enthusiastic", "Technical", "Friendly"]
-                        task_tone_val = task_data.get("article_tone")
-                        st.session_state.article_options["tone"] = task_tone_val if task_tone_val in valid_tones else "Professional"
-                        if task_tone_val not in valid_tones and task_tone_val != "N/A (Key Missing)": st.warning(f"Invalid article tone '{task_tone_val}' in suggestion. Defaulting to Professional.")
+                        # --- MODIFIED TONE PROCESSING FOR "USE THIS SUGGESTION" ---
+                        task_tone_val_str_suggestion = task_data.get("article_tone", "Professional") # Default to "Professional" string
+                        
+                        # Convert display/mixed tone string to internal English-based string for parsing
+                        internal_tone_str_for_parsing_suggestion = convert_display_tone_to_internal_string(
+                            task_tone_val_str_suggestion,
+                            expanded_tone_internal_options,
+                            lang, # current language
+                            language_manager # language_manager instance
+                        )
+                        parsed_tones_list_suggestion = parse_tone_string_to_list(internal_tone_str_for_parsing_suggestion, expanded_tone_internal_options)
+                        
+                        st.session_state.article_options["tone"] = parsed_tones_list_suggestion
+                        
+                        # Warning condition for original tone string from task_data
+                        if task_tone_val_str_suggestion != "N/A (Key Missing)" and \
+                           (not parsed_tones_list_suggestion or \
+                            (parsed_tones_list_suggestion == ["Professional"] and task_tone_val_str_suggestion.lower() not in ["professional", "Professional"])):
+                            st.warning(f"Invalid or partially mapped article tone '{task_tone_val_str_suggestion}' in suggestion. Processed as: {parsed_tones_list_suggestion}.")
+                        # --- END MODIFIED TONE PROCESSING ---
 
                         additional_kws_val = task_data.get("additional_keywords", [])
                         st.session_state.article_options["keywords"] = ", ".join(additional_kws_val) if isinstance(additional_kws_val, list) else (str(additional_kws_val) if additional_kws_val and additional_kws_val != "N/A (Key Missing)" else "")
@@ -416,10 +547,10 @@ async def main():
         options = st.session_state.get("article_options", {})
         if not options.get("focus_keyword") or options.get("focus_keyword") == "N/A (Key Missing)":
             st.warning(language_manager.get_text("focus_keyword_required_warning", lang, fallback="Focus Keyword is required to generate an article. Please fill it in the sidebar."))
-            st.session_state.article_generation_requested = False # Reset flag
+            st.session_state.article_generation_requested = False 
         elif not st.session_state.get("text_report"):
             st.warning(language_manager.get_text("article_generation_prerequisites_warning", lang, fallback="Cannot generate article. Ensure a site is analyzed and topic is provided in the sidebar."))
-            st.session_state.article_generation_requested = False # Reset flag
+            st.session_state.article_generation_requested = False 
         else:
             with st.spinner(language_manager.get_text("generating_article", lang, fallback="Generating article... This may take a moment.")):
                 try:
@@ -427,20 +558,20 @@ async def main():
                     article_content = generate_article(
                         st.session_state.text_report,
                         st.session_state.url,
-                        current_article_options
+                        current_article_options # This now contains "tone" as a list
                     )
-                    if "messages" not in st.session_state: # Should exist, but defensive
+                    if "messages" not in st.session_state: 
                         st.session_state.messages = []
                     st.session_state.messages.append({"role": "assistant", "content": article_content})
                 except Exception as e:
                     logging.error(f"Error generating article: {e}", exc_info=True)
                     error_msg_text = language_manager.get_text('error_processing_request', lang, error=str(e), fallback=f"An error occurred: {str(e)}")
                     st.error(error_msg_text)
-                    if "messages" not in st.session_state: st.session_state.messages = [] # Defensive
+                    if "messages" not in st.session_state: st.session_state.messages = [] 
                     st.session_state.messages.append({"role": "assistant", "content": language_manager.get_text('could_not_generate_article', lang, fallback="Sorry, I couldn't generate the article at this time.")})
 
-            st.session_state.article_generation_requested = False # Reset flag after attempt
-            st.rerun() # Rerun to display the new article or error
+            st.session_state.article_generation_requested = False 
+            st.rerun() 
 
     if not st.session_state.get("text_report"):
         st.warning(language_manager.get_text("analyze_website_first_article", lang, fallback="Please analyze a website first in the SEO Helper page before I can help with article writing."))

@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 import httpx # For Mistral API calls
+from .llm_analysis_process_prompts import LLMAnalysisPrompts # Import the new prompts class
 
 class LLMAnalysisProcess:
     def __init__(self, gemini_model, logger, mistral_api_key=None, mistral_model_name=None):
@@ -59,20 +60,15 @@ class LLMAnalysisProcess:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        # Ensure Mistral is also asked for JSON if the prompt implies it
-        # The prompt itself asks for JSON output.
         payload = {
             "model": self.mistral_model_name,
             "messages": [{"role": "user", "content": prompt_text}],
-            "temperature": 0.7, # Example, adjust as needed. For JSON, lower might be better.
-            # Mistral's API has a response_format parameter for some models, e.g. "response_format": {"type": "json_object"}
-            # Check if your model/Mistral's current API supports this for more reliable JSON.
-            # For now, we rely on the prompt asking for JSON.
+            "temperature": 0.7, 
         }
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client: # Timeout for LLM calls
+            async with httpx.AsyncClient(timeout=90.0) as client: 
                 api_response = await client.post(api_url, headers=headers, json=payload)
-                api_response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
+                api_response.raise_for_status() 
             
             data = api_response.json()
             if data.get("choices") and data["choices"][0].get("message") and data["choices"][0]["message"].get("content"):
@@ -103,7 +99,7 @@ class LLMAnalysisProcess:
             "overall_tone": "",
             "target_audience": [],
             "topic_categories": [],
-            "llm_provider": "N/A" # To track which LLM was used
+            "llm_provider": "N/A"
         }
         if is_main_page:
             base_result.update({"header": [], "footer": []})
@@ -116,102 +112,17 @@ class LLMAnalysisProcess:
             self.logger.warning(f"No cleaned_text or headings_data found for URL {page_url}. LLM analysis might be ineffective.")
             return {**base_result, "error": "No content (cleaned_text or headings) available for analysis."}
         
-        max_text_len = 18000
+        max_text_len = 22000
         truncated_cleaned_text = cleaned_text[:max_text_len] + ('...' if len(cleaned_text) > max_text_len else '')
         
-        json_structure_for_llm = {
-            "keywords": ["string"],
-            "content_summary": "string",
-            "other_information_and_contacts": ["string"],
-            "suggested_keywords_for_seo": ["string"],
-            "overall_tone": "string",
-            "target_audience": ["string"],
-            "topic_categories": ["string"]
-        }
-        if is_main_page:
-            json_structure_for_llm.update({
-                "header": ["string"],
-                "footer": ["string"]
-            })
-
-        detailed_instructions_keywords = """1. **"keywords"**:
-        * Identify and list the top 7-10 most relevant and frequently occurring keywords or key phrases from the page content and headings.
-        * These should accurately represent the main topics and themes of the page.
-        * Prioritize multi-word phrases if they are more descriptive. Example: ["data analysis solutions", "cloud computing services", "enterprise software"]
-        * Return as a list of strings. If no distinct keywords are found, return an empty list []."""
-        detailed_instructions_summary = """2. **"content_summary"**:
-        * Provide a concise summary of the page content in 2-4 sentences (target 100-150 words).
-        * The summary must capture the main purpose, key offerings, or core information presented on the page.
-        * It should be informative and engaging.
-        * If the content is too sparse for a meaningful summary, provide a brief note like "Page content is minimal." """
-        detailed_instructions_contacts = """3. **"other_information_and_contacts"**:
-        * Extract any explicit contact information: email addresses, phone numbers, physical addresses.
-        * Identify specific company names, key product names and prices, or important service names mentioned.
-        * List social media profile URLs if clearly present.
-        * If the page mentions specific individuals (e.g., team members, authors), list their names and roles if available. Turkish names and surnames can be longer.
-        * Format each piece of information as a descriptive string in a list. Put the relevant information next to each other.
-        * Example: ["Email: contact@example.com", "Phone: (555) 123-4567", "Main Office: 123 Innovation Drive, Tech City", "Product: Alpha Suite", "Twitter: https://twitter.com/example"]
-        * If no such information is found, return an empty list []."""
-        detailed_instructions_seo_keywords = """4. **"suggested_keywords_for_seo"**:
-        * Based on the page content and its main topics, suggest 3-5 additional keywords or key phrases that could be targeted for low competitive SEO.
-        * Plus to those suggest 3-5 more should be relevant variations, related topics or potential long-tail and alternatives but relevant keywords. Dont use alternative region , city names if its not in the content.
-        * Consider user intent (informational, transactional, navigational). Example: ["benefits of data analysis", "best cloud providers for small business", "custom enterprise software development"]
-        * If no strong distinct suggestions can be made, return an empty list []."""
-        detailed_instructions_overall_tone = """5. **"overall_tone"**:
-        * Describe the general tone or style of the content on the page (e.g., formal, informal, professional, casual, authoritative, promotional, educational, humorous, technical).
-        * Provide a single, concise descriptive word or short phrase. Example: "professional and informative", "casual and engaging"."""
-        detailed_instructions_target_audience = """6. **"target_audience"**:
-        * Identify the primary target audience(s) for the content on this page. Consider who the content is intended for (e.g., businesses, consumers, technical professionals, students, specific demographics).
-        * List 1-3 distinct groups as strings. Example: ["small business owners", "software developers", "parents"]
-        * If not clearly discernible, return an empty list []."""
-        detailed_instructions_topic_categories = """7. **"topic_categories"**:
-        * Categorize the main topics or themes covered on the page into 2-4 broad categories. Think of general industry or subject areas.
-        * Example: ["Software Development", "Digital Marketing", "Financial Services", "Health & Wellness"]
-        * If no clear categories, return an empty list []."""
+        # Use LLMAnalysisPrompts to build the prompt
+        prompt = LLMAnalysisPrompts.build_single_page_analysis_prompt(
+            page_url=page_url,
+            truncated_cleaned_text=truncated_cleaned_text,
+            headings_data=headings_data,
+            is_main_page=is_main_page
+        )
         
-        prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
-    --
-    Analyze the following web page content for the URL: {page_url}
-    ---
-    **Page Content (Cleaned Text Snippet):**
-    ---
-    {truncated_cleaned_text}
-    ---
-    **Page Headings (JSON format):**
-    ---
-    {json.dumps(headings_data, indent=2, ensure_ascii=False)}
-    ---
-    Based on the provided text and headings, generate a JSON object strictly adhering to the following structure.
-    Output ONLY the JSON object. Do NOT include any explanatory text, markdown formatting, or anything else outside the JSON object itself.
-    {json.dumps(json_structure_for_llm, indent=2)}
-    **Detailed Instructions for populating each field in the JSON object:**
-    {detailed_instructions_keywords}
-    {detailed_instructions_summary}
-    {detailed_instructions_contacts}
-    {detailed_instructions_seo_keywords}
-    {detailed_instructions_overall_tone}
-    {detailed_instructions_target_audience}
-    {detailed_instructions_topic_categories}
-    """
-        if is_main_page:
-            detailed_instructions_header = """8. **"header"**:
-        * From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main header.
-        * This typically includes site navigation links (e.g., "Home", "About Us", "Services", "Contact"), site branding text (e.g., company name if prominently in header), or a primary tagline.
-        * Provide these as a list of strings. Each string can be a distinct link text or a phrase from the header.
-        * If no clear header text is discernible, return an empty list [].
-        * Example: ["Home", "Products", "Blog", "Login", "Site Title Example Inc."]"""
-            detailed_instructions_footer = """9. **"footer"**:
-        * From the "Page Content (Cleaned Text Snippet)", identify and extract text elements that likely constitute the website's main footer.
-        * This typically includes copyright notices, links to privacy policy, terms of service, sitemap, contact information repeated in the footer, or social media links.
-        * Provide these as a list of strings. Each string can be a distinct link text or a phrase from the footer.
-        * If no clear footer text is discernible, return an empty list [].
-        * Example: ["© 2024 Company Name", "Privacy Policy", "Terms of Use", "Contact Us", "Follow us on Twitter" , "Bizi Arayın : (555) 123-4567"]"""
-            prompt += f"""
-    {detailed_instructions_header}
-    {detailed_instructions_footer}"""
-        prompt += """
-    Ensure your entire response is ONLY a valid JSON object.
-    """
         llm_response_str = None
         llm_provider = "N/A"
         error_message_for_return = "LLM analysis failed for both primary and fallback providers."
@@ -223,9 +134,9 @@ class LLMAnalysisProcess:
                 llm_provider = "Gemini"
             
             if not llm_response_str:
-                if self.gemini_model: # Only log Gemini failure if it was attempted
+                if self.gemini_model: 
                     self.logger.warning(f"Gemini returned empty or no-text response for URL: {page_url}. Attempting Mistral fallback.")
-                else: # Gemini was not configured/initialized
+                else: 
                     self.logger.info(f"Gemini not configured. Attempting analysis with Mistral for URL: {page_url}.")
 
                 if self.mistral_api_key and self.mistral_model_name:
@@ -233,25 +144,21 @@ class LLMAnalysisProcess:
                     if mistral_error:
                         self.logger.error(f"Mistral fallback for {page_url} also failed: {mistral_error}")
                         error_message_for_return = f"Gemini primary failed/not configured; Mistral fallback failed: {mistral_error}"
-                        # Fall through to return error based on error_message_for_return
                     elif mistral_response:
                         llm_response_str = mistral_response
                         llm_provider = "Mistral (fallback)"
                         self.logger.info(f"Successfully used Mistral as fallback for LLM analysis for URL: {page_url}")
-                    else: # Mistral response was None but no error string
+                    else: 
                         self.logger.error(f"Mistral fallback for {page_url} returned empty response without explicit error.")
                         error_message_for_return = "Gemini primary failed/not configured; Mistral fallback returned empty."
-                        # Fall through
                 else:
                     self.logger.warning(f"LLM (Gemini) failed or not configured, and Mistral is not configured. Cannot analyze URL: {page_url}")
                     error_message_for_return = "Primary LLM (Gemini) failed or not configured; Mistral fallback not configured."
-                    # Fall through
             
-            if not llm_response_str: # If still no response string after all attempts
+            if not llm_response_str: 
                 self.logger.error(f"All LLM attempts failed for URL: {page_url}. Final error state: {error_message_for_return}")
                 return {**base_result, "error": error_message_for_return, "llm_provider": llm_provider}
 
-            # Proceed with parsing if llm_response_str is populated
             try:
                 cleaned_llm_response_str = llm_response_str.strip()
                 if cleaned_llm_response_str.startswith("```json"):
@@ -294,7 +201,6 @@ class LLMAnalysisProcess:
         tech_sections = []
         tech_sections.append("## Technical SEO Overview")
         
-        # Basic crawl statistics
         crawled_pages = tech_stats.get('crawled_internal_pages_count', 0)
         analysis_duration = tech_stats.get('analysis_duration_seconds', 0)
         tech_sections.append(f"**Website Analysis Summary:**")
@@ -308,7 +214,6 @@ class LLMAnalysisProcess:
                 tech_sections.append(f"- Analysis duration: {seconds} seconds")
         tech_sections.append("")
         
-        # Content statistics
         total_content_length = tech_stats.get('total_cleaned_content_length', 0)
         avg_content_length = tech_stats.get('average_cleaned_content_length_per_page', 0)
         total_headings = tech_stats.get('total_headings_count', 0)
@@ -322,7 +227,6 @@ class LLMAnalysisProcess:
             tech_sections.append(f"- Total headings found: {total_headings}")
         tech_sections.append("")
         
-        # Image and Alt text analysis
         total_images = tech_stats.get('total_images_count', 0)
         missing_alt_tags = tech_stats.get('total_missing_alt_tags_count', 0)
         alt_text_coverage = tech_stats.get('alt_text_coverage_percentage', 0)
@@ -343,7 +247,6 @@ class LLMAnalysisProcess:
                 tech_sections.append("- ❌ **Critical Issue**: Most images are missing alt text")
             tech_sections.append("")
         
-        # Mobile optimization
         mobile_pages = tech_stats.get('pages_with_mobile_viewport_count', 0)
         mobile_optimization = tech_stats.get('mobile_optimization_percentage', 0)
         
@@ -362,7 +265,6 @@ class LLMAnalysisProcess:
                 tech_sections.append("- ❌ **Critical Issue**: Many pages are not mobile-optimized")
             tech_sections.append("")
         
-        # Robots.txt analysis
         robots_found = tech_stats.get('robots_txt_found', False)
         tech_sections.append(f"**Technical Configuration:**")
         tech_sections.append(f"- Robots.txt file: {'✅ Found' if robots_found else '❌ Not found'}")
@@ -373,8 +275,6 @@ class LLMAnalysisProcess:
         return tech_sections
 
     async def _generate_ai_recommendations(self, llm_analysis_all: dict) -> str:
-        """Generate AI-powered recommendations based on the complete website analysis."""
-        # Determine if primary LLM (Gemini) is available
         primary_llm_available = bool(self.gemini_model)
         fallback_llm_available = bool(self.mistral_api_key and self.mistral_model_name)
 
@@ -424,126 +324,14 @@ class LLMAnalysisProcess:
             "all_topic_categories": list(set(all_topic_categories)),
             "all_target_audiences": list(set(all_target_audiences)),
             "all_content_tones": list(set(all_tones)),
-            "content_summaries_sample": all_summaries[:10],
+            "content_summaries_sample": all_summaries[:15],
             "main_page_header_elements": main_page_analysis.get('header', []),
             "main_page_footer_elements": main_page_analysis.get('footer', []),
             "technical_statistics": technical_stats
         }
         
-        # Enhanced prompt with improved structure
-        prompt = f"""
-Based on the comprehensive SEO and content analysis of this website, provide strategic recommendations and actionable SEO optimization strategies.
-
-WEBSITE ANALYSIS DATA:
-{json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
-
-Generate recommendations in the following JSON structure:
-
-{{
-    "strategic_recommendations": [
-        {{
-            "category": "string (e.g., 'SEO Optimization', 'Content Strategy', 'User Experience', 'Site Structure')",
-            "title": "string (brief title for the recommendation)",
-            "description": "string (detailed explanation and actionable steps)",
-            "priority": "string (High/Medium/Low)",
-            "implementation_difficulty": "string (Easy/Medium/Hard)",
-            "based_on_data": "string (specific data point or metric that led to this recommendation)"
-        }}
-    ],
-    "seo_content_optimization": [
-        {{
-            "focus_area": "string (e.g., 'Keyword Strategy', 'Content Gaps', 'Internal Linking', 'Meta Optimization')",
-            "current_issue": "string (specific issue found in the data)",
-            "recommendation": "string (specific actionable recommendation)",
-            "expected_impact": "string (what improvement to expect)",
-            "pages_affected": ["string (specific page URLs if applicable)"]
-        }}
-    ],
-    "content_strategy_insights": [
-        {{
-            "insight": "string (key insight about content strategy based on analysis)",
-            "supporting_data": "string (specific data that supports this insight)",
-            "action_items": [
-                {{
-                    "action_type": "string (Article/Product/Page Update/Technical Fix)",
-                    "page_url": "string (target page URL or 'new page')",
-                    "title": "string (suggested title)",
-                    "description": "string (detailed action description)",
-                    "social_media_opportunity": "string (optional - social media angle)",
-                    "media_suggestions": "string (image/video recommendations)",
-                    "headings_structure": ["string (suggested H1, H2, H3 structure)"],
-                    "priority": "string (High/Medium/Low)"
-                }}
-            ]
-        }}
-    ],
-    "article_content_tasks": [
-        {{
-            "focus_keyword": "string (primary keyword for the article)",
-            "content_length": "string (Small: 300-500 words, Medium: 500-1000 words, Long: 1000-2000 words, Very Long: 2000+ words)",
-            "article_tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
-            "additional_keywords": ["string (optional supporting keywords)"],
-            "suggested_title": "string (SEO-optimized title)",
-            "target_page_url": "string (where this content should be published)",
-            "content_gap_addressed": "string (what gap this content fills)",
-            "target_audience": "string (specific audience this targets)"
-        }}
-    ],
-    "product_content_tasks": [
-        {{
-            "product_name": "string (product/service name)",
-            "product_details": {{
-                "features": ["string (list of key features)"],
-                "benefits": ["string (list of key benefits)"],
-                "target_audience": "string (specific target audience)"
-            }},
-            "tone": "string (Professional/Casual/Enthusiastic/Technical/Friendly)",
-            "description_length": "string (Short: 50-150 words, Medium: 150-300 words, Long: 300+ words)",
-            "target_page_url": "string (where this product content should appear)",
-            "seo_keywords": ["string (relevant keywords for this product)"],
-            "competitive_advantage": "string (what makes this product unique based on analysis)"
-        }}
-    ]
-}}
-
-CRITICAL REQUIREMENTS:
-
-1. **Language Detection**: If website content (keywords, summaries, topic categories) is primarily in Turkish, respond entirely in Turkish. Otherwise, use English.
-
-2. **Data-Driven Recommendations**: Base ALL recommendations on the actual technical_statistics and website analysis provided. Reference specific metrics, issues, or opportunities found in the data.
-
-3. **Strategic Focus Areas** (provide 3-5 recommendations covering):
-   - SEO technical issues (alt text coverage, mobile optimization, site speed)
-   - Content gaps identified from keyword analysis
-   - User experience improvements based on site structure
-   - Conversion optimization opportunities
-
-4. **Specific Technical Issues to Address**:
-   - Alt text coverage percentage from technical_statistics
-   - Mobile responsiveness issues
-   - Site structure and navigation problems
-   - Page loading performance
-   - Internal linking opportunities
-
-5. **Content Strategy Requirements**:
-   - Identify content gaps from keyword analysis
-   - Consider target audiences and topic categories found
-   - Address content tone consistency issues
-   - Suggest specific page improvements with URLs
-
-6. **Actionable Items Must Include**:
-   - Specific page URLs where applicable
-   - Exact keywords to target
-   - Measurable outcomes expected
-   - Implementation timeline/difficulty
-   - Social media integration opportunities
-
-7. **No Generic Advice**: Every recommendation must reference specific data points from the analysis. Avoid generic SEO advice not tied to the actual website data.
-
-8. **Prioritization**: Rank recommendations by potential impact and implementation difficulty based on the technical and content analysis provided.
-
-Output ONLY the JSON object with no additional text, markdown, or formatting.
-"""
+        # Use LLMAnalysisPrompts to build the AI recommendations prompt
+        prompt = LLMAnalysisPrompts.build_ai_recommendations_prompt(website_data_summary)
         
         ai_response_str = None
         llm_provider_recs = "N/A"
@@ -558,7 +346,7 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
             if not ai_response_str:
                 if primary_llm_available:
                      self.logger.warning("Gemini returned empty response for AI recommendations. Attempting Mistral fallback.")
-                else: # Gemini not available
+                else: 
                      self.logger.info("Gemini not available. Attempting AI recommendations with Mistral.")
 
                 if fallback_llm_available:
@@ -581,7 +369,6 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
                 self.logger.error(f"All LLM attempts for AI recommendations failed. Final error state: {error_message_for_recs}")
                 return f"AI recommendations could not be generated. {error_message_for_recs}"
             
-            # Proceed with parsing if ai_response_str is populated
             try:
                 cleaned_response = ai_response_str.strip()
                 if cleaned_response.startswith("```json"):
@@ -592,7 +379,6 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
                 
                 recommendations_data = json.loads(cleaned_response)
                 
-                # Enhanced formatting logic for new JSON structure
                 formatted_recommendations = []
                 
                 strategic_recs = recommendations_data.get('strategic_recommendations', [])
@@ -666,7 +452,6 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
                                     formatted_recommendations.append(f"  - **Suggested Headings**: {', '.join(item.get('headings_structure'))}")
                         formatted_recommendations.append("")
 
-                # New sections for article and product tasks
                 article_tasks = recommendations_data.get('article_content_tasks', [])
                 if article_tasks:
                     formatted_recommendations.append("### Article Content Tasks")
@@ -736,9 +521,8 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
         report_sections.append("Generated: " + time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
         report_sections.append("")
         
-        # Add technical statistics section early in the report
         tech_sections = self._format_technical_statistics_section(technical_stats)
-        report_sections.extend(tech_sections) # Moved tech_sections earlier
+        report_sections.extend(tech_sections) 
         report_sections.append("")
         
         if main_page_analysis:
@@ -891,7 +675,6 @@ Output ONLY the JSON object with no additional text, markdown, or formatting.
                          report_sections.append("    No specific contact information or key mentions identified on this subpage.")
                 report_sections.append("")
             
-            # ... (Site-Wide Subpage Analysis sections - unchanged) ...
             if all_subpage_keywords:
                 keyword_count = {k: all_subpage_keywords.count(k) for k in set(all_subpage_keywords) if k}
                 sorted_keywords = sorted(keyword_count.items(), key=lambda x: x[1], reverse=True)

@@ -1,5 +1,3 @@
-
-
 # /SeoTree/main.py
 import streamlit as st
 import os
@@ -22,6 +20,8 @@ from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
 from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor
+
+
 
 # --- Configuration & Setup ---
 load_dotenv()
@@ -238,99 +238,260 @@ async def process_url(url, lang="en"):
 
 # --- DATA EXTRACTION AND VISUALIZATION FUNCTIONS ---
 
-def extract_metrics_from_report(text_report):
-    """Extract key metrics from the SEO report for visualization."""
+def extract_metrics_from_report(full_report_json, text_report_fallback=None):
+    """
+    Extract key metrics from the SEO report for visualization.
+    Prioritizes data from full_report_json (structured JSON) and uses
+    text_report_fallback for items not easily available in structured form
+    or as a general fallback. If SEO score is not found, it's calculated.
+    """
     metrics = {
         'seo_score': None,
         'issues_by_priority': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0},
-        'page_metrics': {}, # e.g., word_count, images, internal_links, external_links, headings
-        'technical_metrics': {'robots_txt_status': None} # e.g., mobile_friendly, ssl_secure, page_speed, meta_description, title_tag, robots_txt_status
+        'page_metrics': {},  # word_count, images, internal_links, external_links, headings, missing_alt_tags (for main URL)
+        'technical_metrics': {}  # mobile_friendly, ssl_secure, page_speed, title_tag, robots_txt_status (for main URL/site)
     }
 
-    if not text_report: # Handle empty report
-        return metrics
+    if not full_report_json and not text_report_fallback:
+        logging.warning("extract_metrics_from_report: Both full_report_json and text_report_fallback are None. Returning empty metrics.")
+        # Proceed to calculate score with default empty metrics, it will likely be low.
+        pass # Let it fall through to calculation
 
-    lines = text_report.split('\n')
+    main_url_from_json = full_report_json.get('url') if full_report_json else None
+    main_page_llm_tech_stats = None
+    main_page_stats_from_page_statistics = None
+    page_metrics_source = None # Will hold the source for main page's detailed stats
 
-    # Extract SEO Score
-    for line in lines:
-        if 'seo score' in line.lower() or 'overall score' in line.lower():
-            score_match = re.search(r'(\d+)(?:/100|\%)?', line) # Made /100 or % optional
-            if score_match:
+    # Identify main page data sources from JSON
+    if full_report_json and main_url_from_json:
+        llm_analysis_data = full_report_json.get('llm_analysis', {})
+        if isinstance(llm_analysis_data, dict) and llm_analysis_data.get('url') == main_url_from_json:
+            if 'tech_stats' in llm_analysis_data and isinstance(llm_analysis_data['tech_stats'], dict):
+                main_page_llm_tech_stats = llm_analysis_data['tech_stats']
+
+        page_statistics_data = full_report_json.get('page_statistics', {})
+        if isinstance(page_statistics_data, dict) and main_url_from_json in page_statistics_data:
+            if isinstance(page_statistics_data[main_url_from_json], dict):
+                main_page_stats_from_page_statistics = page_statistics_data[main_url_from_json]
+        
+        page_metrics_source = main_page_llm_tech_stats or main_page_stats_from_page_statistics
+
+
+    # 1. SEO Score (Attempt to find pre-existing)
+    if full_report_json:
+        score_source_candidates = []
+        if main_page_llm_tech_stats:
+            score_source_candidates.extend([
+                main_page_llm_tech_stats.get('overall_seo_score'), main_page_llm_tech_stats.get('seo_score'),
+                main_page_llm_tech_stats.get('estimated_seo_score'), main_page_llm_tech_stats.get('score'),
+                main_page_llm_tech_stats.get('estimated_score')
+            ])
+        if 'llm_analysis' in full_report_json and isinstance(full_report_json['llm_analysis'], dict) and \
+           full_report_json['llm_analysis'].get('url') == main_url_from_json:
+            llm_root = full_report_json['llm_analysis']
+            score_source_candidates.extend([
+                llm_root.get('overall_seo_score'), llm_root.get('seo_score'),
+                llm_root.get('estimated_seo_score'), llm_root.get('score'), llm_root.get('estimated_score')
+            ])
+        score_source_candidates.extend([
+            full_report_json.get('overall_seo_score'), full_report_json.get('seo_score'),
+            full_report_json.get('estimated_seo_score'), full_report_json.get('score'),
+            full_report_json.get('estimated_score')
+        ])
+        parsed_score = None
+        for score_source in score_source_candidates:
+            if score_source is not None:
                 try:
-                    metrics['seo_score'] = int(score_match.group(1))
-                    break
-                except ValueError:
-                    logging.warning(f"Could not parse SEO score from: {line}")
+                    score_value_str = str(score_source).strip()
+                    match = re.match(r'^\s*(\d+(?:\.\d+)?)', score_value_str)
+                    if match:
+                        parsed_score = int(float(match.group(1)))
+                        break
+                    else:
+                        parsed_score = int(float(score_source))
+                        break
+                except (ValueError, TypeError):
+                    logging.debug(f"JSON: Could not parse candidate SEO score: {score_source}.")
+                    continue
+        if parsed_score is not None:
+            metrics['seo_score'] = parsed_score
+        else:
+            if main_url_from_json: logging.info(f"JSON: Pre-existing SEO score not found for URL {main_url_from_json}.")
 
-    # Count issues by priority
-    for line in lines:
-        line_lower = line.lower()
-        if 'priority:' in line_lower: # This should catch "**Priority**: High" as well
-            if 'critical' in line_lower:
-                metrics['issues_by_priority']['critical'] += 1
-            elif 'high' in line_lower:
-                metrics['issues_by_priority']['high'] += 1
-            elif 'medium' in line_lower:
-                metrics['issues_by_priority']['medium'] += 1
-            elif 'low' in line_lower:
-                metrics['issues_by_priority']['low'] += 1
-
-    # Extract page metrics
-    for line in lines:
-        if ':' in line and not line.startswith('#'): # Avoid section titles
-            key_value = line.split(':', 1)
-            if len(key_value) == 2:
-                key, value_str = key_value[0].strip().lower(), key_value[1].strip()
-
-                number_match = re.search(r'(\d+)', value_str)
-                if number_match:
+    if metrics['seo_score'] is None and text_report_fallback:
+        for line in text_report_fallback.split('\n'):
+            if 'seo score' in line.lower() or 'overall score' in line.lower():
+                score_match = re.search(r'(\d+)(?:/100|\%)?', line)
+                if score_match:
                     try:
-                        num_value = int(number_match.group(1))
-
-                        if 'word count' in key:
-                            metrics['page_metrics']['word_count'] = num_value
-                        elif ('image' in key or 'images' in key) and ('number of' in key or 'count' in key or 'total' in key or 'found' in key): # More robust image count
-                            metrics['page_metrics']['images'] = num_value
-                        elif 'internal link' in key:
-                            metrics['page_metrics']['internal_links'] = num_value
-                        elif 'external link' in key:
-                            metrics['page_metrics']['external_links'] = num_value
-                        # More robust headings count
-                        elif ('heading' in key or 'headings' in key or 'h1 tag' in key) and \
-                             ('count' in key or 'number of' in key or 'total' in key or 'found' in key or 'tags:' in key_value[0].strip()):
-                            metrics['page_metrics']['headings'] = num_value
+                        metrics['seo_score'] = int(score_match.group(1))
+                        logging.info(f"Text Fallback: Parsed SEO score '{metrics['seo_score']}' from: {line}")
+                        break
                     except ValueError:
-                        logging.warning(f"Could not parse number for page metric '{key}' from: {value_str}")
+                        logging.warning(f"Text Fallback: Could not parse SEO score from: {line}")
+        if metrics['seo_score'] is None: logging.info(f"Text Fallback: SEO score not found for URL {main_url_from_json or 'Unknown'}.")
 
-    # Extract technical performance indicators
-    for line in lines:
-        line_lower = line.lower()
-        status_category = None
-        if '✅' in line: status_category = 'good'
-        elif '⚠️' in line: status_category = 'warning'
-        elif '❌' in line: status_category = 'error'
-        else: continue
+    # 2. Issues by Priority
+    if full_report_json and 'issues_summary' in full_report_json and isinstance(full_report_json['issues_summary'], dict):
+        for prio, count in full_report_json['issues_summary'].items():
+            prio_lower = prio.lower()
+            if prio_lower in metrics['issues_by_priority'] and isinstance(count, int):
+                metrics['issues_by_priority'][prio_lower] = count
+    elif text_report_fallback:
+        for line in text_report_fallback.split('\n'):
+            line_lower = line.lower()
+            if 'priority:' in line_lower:
+                if 'critical' in line_lower: metrics['issues_by_priority']['critical'] += 1
+                elif 'high' in line_lower: metrics['issues_by_priority']['high'] += 1
+                elif 'medium' in line_lower: metrics['issues_by_priority']['medium'] += 1
+                elif 'low' in line_lower: metrics['issues_by_priority']['low'] += 1
 
-        # More robust mobile friendly check
-        if 'mobile-friendly' in line_lower or \
-           'mobile usability' in line_lower or \
-           'mobile optimization' in line_lower or \
-           ('mobile' in line_lower and 'optimized' in line_lower):
-            metrics['technical_metrics']['mobile_friendly'] = status_category
-        elif ('ssl certificate' in line_lower or 'https' in line_lower) and ('secure' in line_lower or 'active' in line_lower):
-            metrics['technical_metrics']['ssl_secure'] = status_category
-        elif 'page speed' in line_lower or 'loading time' in line_lower or 'performance' in line_lower and not 'score' in line_lower: # Avoid performance score line
-            metrics['technical_metrics']['page_speed'] = status_category
-        elif 'meta description' in line_lower and ('present' in line_lower or 'length' in line_lower or 'missing' in line_lower):
-            metrics['technical_metrics']['meta_description'] = status_category
-        elif 'title tag' in line_lower and ('length' in line_lower or 'present' in line_lower or 'missing' in line_lower):
-            metrics['technical_metrics']['title_tag'] = status_category
-        elif 'robots.txt' in line_lower and ('file' in line_lower or 'found' in line_lower or 'status' in line_lower): # New: Robots.txt status
-            metrics['technical_metrics']['robots_txt_status'] = status_category
+    # 3. Page Metrics (Focus on Main URL)
+    if page_metrics_source:
+        cc_len = page_metrics_source.get('cleaned_content_length')
+        if isinstance(cc_len, (int, float)) and cc_len > 0: metrics['page_metrics']['word_count'] = int(cc_len / 5.5)
+        img_count = page_metrics_source.get('images_count')
+        if isinstance(img_count, int): metrics['page_metrics']['images'] = img_count
+        
+        headings_data = page_metrics_source.get('headings_count')
+        if isinstance(headings_data, dict):
+            metrics['page_metrics']['headings'] = sum(filter(None, [v for k, v in headings_data.items() if isinstance(v, int)]))
+        elif isinstance(headings_data, int): metrics['page_metrics']['headings'] = headings_data
+        elif 'headings' in page_metrics_source and isinstance(page_metrics_source['headings'], dict):
+            metrics['page_metrics']['headings'] = sum(len(h_list) for h_tag, h_list in page_metrics_source['headings'].items() if isinstance(h_list, list))
+
+        missing_alts = page_metrics_source.get('missing_alt_tags_count')
+        if isinstance(missing_alts, int): metrics['page_metrics']['missing_alt_tags'] = missing_alts
+
+
+    if text_report_fallback: # Fallbacks for page metrics
+        lines = text_report_fallback.split('\n')
+        for line in lines:
+            if ':' in line and not line.startswith('#'):
+                key_value = line.split(':', 1)
+                if len(key_value) == 2:
+                    key, value_str = key_value[0].strip().lower(), key_value[1].strip()
+                    number_match = re.search(r'(\d+)', value_str)
+                    if number_match:
+                        try:
+                            num_value = int(number_match.group(1))
+                            if 'internal link' in key and 'internal_links' not in metrics['page_metrics']: metrics['page_metrics']['internal_links'] = num_value
+                            elif 'external link' in key and 'external_links' not in metrics['page_metrics']: metrics['page_metrics']['external_links'] = num_value
+                            elif ('image' in key or 'images' in key) and 'images' not in metrics['page_metrics']: metrics['page_metrics']['images'] = num_value
+                            elif ('heading' in key or 'headings' in key) and 'headings' not in metrics['page_metrics']: metrics['page_metrics']['headings'] = num_value
+                            elif 'word count' in key and 'word_count' not in metrics['page_metrics']: metrics['page_metrics']['word_count'] = num_value
+                        except ValueError: pass
+
+    # 4. Technical Metrics
+    if full_report_json:
+        robots_found = full_report_json.get('robots_txt_found')
+        if robots_found is True: metrics['technical_metrics']['robots_txt_status'] = 'good'
+        elif robots_found is False: metrics['technical_metrics']['robots_txt_status'] = 'error'
+
+        ssl_valid = full_report_json.get('ssl_is_valid')
+        if ssl_valid is True: metrics['technical_metrics']['ssl_secure'] = 'good'
+        elif ssl_valid is False: metrics['technical_metrics']['ssl_secure'] = 'error'
+        elif main_url_from_json and main_url_from_json.startswith("https://") and 'ssl_secure' not in metrics['technical_metrics']: metrics['technical_metrics']['ssl_secure'] = 'good'
+        elif main_url_from_json and 'ssl_secure' not in metrics['technical_metrics']: metrics['technical_metrics']['ssl_secure'] = 'error'
+
+        mobile_viewport_main_page_status = None
+        if page_metrics_source:
+            has_mv = page_metrics_source.get('has_mobile_viewport')
+            if has_mv is True: mobile_viewport_main_page_status = 'good'
+            elif has_mv is False: mobile_viewport_main_page_status = 'error'
+        
+        if mobile_viewport_main_page_status: metrics['technical_metrics']['mobile_friendly'] = mobile_viewport_main_page_status
+        elif full_report_json.get('crawled_internal_pages_count') is not None and \
+             full_report_json.get('pages_with_mobile_viewport_count') is not None:
+            total_crawled = full_report_json['crawled_internal_pages_count']
+            mobile_friendly_pages = full_report_json['pages_with_mobile_viewport_count']
+            if total_crawled > 0:
+                ratio = mobile_friendly_pages / total_crawled
+                if ratio == 1.0: metrics['technical_metrics']['mobile_friendly'] = 'good'
+                elif ratio > 0.8: metrics['technical_metrics']['mobile_friendly'] = 'warning'
+                else: metrics['technical_metrics']['mobile_friendly'] = 'error'
+            elif total_crawled == 0 and mobile_friendly_pages == 0: metrics['technical_metrics']['mobile_friendly'] = 'good'
+            else: metrics['technical_metrics']['mobile_friendly'] = 'warning'
+
+        main_page_title_text = None; title_len = 0
+        if page_metrics_source:
+            title_candidate = page_metrics_source.get('title')
+            if not title_candidate and 'metadata' in page_metrics_source: title_candidate = page_metrics_source['metadata'].get('title')
+            if isinstance(title_candidate, str): main_page_title_text = title_candidate.strip(); title_len = len(main_page_title_text)
+        if not main_page_title_text: metrics['technical_metrics']['title_tag'] = 'error'
+        elif not (10 <= title_len <= 70): metrics['technical_metrics']['title_tag'] = 'warning'
+        else: metrics['technical_metrics']['title_tag'] = 'good'
+
+    if text_report_fallback: # Fallbacks for technical metrics
+        for line in text_report_fallback.split('\n'):
+            line_lower = line.lower(); status_category = None
+            if '✅' in line: status_category = 'good'
+            elif '⚠️' in line: status_category = 'warning'
+            elif '❌' in line: status_category = 'error'
+            else: continue
+            if ('page speed' in line_lower) and 'page_speed' not in metrics['technical_metrics']: metrics['technical_metrics']['page_speed'] = status_category
+            if 'robots.txt' in line_lower and 'robots_txt_status' not in metrics['technical_metrics']: metrics['technical_metrics']['robots_txt_status'] = status_category
+            if ('ssl certificate' in line_lower or 'https' in line_lower) and 'ssl_secure' not in metrics['technical_metrics']: metrics['technical_metrics']['ssl_secure'] = status_category
+            if ('mobile-friendly' in line_lower or 'mobile usability' in line_lower) and 'mobile_friendly' not in metrics['technical_metrics']: metrics['technical_metrics']['mobile_friendly'] = status_category
+            if 'title tag' in line_lower and 'title_tag' not in metrics['technical_metrics']: metrics['technical_metrics']['title_tag'] = status_category
+    
+    # 5. Calculate SEO Score if not found
+    if metrics['seo_score'] is None:
+        logging.info(f"No pre-existing SEO score found for {main_url_from_json or 'report'}. Calculating a heuristic score.")
+        calculated_score = 0
+        
+        # Technical SEO (Max 40 points)
+        tech_score = 0
+        if metrics['technical_metrics'].get('mobile_friendly') == 'good': tech_score += 10
+        elif metrics['technical_metrics'].get('mobile_friendly') == 'warning': tech_score += 5
+        if metrics['technical_metrics'].get('ssl_secure') == 'good': tech_score += 10
+        if metrics['technical_metrics'].get('title_tag') == 'good': tech_score += 10
+        elif metrics['technical_metrics'].get('title_tag') == 'warning': tech_score += 5
+        if metrics['technical_metrics'].get('robots_txt_status') == 'good': tech_score += 10
+        # For 'page_speed', if available and good, add some points. Max is 40 for tech.
+        # Let's assume page_speed gives max 5 points if present and good, adjusting others slightly.
+        # Re-distribute for simplicity: Mobile(10), SSL(10), Title(10), Robots(5), PageSpeed(5) = 40
+        # For now, let's keep it simple as page_speed is not reliably parsed yet.
+        calculated_score += tech_score # Max 40 (or 30 if page_speed not included)
+
+        # On-Page Content (Max 30 points) - for main page
+        content_score = 0
+        word_count = metrics['page_metrics'].get('word_count', 0)
+        if word_count >= 1000: content_score += 10
+        elif word_count >= 500: content_score += 7
+        elif word_count >= 300: content_score += 4
+
+        headings_count = metrics['page_metrics'].get('headings', 0)
+        if headings_count >= 10: content_score += 10
+        elif headings_count >= 5: content_score += 7
+        elif headings_count >= 2: content_score += 4
+        
+        images_total = metrics['page_metrics'].get('images')
+        missing_alts = metrics['page_metrics'].get('missing_alt_tags')
+        if isinstance(images_total, int) and images_total > 0 and isinstance(missing_alts, int):
+            alt_coverage = (images_total - missing_alts) / images_total
+            content_score += alt_coverage * 10 # Max 10 points
+        elif isinstance(images_total, int) and images_total == 0: # No images, no penalty/bonus for alts
+            content_score += 5 # Neutral score if no images
+        elif isinstance(images_total, int) and images_total > 0 and missing_alts is None: # Images exist, but no alt data
+            content_score += 3 # Small penalty for unknown alt status
+        
+        calculated_score += min(content_score, 30) # Cap at 30
+
+        # Issue Severity (Max 30 points)
+        issue_component_score = 30
+        issue_component_score -= metrics['issues_by_priority']['critical'] * 10
+        issue_component_score -= metrics['issues_by_priority']['high'] * 5
+        issue_component_score -= metrics['issues_by_priority']['medium'] * 2
+        issue_component_score -= metrics['issues_by_priority']['low'] * 1
+        calculated_score += max(0, issue_component_score)
+        
+        metrics['seo_score'] = min(100, int(round(calculated_score)))
+        logging.info(f"Calculated heuristic SEO score for {main_url_from_json or 'report'}: {metrics['seo_score']}")
 
     return metrics
 
+# ... (rest of the file remains the same)
 def create_seo_score_gauge(score, lang="en"):
     """Create a gauge chart for SEO score."""
     if score is None:
@@ -429,26 +590,29 @@ def create_page_metrics_bar_chart(page_metrics_data, lang="en"):
         'images': language_manager.get_text("metric_images", lang, fallback="Images"),
         'internal_links': language_manager.get_text("metric_internal_links", lang, fallback="Internal Links"),
         'external_links': language_manager.get_text("metric_external_links", lang, fallback="External Links"),
-        'headings': language_manager.get_text("metric_headings", lang, fallback="Headings")
+        'headings': language_manager.get_text("metric_headings", lang, fallback="Headings"),
+        'missing_alt_tags': language_manager.get_text("metric_missing_alt_tags", lang, fallback="Missing Alt Tags")
     }
 
-    metrics = []
+    metrics_list = [] # Renamed from 'metrics' to avoid conflict with outer scope
     values = []
 
+    # Explicitly order or filter what goes into this chart if needed
+    # For now, display all non-None page_metrics
     for metric_key, value in page_metrics_data.items():
-        if value is not None: # Only include metrics that have a value
-            metrics.append(metric_names_map.get(metric_key, metric_key.replace('_', ' ').title()))
+        if value is not None and metric_key != 'missing_alt_tags': # missing_alt_tags is used for score, not direct chart
+            metrics_list.append(metric_names_map.get(metric_key, metric_key.replace('_', ' ').title()))
             values.append(value)
 
-    if not metrics: return None
+    if not metrics_list: return None
 
     fig = go.Figure(data=[
         go.Bar(
-            x=metrics,
+            x=metrics_list,
             y=values,
             text=values,
             textposition='auto',
-            marker_color=['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'] * (len(metrics)//5 + 1) # Cycle colors
+            marker_color=['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'] * (len(metrics_list)//5 + 1) # Cycle colors
         )
     ])
 
@@ -540,16 +704,16 @@ def display_seo_dashboard(metrics, lang="en"):
             st.plotly_chart(fig_gauge, use_container_width=True)
         else:
             # Display gauge at 0 if score is None, as per create_seo_score_gauge logic
-            fig_gauge = create_seo_score_gauge(None, lang)
+            fig_gauge = create_seo_score_gauge(None, lang) # Should ideally not happen if we always calculate
             st.plotly_chart(fig_gauge, use_container_width=True)
-            st.caption(language_manager.get_text("seo_score_not_available_caption", lang, fallback="SEO Score not explicitly found in report."))
+            st.caption(language_manager.get_text("seo_score_not_available_caption", lang, fallback="SEO Score could not be determined."))
 
-        page_metrics_chart_data = {k: v for k, v in metrics.get('page_metrics', {}).items() if v is not None}
+        page_metrics_chart_data = {k: v for k, v in metrics.get('page_metrics', {}).items() if v is not None and k != 'missing_alt_tags'}
         if page_metrics_chart_data:
             fig_bar = create_page_metrics_bar_chart(page_metrics_chart_data, lang)
             if fig_bar:
                 st.plotly_chart(fig_bar, use_container_width=True)
-            else: # Should not happen if page_metrics_chart_data is not empty
+            else: 
                  st.info(language_manager.get_text("page_metrics_not_available", lang, fallback="Page Content Metrics not available."))
         else:
             st.info(language_manager.get_text("page_metrics_not_available", lang, fallback="Page Content Metrics not available."))
@@ -564,19 +728,22 @@ def display_seo_dashboard(metrics, lang="en"):
             fig_tech = create_technical_status_chart(technical_metrics_chart_data, lang)
             if fig_tech:
                 st.plotly_chart(fig_tech, use_container_width=True)
-            else: # Should not happen if technical_metrics_chart_data is not empty
+            else: 
                 st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
         else:
             st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
     st.markdown("---") # Add a separator
 
 
-def display_styled_report(text_report, lang):
+
+def display_styled_report(full_report_json, text_report_for_display, lang): # MODIFIED SIGNATURE
     """Display the SEO report with enhanced styling, structure, expanders, and visualizations."""
 
-    metrics = extract_metrics_from_report(text_report)
-    display_seo_dashboard(metrics, lang) # Pass lang for localized chart titles
+    # Pass both full_report_json (primary) and text_report_for_display (as fallback)
+    metrics = extract_metrics_from_report(full_report_json, text_report_for_display)
+    display_seo_dashboard(metrics, lang) # display_seo_dashboard remains the same
 
+# ... (rest of main.py including run_main_app) ...
 
 def run_main_app():
     st.set_page_config(
@@ -692,7 +859,8 @@ def run_main_app():
 
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, st.session_state.url))
 
-            display_styled_report(st.session_state.text_report, lang)
+            # display_styled_report(st.session_state.text_report, lang) # OLD LINE
+            display_styled_report(st.session_state.full_report, st.session_state.text_report, lang) # NEW LINE
 
             with st.expander(f"📄 {language_manager.get_text('raw_report_data_label', lang)}", expanded=False):
                 st.text_area(

@@ -16,7 +16,17 @@ from analyzer.llm_analysis_start import llm_analysis_start
 # Configure logging for this module if necessary, or rely on root configuration
 # For simplicity, we'll assume root configuration is sufficient or use `analyzer_instance.logger` if available.
 # Direct logging calls (logging.error, logging.warning) will use the root logger's settings.
-
+# SECTION 5: Add better logging for link discovery limits:
+# Add this function at the top of your file:
+def log_discovery_status(analyzer_instance, config):
+    """Log current discovery status"""
+    links_discovered = len(analyzer_instance.all_discovered_links)
+    links_limit = config.MAX_LINKS_TO_DISCOVER
+    
+    if links_discovered >= links_limit:
+        print(f"Link discovery limit reached: {links_discovered}/{links_limit}")
+    else:
+        print(f"Links discovered: {links_discovered}/{links_limit}")
 
 async def _process_page_standalone(
     analyzer_instance,  # Instance of SEOAnalyzer
@@ -27,6 +37,7 @@ async def _process_page_standalone(
     exclude_patterns: List[str],
     header_snippets_to_remove: Optional[List[str]] = None,
     footer_snippets_to_remove: Optional[List[str]] = None,
+    needless_info_snippets_to_remove: Optional[List[str]] = None,
     extract_with_context: bool = False
 ) -> Dict[str, Any]:
     result = {
@@ -85,7 +96,8 @@ async def _process_page_standalone(
                 result['cleaned_text'] = extract_text(
                     text_content,
                     header_snippets=header_snippets_to_remove,
-                    footer_snippets=footer_snippets_to_remove
+                    footer_snippets=footer_snippets_to_remove,
+                    needless_info_snippets=needless_info_snippets_to_remove
                 )
             except Exception as extract_error:
                 logging.error(f"extract_text failed for {normalized_landed_url}: {extract_error}")
@@ -144,6 +156,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
     
     analyzer_instance.identified_header_texts = []
     analyzer_instance.identified_footer_texts = []
+    analyzer_instance.identified_needless_info_texts = []
     analyzer_instance.visited_urls = set() 
     analyzer_instance.all_discovered_links = set() 
     analyzer_instance.initial_page_llm_report = {"tech_stats": {}}
@@ -166,11 +179,24 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
             logging.warning(f"Could not fetch robots.txt from {robots_url}: {e_robots}")
             robots_txt_found_status = False
     
+    # NEW CODE:
     sitemap_pages_normalized: Set[str] = set()
-    for page_url in sitemap_pages_raw:
+    sitemap_pages_list = list(sitemap_pages_raw)
+    
+    # Sort sitemap pages to prioritize important ones
+    sitemap_pages_list.sort(key=lambda url: (
+        0 if any(pattern in url.lower() for pattern in ['/about', '/contact', '/services', '/products']) else 1,
+        url
+    ))
+    
+    for page_url in sitemap_pages_list:
+        if len(sitemap_pages_normalized) >= config.MAX_LINKS_TO_DISCOVER - 10:  # Reserve some for dynamic discovery
+            print(f"Limiting sitemap URLs to respect MAX_LINKS_TO_DISCOVER limit")
+            break
+        
         norm_page_url = analyzer_instance._normalize_url(page_url, analyzer_instance.site_base_for_normalization)
         if norm_page_url and not any(exclude in norm_page_url for exclude in config.EXCLUDE_PATTERNS):
-             sitemap_pages_normalized.add(norm_page_url)
+            sitemap_pages_normalized.add(norm_page_url)
     
     print(f"Found {len(sitemap_pages_normalized)} URLs in sitemaps. Robots.txt found: {robots_txt_found_status}")
     
@@ -238,6 +264,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     config.EXCLUDE_PATTERNS,
                     header_snippets_to_remove=None, 
                     footer_snippets_to_remove=None,
+                    needless_info_snippets_to_remove=None,
                     extract_with_context=True
                 )
                 actual_initial_url = initial_result['url'] 
@@ -276,8 +303,9 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             if analyzer_instance.initial_page_llm_report and not analyzer_instance.initial_page_llm_report.get("error"):
                                 analyzer_instance.identified_header_texts = analyzer_instance.initial_page_llm_report.get("header", [])
                                 analyzer_instance.identified_footer_texts = analyzer_instance.initial_page_llm_report.get("footer", [])
-                                if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts:
-                                    print(f"Identified {len(analyzer_instance.identified_header_texts)} header and {len(analyzer_instance.identified_footer_texts)} footer elements via LLM")
+                                analyzer_instance.identified_needless_info_texts = analyzer_instance.initial_page_llm_report.get("needless_info", [])
+                                if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts or analyzer_instance.identified_needless_info_texts:
+                                    print(f"Identified {len(analyzer_instance.identified_header_texts)} header, {len(analyzer_instance.identified_footer_texts)} footer, and {len(analyzer_instance.identified_needless_info_texts)} needless info elements via LLM")
                                 # Note: link_context is available internally but not added to report
                             else: 
                                 error_msg = analyzer_instance.initial_page_llm_report.get('error', 'Unknown LLM error') if analyzer_instance.initial_page_llm_report else 'No LLM report'
@@ -292,7 +320,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             analyzer_instance.initial_page_llm_report = {
                                 "url": actual_initial_url, "error": f"Exception in llm_analysis_start: {str(e_llm_init)}",
                                 "keywords": [], "content_summary": "", "other_information_and_contacts": [],
-                                "suggested_keywords_for_seo": [], "header": [], "footer": []
+                                "suggested_keywords_for_seo": [], "header": [], "footer": [], "needless_info": []
                             }
                         
                         if isinstance(analyzer_instance.initial_page_llm_report, dict):
@@ -301,12 +329,13 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             analyzer_instance.initial_page_llm_report = {'tech_stats': initial_page_tech_stats}
 
                         final_initial_cleaned_text = raw_initial_cleaned_text 
-                        if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts:
+                        if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts or analyzer_instance.identified_needless_info_texts:
                             try:
                                 final_initial_cleaned_text = extract_text(
                                     raw_initial_cleaned_text, 
                                     header_snippets=analyzer_instance.identified_header_texts,
-                                    footer_snippets=analyzer_instance.identified_footer_texts
+                                    footer_snippets=analyzer_instance.identified_footer_texts,
+                                    needless_info_snippets=analyzer_instance.identified_needless_info_texts
                                 )
                                 new_length = len(final_initial_cleaned_text)
                                 if new_length != initial_page_tech_stats['cleaned_content_length']:
@@ -315,20 +344,59 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                     initial_page_tech_stats['cleaned_content_length'] = new_length
                                     if isinstance(analyzer_instance.initial_page_llm_report, dict) and 'tech_stats' in analyzer_instance.initial_page_llm_report:
                                         analyzer_instance.initial_page_llm_report['tech_stats']['cleaned_content_length'] = new_length
-                            except Exception as extract_error_hf:
-                                logging.error(f"extract_text failed during header/footer removal for initial page: {extract_error_hf}")
+                            except Exception as extract_error_hfn:
+                                logging.error(f"extract_text failed during header/footer/needless_info removal for initial page: {extract_error_hfn}")
                         
                         initial_cleaned_text_for_main_url = final_initial_cleaned_text
                         analysis['crawled_urls'].append(actual_initial_url)
                         url_in_report_dict[actual_initial_url] = True 
                         
-                        for link in initial_result['new_links']: 
-                            if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
-                                if link not in analyzer_instance.visited_urls and link not in urls_to_visit :
+                        # NEW CODE:
+                        def prioritize_and_add_links(analyzer_instance, new_links, urls_to_visit):
+                            """Add links with priority, respecting MAX_LINKS_TO_DISCOVER limit"""
+                            links_to_add = []
+                            
+                            # Prioritize certain URL patterns (customize based on your needs)
+                            priority_patterns = ['/about', '/contact', '/services', '/products', '/blog']
+                            
+                            # Separate priority and regular links
+                            priority_links = []
+                            regular_links = []
+                            
+                            for link in new_links:
+                                if link not in analyzer_instance.visited_urls and link not in urls_to_visit:
+                                    if any(pattern in link.lower() for pattern in priority_patterns):
+                                        priority_links.append(link)
+                                    else:
+                                        regular_links.append(link)
+                            
+                            # Add priority links first
+                            for link in priority_links:
+                                if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
                                     analyzer_instance.all_discovered_links.add(link)
                                     urls_to_visit.append(link)
                                     analyzer_instance.visited_urls.add(link)
-                            else: break
+                                    links_to_add.append(link)
+                            
+                            # Then add regular links until we hit the limit
+                            for link in regular_links:
+                                if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
+                                    analyzer_instance.all_discovered_links.add(link)
+                                    urls_to_visit.append(link)
+                                    analyzer_instance.visited_urls.add(link)
+                                    links_to_add.append(link)
+                            
+                            return len(links_to_add)
+                        
+                        # Replace the initial page link processing:
+                        if initial_result['new_links']:
+                            added_count = prioritize_and_add_links(
+                                analyzer_instance, 
+                                initial_result['new_links'], 
+                                urls_to_visit
+                            )
+                            if added_count > 0:
+                                print(f"Added {added_count} new links from initial page")
                     else: 
                          if isinstance(analyzer_instance.initial_page_llm_report, dict):
                             analyzer_instance.initial_page_llm_report['tech_stats'] = initial_page_tech_stats
@@ -366,7 +434,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             analyzer_instance.site_base_for_normalization, 
                             config.EXCLUDE_PATTERNS,
                             header_snippets_to_remove=analyzer_instance.identified_header_texts, 
-                            footer_snippets_to_remove=analyzer_instance.identified_footer_texts
+                            footer_snippets_to_remove=analyzer_instance.identified_footer_texts,
+                            needless_info_snippets_to_remove=analyzer_instance.identified_needless_info_texts
                         ))
                     batch_proc_results = await asyncio.gather(*tasks, return_exceptions=True)
                     return batch_proc_results, pages_for_batch
@@ -386,8 +455,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
             # Find what your Render instance can handle.
             if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0 # Keep this for the "don't crawl" case
 
-            while urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE and \
-                  len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER and batch_size > 0:
+            # NEW CODE - Remove the MAX_LINKS_TO_DISCOVER condition:
+            while urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE and batch_size > 0:
                 current_batch_urls = []
                 
                 while urls_to_visit and len(current_batch_urls) < batch_size:
@@ -417,13 +486,14 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             continue
                         
                         if actual_processed_url in url_in_report_dict:
-                            for new_link in page_result_data.get('new_links', set()): 
-                                if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
-                                    if new_link not in analyzer_instance.visited_urls and new_link not in urls_to_visit: 
-                                        analyzer_instance.all_discovered_links.add(new_link)
-                                        urls_to_visit.append(new_link)
-                                        analyzer_instance.visited_urls.add(new_link)
-                                else: break
+                            # NEW CODE:
+                            # Replace both instances in the batch processing loop with:
+                            if page_result_data.get('new_links'):
+                                prioritize_and_add_links(
+                                    analyzer_instance, 
+                                    page_result_data.get('new_links', set()), 
+                                    urls_to_visit
+                                )
                             if len(analyzer_instance.all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER: break
                             continue
 
@@ -460,9 +530,10 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                     analyzer_instance.visited_urls.add(new_link) 
                             else: break 
                         
-                        if len(analyzer_instance.all_discovered_links) >= config.MAX_LINKS_TO_DISCOVER or \
-                           len(url_in_report_dict) >= config.MAX_PAGES_TO_ANALYZE:
-                            break 
+                        # REPLACE with:
+                        if len(url_in_report_dict) >= config.MAX_PAGES_TO_ANALYZE:
+                            print("Reached max pages to analyze.")
+                            break
                     
                     if successful_pages_in_batch > 0:
                         print(f"Successfully processed {successful_pages_in_batch} pages in this batch.")
@@ -507,14 +578,14 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     "url": actual_initial_url, "error": "Initial LLM analysis data structure unavailable.",
                     "cleaned_text": initial_cleaned_text_for_main_url,
                     "keywords": [], "content_summary": "", "other_information_and_contacts": [],
-                    "suggested_keywords_for_seo": [], "header": [], "footer": [],
+                    "suggested_keywords_for_seo": [], "header": [], "footer": [], "needless_info": [],
                     "tech_stats": initial_page_tech_stats if initial_page_tech_stats else {}
                 }
             else: 
                 analysis['llm_analysis'] = {
                     "url": analysis_url_input, "error": "Initial page processing failed, LLM analysis critically unavailable.",
                     "keywords": [], "content_summary": "", "other_information_and_contacts": [],
-                    "suggested_keywords_for_seo": [], "header": [], "footer": [],
+                    "suggested_keywords_for_seo": [], "header": [], "footer": [], "needless_info": [],
                     "tech_stats": {}
                 }
             
@@ -539,7 +610,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     "url": final_url_for_error_report, 
                     "error": "LLM analysis section incomplete or initial page failed before LLM stage.",
                     "keywords": [], "content_summary": "", "other_information_and_contacts": [],
-                    "suggested_keywords_for_seo": [], "header": [], "footer": [],
+                    "suggested_keywords_for_seo": [], "header": [], "footer": [], "needless_info": [],
                     "tech_stats": {} 
                 }
             elif 'tech_stats' not in final_analysis_data_to_save.get('llm_analysis', {}):

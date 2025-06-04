@@ -1,3 +1,5 @@
+
+
 # Base: "shows and correctly does article tasks" version.
 # Goal: Offer article tasks first. If product tasks also exist,
 #       prepare to offer them after article tasks are handled.
@@ -270,10 +272,52 @@ def get_content_creation_cta_text(suggestions_data, lang):
     return primary_cta_text, primary_task_type, primary_tasks, secondary_task_info
 # --- END OF MODIFIED FUNCTION ---
 
-def _build_suggestions_display_text(structured_data, lang, title_prefix=""):
-    """Helper to build display text from structured suggestions data."""
+# --- MODIFIED FUNCTION ---
+def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_loaded_suggestions=False):
+    """Helper to build display text from structured suggestions data.
+    If is_loaded_suggestions is True, attempts to display insights from text_report.
+    """
+    
+    if is_loaded_suggestions and st.session_state.get("text_report"):
+        text_report_content = st.session_state.text_report
+        # Assuming the heading is constant and in English as per user's problem description
+        insights_heading = "## AI-POWERED STRATEGIC INSIGHTS & RECOMMENDATIONS" 
+        
+        insights_start_index = text_report_content.find(insights_heading)
+        
+        if insights_start_index != -1:
+            # Extract the relevant part from the text report
+            insights_text_from_report = text_report_content[insights_start_index:]
+            
+            display_parts = []
+            # Use a title that reflects the source of the content
+            display_parts.append(f"**{title_prefix} Strategic Insights (from Text Report):**\n\n")
+            display_parts.append(insights_text_from_report)
+            
+            # Append timestamp if available (from the original suggestions data, if passed)
+            if structured_data and structured_data.get("generated_timestamp"):
+                generated_time_str = structured_data['generated_timestamp']
+                try:
+                    dt_obj = datetime.fromisoformat(generated_time_str.replace("Z", "+00:00"))
+                    formatted_time = dt_obj.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    display_parts.append(f"\n\n*Suggestions data originally generated/updated: {formatted_time}*")
+                except ValueError:
+                    display_parts.append(f"\n\n*Suggestions data originally generated/updated: {generated_time_str}*")
+            return "".join(display_parts)
+        else:
+            logging.warning(
+                f"'{insights_heading}' not found in text_report for '{title_prefix}' display. "
+                "Falling back to standard suggestions display for loaded suggestions."
+            )
+            # Fall through to original logic if heading is not found
+
+    # --- Standard suggestions display logic (for new generations or fallback for loaded) ---
     suggestions_text_parts = [f"**{title_prefix} SEO Suggestions & Content Ideas:**\n"]
 
+    if structured_data is None:
+        suggestions_text_parts.append(language_manager.get_text("no_suggestions_data_available", lang, fallback="No suggestion data available to display."))
+        return "".join(suggestions_text_parts)
+        
     if structured_data.get("pre_json_prose"):
         suggestions_text_parts.append(f"{structured_data['pre_json_prose']}\n\n")
 
@@ -340,6 +384,7 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix=""):
             suggestions_text_parts.append(f"\n*Suggestions generated: {generated_time_str}*")
     
     return "".join(suggestions_text_parts)
+# --- END OF MODIFIED FUNCTION ---
 
 
 def handle_seo_suggestions_generation(lang):
@@ -401,7 +446,12 @@ def handle_seo_suggestions_generation(lang):
                         save_auto_suggestions_to_supabase(current_url, parsed_manual_suggestions, supabase_client, user_id) 
                         logging.info(f"SEO_Helper: Updated auto_suggestions_data with MANUALLY generated suggestions for {current_url}")
 
-                    chat_content_for_manual_suggestions = _build_suggestions_display_text(parsed_manual_suggestions, lang, title_prefix="Manually Generated")
+                    chat_content_for_manual_suggestions = _build_suggestions_display_text(
+                        parsed_manual_suggestions, 
+                        lang, 
+                        title_prefix="Manually Generated",
+                        is_loaded_suggestions=False # Manual generation is always new, not "loaded"
+                    )
                     
                     st.session_state.paused_cta_context = None
                     st.session_state.awaiting_seo_helper_cta_response = False 
@@ -547,7 +597,12 @@ async def main_seo_helper():
                 if existing_suggestions_structured:
                     st.info(language_manager.get_text("loading_existing_suggestions", lang, fallback="Loading existing SEO suggestions from database..."))
                     current_auto_suggestions_data_for_cta = existing_suggestions_structured
-                    suggestions_to_display_in_chat = _build_suggestions_display_text(existing_suggestions_structured, lang, title_prefix="Loaded")
+                    suggestions_to_display_in_chat = _build_suggestions_display_text(
+                        existing_suggestions_structured, 
+                        lang, 
+                        title_prefix="Loaded",
+                        is_loaded_suggestions=True # Indicate these are loaded suggestions
+                    )
                     logging.info(f"SEO_Helper: Using existing suggestions (from session or DB) for {current_analyzed_url}")
                 else: 
                     data_for_auto_suggestions = {"_source_type_": "text_report", "content": st.session_state.text_report}
@@ -567,7 +622,12 @@ async def main_seo_helper():
                         if save_success: logging.info(f"Auto suggestions saved to Supabase for URL: {current_analyzed_url}")
                         else: logging.warning(f"Failed to save auto suggestions to Supabase for URL: {current_analyzed_url}")
                         
-                        suggestions_to_display_in_chat = _build_suggestions_display_text(newly_structured_suggestions, lang, title_prefix="Auto-Generated")
+                        suggestions_to_display_in_chat = _build_suggestions_display_text(
+                            newly_structured_suggestions, 
+                            lang, 
+                            title_prefix="Auto-Generated",
+                            is_loaded_suggestions=False # These are newly auto-generated
+                        )
                         
                         st.session_state.auto_suggestions_data = newly_structured_suggestions
                         st.session_state.current_report_url_for_suggestions = current_analyzed_url

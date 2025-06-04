@@ -4,14 +4,17 @@ Contains all configurable parameters used by the SEO analyzer
 analyzer/config.py
 '''
 
+
 # Crawling and Analysis Limits
-MAX_PAGES_TO_ANALYZE = 25
-MAX_LINKS_TO_DISCOVER = 50
-PAGE_TIMEOUT = 60000  # milliseconds
+MAX_PAGES_TO_ANALYZE = 30
+MAX_LINKS_TO_DISCOVER = 200
+PAGE_TIMEOUT = 15000  # milliseconds
+NAVIGATION_TIMEOUT = 45000 # 45 seconds for navigation actions
+EXPECT_TIMEOUT = 10000 # 10 seconds for expect assertions (Playwright)
 
 #MAX_CATEGORY_PAGES_TO_SCAN = 25
-CRAWL_DELAY_MIN = 2
-CRAWL_DELAY_MAX = 12
+CRAWL_DELAY_MIN = 0.5
+CRAWL_DELAY_MAX = 1.0
 # Browser Configuration
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
@@ -24,6 +27,19 @@ EXCLUDE_PATTERNS = [
     'replytocom=',   # Catch variations without the leading ?
     '&replytocom=',  # Catch when it's part of a query string
     # Rest of the existing exclude patterns remain the same...
+    '/page-header-banner/',
+    '/player-mat/',
+    '/apikoop-icon',
+    '/header_',
+    '/daco_',
+    '/portfolio/',
+    '/sample-page',
+    '/son-yazilar/',
+    '/apikoop-logo',
+    'cropped-pngitem_',
+    '/woocommerce',
+    '/cropped-logo',
+    '/logo-',
     '/category/uncategorized/',
     '/tag/',
     '/tag',
@@ -98,7 +114,6 @@ EXCLUDE_PATTERNS = [
     '/siparistakip.aspx',
     '/acik-riza-metni',
     '/iade-ve-degisim-kosullari',
-    '/iletisim',
     '/Sepetim',
     '//iso-',
     '/Iletisim',
@@ -139,14 +154,8 @@ EXCLUDE_PATTERNS = [
     '/uyelik',
     '/support',
     '/destek',
-    '/faq',
-    '/sss',
-    '/sik-sorulan-sorular',
     '/help',
     '/yardim',
-    '/about-us',
-    '/about',
-    '/hakkinda',
     '/delivery-information',
     '/teslimat-bilgileri',
     '/track-order',
@@ -212,9 +221,10 @@ EXCLUDE_PATTERNS = [
     '&fbclid=',
     '?gclid=',
     '&gclid=',
-    
     # New exclude pattern for specific categories we want to skip
     '/category/tdt',  # Specifically exclude the tdt category
+    "javascript:void(0)",
+    "#",
 ]
 
 
@@ -222,7 +232,7 @@ EXCLUDE_PATTERNS = [
 PRODUCT_PATTERNS = ['/product/', '/urun/', '/ürün/', '/item/','/shop']
 
 # Resource Types to Block When Crawling (for performance)
-BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media','other_resource_type_if_not_needed']
+BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media','other_resource_type_if_not_needed', 'other' , 'script'] # Keep 'script' if not essential for content
 
 # Domains to Block When Crawling (analytics, ads, etc.)
 BLOCKED_DOMAINS = [
@@ -243,6 +253,28 @@ BLOCKED_DOMAINS = [
     'vimeo.com/player',  # Gömülü videolar için
     'fonts.googleapis.com', # Fontlar engellenirse sayfa görünümü bozulabilir, BLOCKED_RESOURCES içinde 'font' varsa bu gereksiz olabilir.
     'fonts.gstatic.com',    # Fontlar için
+    "twitter.com",
+    "bing.com",
+    "amazon-adsystem.com",
+    "scorecardresearch.com",
+    "adservice.google.com",
+    "analytics.google.com",
+    "stats.g.doubleclick.net",
+    "googleads.g.doubleclick.net",
+    "youtube.com",
+    "ytimg.com",
+    "googlesyndication.com",
+    "ad.doubleclick.net",
+    "securepubads.g.doubleclick.net",
+    "pagead2.googlesyndication.com",
+    "tpc.googlesyndication.com",
+    "hotjar.com",
+    "criteo.com",
+    "outbrain.com",
+    "taboola.com",
+    "linkedin.com"
+
+
 ]
 
 # Category Detection Patterns
@@ -254,23 +286,25 @@ CATEGORY_PATTERNS = [
     '/store/', 
     '/dukkan/', 
     '/dükkân/',
-     '/collection/',
+    '/collection/',
     '/collections/',
     '/categories/',
     '/kategoriler/',           
 ]
 
 
-
-
 COMMON_STOP_WORDS = {
-    'a', 'an', 'the', 'in', 'on', 'at', 'and', 'or', 'of', 'to', 'for', 'ile', 've', 'veya', 'ama', 'fakat',
-    'ancak', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'this', 'bir', 'bu', 'şu', 'o', 'olarak',
-    'olan', 'that', 'it', 'its', 'they', 'we', 'you', 'he', 'she', 'has', 'have', 'için', 'gibi', 'çok',
-    'daha', 'had', 'do', 'does', 'did', 'but', 'from', 'what', 'when', 'where', 'en', 'her', 'şey', 'değil',
-    'mi', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'some', 'such', 'var', 'yok', 'ben', 'sen',
-    'biz', 'siz', 'onlar', 'no', 'nor', 'too', 'very', 'can', 'will', 'just', 'com', 'www', 'birşey', 'diye',
-    'sadece', 'sonra', 'önce', 'http', 'https', 'html', 'page', 'click', 'site', 'website', 'web', 'net',
-    'org', 'gov', 'edu', 'info', 'biz', 'menu', 'search', 'contact', 'about', 'home', 'not', 'your', 'our',
-    'ne', 'nasıl', 'neden', 'kim', 'nereye', 'their', 'his', 'may', 'if', 'as', 'so', 'who', 'which', 'than',
-}
+            'a', 'an', 'the', 'in', 'on', 'at', 'and', 'or', 'of', 'to', 'for', 'ile', 've', 'veya', 'ama', 'fakat',
+            'ancak', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'this', 'bir', 'bu', 'şu', 'o', 'olarak',
+            'olan', 'that', 'it', 'its', 'they', 'we', 'you', 'he', 'she', 'has', 'have', 'için', 'gibi', 'çok',
+            'daha', 'had', 'do', 'does', 'did', 'but', 'from', 'what', 'when', 'where', 'en', 'her', 'şey', 'değil',
+            'mi', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'some', 'such', 'var', 'yok', 'ben', 'sen',
+            'biz', 'siz', 'onlar', 'no', 'nor', 'too', 'very', 'can', 'will', 'just', 'com', 'www', 'birşey', 'diye',
+            'sadece', 'sonra', 'önce', 'http', 'https', 'html', 'page', 'click', 'site', 'website', 'web', 'net',
+            'org', 'gov', 'edu', 'info', 'biz', 'menu', 'search', 'contact', 'about', 'home', 'not', 'your', 'our',
+            'ne', 'nasıl', 'neden', 'kim', 'nereye', 'their', 'his', 'may', 'if', 'as', 'so', 'who', 'which', 'than',
+            'sepetim', 'İnternet sitesi sonraki yorumlarımda kullanılması adım, e-posta adresim adresim tarayıcıya kaydedilsin', 
+            'Beni sonraki yorumlar e-posta bilgilendir. Beni yeni yazılarda e-posta bilgilendir.',
+            "INFORMATION Copyright © 2025" , 'Copyright © 2025' , 'Beni yeni yazılarda e-posta bilgilendir' , 'İçeriğe geç' , 'Tüm Hakları Saklıdır', '© 2025'
+       
+        }

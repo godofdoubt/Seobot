@@ -19,7 +19,7 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
-    page_title="Product Writer - Se10 AI",
+    page_title="Product Writer - RAIVEN",
     page_icon="🛍️",
     layout="wide",
     initial_sidebar_state="auto"
