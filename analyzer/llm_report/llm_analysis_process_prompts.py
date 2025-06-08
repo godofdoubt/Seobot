@@ -1,6 +1,6 @@
 # analyzer/llm_analysis_process_prompts.py
 import json
-
+import streamlit as st 
 class LLMAnalysisPrompts:
     """
     Centralized prompt management for LLM analysis processes.
@@ -117,8 +117,9 @@ class LLMAnalysisPrompts:
         
         # Pre-join the instruction texts to avoid complex expression in f-string
         joined_instruction_details = "\n".join(instruction_texts_to_include)
-        
-        prompt = f"""If content is Turkish make your analysis in Turkish, Otherwise make it in English.
+        lang = st.session_state.get("language", "en")
+        language_instruction = f"Respond in Turkish. " if lang == "tr" else ""
+        prompt = f"""{language_instruction} If content is Turkish make your analysis in Turkish, Otherwise make it in English.
     --
     Analyze the following web page content for the URL: {page_url}
     ---

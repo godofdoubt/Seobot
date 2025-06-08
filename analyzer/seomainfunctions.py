@@ -11,7 +11,7 @@ from urllib.parse import urlparse, urljoin, urlunparse
 import analyzer.config as config
 from analyzer.methods import validate_url, extract_text
 from analyzer.sitemap import discover_sitemap_urls, fetch_all_pages_from_sitemaps
-from analyzer.llm_analysis_start import llm_analysis_start
+from analyzer.llm_analysis_mainpage import llm_analysis_start
 
 # Configure logging for this module if necessary, or rely on root configuration
 # For simplicity, we'll assume root configuration is sufficient or use `analyzer_instance.logger` if available.

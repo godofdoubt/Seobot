@@ -6,7 +6,7 @@ from typing import Set, Dict, List, Any, Optional # For type hints
 from urllib.parse import urlparse, urljoin, urlunparse # For helper methods
 
 from analyzer.seoreportsaver import SEOReportSaver
-# analyzer.config, analyzer.methods, analyzer.sitemap, analyzer.llm_analysis_start
+# analyzer.config, analyzer.methods, analyzer.sitemap, analyzer.llm_analysis_start (changed to llm_analysis_mainpage.)
 # are now primarily used by seomainfunctions.py
 
 from . import seomainfunctions # Import the new module

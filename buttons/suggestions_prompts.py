@@ -1,188 +1,14 @@
 
-# SeoTree/buttons/generate_seo_suggestions.py
-import google.generativeai as genai
-import json
-import logging
-import os
-import streamlit as st
-import requests
-#from utils.language_support import language_manager # Removed as lang is from session_state
-from supabase import create_client, Client
-from dotenv import load_dotenv
+# Seobot/buttons/suggestions_prompts.py
 
-# Load environment variables
-load_dotenv()
-
-# Configure Gemini API
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-# model = genai.GenerativeModel('gemini-2.0-flash') # Original model
-
-model = genai.GenerativeModel('gemini-2.0-flash')
-
-
-# Initialize Supabase client
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-def get_supabase_client():
-    """Initialize and return Supabase client."""
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception as e:
-        logging.error(f"Failed to initialize Supabase client: {e}")
-        return None
-
-def fetch_llm_analysis_from_db(url: str) -> dict:
-    """Fetch llm_analysis_all data from Supabase database for the given URL."""
-    try:
-        supabase = get_supabase_client()
-        if not supabase:
-            return {}
-        
-        response = supabase.table('seo_reports').select('llm_analysis_all').eq('url', url).execute()
-        
-        if response.data and len(response.data) > 0:
-            llm_analysis_all = response.data[0].get('llm_analysis_all')
-            if llm_analysis_all and isinstance(llm_analysis_all, dict):
-                return llm_analysis_all
-        
-        return {}
-    except Exception as e:
-        logging.error(f"Error fetching llm_analysis_all from database for URL {url}: {e}")
-        return {}
-
-def enhance_selected_pages_with_main_context(selected_pages_data: dict, full_llm_analysis: dict) -> dict:
+def get_gemini_prompt(is_text_report: bool, language_instruction: str, context_note: str, implementation_priority_title: str, quick_implementation_guide_title: str) -> str:
     """
-    Enhance selected pages data with header and footer from main_page if main_page is not included.
-    
-    Args:
-        selected_pages_data: Dictionary of selected pages data
-        full_llm_analysis: Full llm_analysis_all data from database
-    
-    Returns:
-        Enhanced selected pages data with main_page context
+    Returns the appropriate Gemini prompt for generating SEO suggestions.
+    The prompt text is formatted later with the actual report data.
     """
-    try:
-        # Check if main_page is already included in selected pages
-        if "main_page" in selected_pages_data:
-            return selected_pages_data
-        
-        # Get main_page data from full analysis
-        main_page_data = full_llm_analysis.get("main_page", {})
-        if not main_page_data:
-            return selected_pages_data
-        
-        # Extract header and footer from main_page
-        main_header = main_page_data.get("header", [])
-        main_footer = main_page_data.get("footer", [])
-        main_url = main_page_data.get("url", "")
-        
-        # Create enhanced data with main_page context
-        enhanced_data = {}
-        
-        # Add main_page context as a separate entry
-        enhanced_data["_main_page_context"] = {
-            "url": main_url,
-            "header": main_header,
-            "footer": main_footer,
-            "note": "Header and footer context from main page for reference"
-        }
-        
-        # Add all selected pages
-        enhanced_data.update(selected_pages_data)
-        
-        return enhanced_data
-        
-    except Exception as e:
-        logging.error(f"Error enhancing selected pages with main context: {e}")
-        return selected_pages_data
-
-def generate_seo_suggestions(pages_data_for_suggestions: dict = None) -> str:
-    """Generates SEO suggestions and content strategy using Gemini or Mistral based on selected page data from llm_analysis_all.
-    
-    Args:
-        pages_data_for_suggestions: Dict containing either:
-            - Selected pages from llm_analysis_all: {"page_key": {...}, ...}
-            - Text report fallback: {"_source_type_": "text_report", "content": "..."}
-            - None: Will use text_report from st.session_state for general report.
-    """
-    
-    # Get current language
-    lang = st.session_state.get("language", "en")
-
-    # Get API keys
-    gemini_api_key = os.getenv('GEMINI_API_KEY')
-    mistral_api_key = os.getenv('MISTRAL_API_KEY')
-
-    # Determine which API to use
-    use_mistral = mistral_api_key is not None and (
-        gemini_api_key is None or
-        st.session_state.get("use_mistral", True)
-    )
-
-    try:
-        # Determine data source and prepare report_data_str
-        report_data_str = ""
-        enhanced_pages_data = None
-        
-        if pages_data_for_suggestions is None:
-            # Default to text_report when no specific data provided
-            if st.session_state.get("text_report"):
-                pages_data_for_suggestions = {
-                    "_source_type_": "text_report",
-                    "content": st.session_state.text_report
-                }
-                report_data_str = st.session_state.text_report
-            else:
-                return "No analysis data available. Please analyze a URL first to generate suggestions."
-        
-        elif pages_data_for_suggestions.get("_source_type_") == "text_report":
-            # Handle explicit text_report case
-            report_data_str = pages_data_for_suggestions.get("content", "No content available")
-            
-        else:
-            # Handle selected pages from llm_analysis_all
-            current_url = st.session_state.get("url", "")
-            if current_url:
-                full_llm_analysis = fetch_llm_analysis_from_db(current_url)
-                if full_llm_analysis:
-                    enhanced_pages_data = enhance_selected_pages_with_main_context(
-                        pages_data_for_suggestions, 
-                        full_llm_analysis
-                    )
-                    report_data_str = json.dumps(enhanced_pages_data, indent=2, ensure_ascii=False)
-                else:
-                    enhanced_pages_data = pages_data_for_suggestions
-                    report_data_str = json.dumps(pages_data_for_suggestions, indent=2, ensure_ascii=False)
-            else:
-                enhanced_pages_data = pages_data_for_suggestions
-                report_data_str = json.dumps(pages_data_for_suggestions, indent=2, ensure_ascii=False)
-        
-        implementation_priority_title = "Implementation Priority"
-        quick_implementation_guide_title = "Quick Implementation Guide"
-        if lang == "tr":
-            implementation_priority_title = "Uygulama Önceliği"
-            quick_implementation_guide_title = "Hızlı Uygulama Rehberi"
-
-        if use_mistral:
-            # Use Mistral API
-            response_text = generate_with_mistral(
-                report_data_str, 
-                mistral_api_key, 
-                lang, 
-                pages_data_for_suggestions,
-                enhanced_pages_data,
-                implementation_priority_title, 
-                quick_implementation_guide_title 
-            )
-        else:
-            # Use Gemini API
-            language_instruction = f"Respond in Turkish. " if lang == "tr" else "Respond in English. "
-            
-            prompt = "" # Initialize prompt string
-            if pages_data_for_suggestions and pages_data_for_suggestions.get("_source_type_") == "text_report":
-                # UPDATED PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
-                prompt = f"""{language_instruction}
+    if is_text_report:
+        # PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
+        return f"""{language_instruction}
 You are an expert SEO content strategist specializing in creating actionable content tasks.
 
 You have been provided with a comprehensive SEO analysis report. Your primary goal is to deeply analyze this report, infer potential target audience personas and their needs if not explicitly stated, and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.
@@ -265,14 +91,9 @@ List the top 5 tasks from your JSON in order of priority (High/Medium/Low) with 
 Here is the SEO ANALYSIS REPORT:
 {report_data_str}
 """
-            else:
-                # UPDATED PROMPT FOR SELECTED PAGES - FOCUSED ON JSON TASKS
-                context_note = ""
-                if enhanced_pages_data and "_main_page_context" in enhanced_pages_data:
-                    context_note = """
-    Important Context: The data includes header and footer information from the main page (marked as '_main_page_context') for site structure reference."""
-
-                prompt = f"""{language_instruction}
+    else:
+        # PROMPT FOR SELECTED PAGES (llm_analysis) - FOCUSED ON JSON TASKS
+        return f"""{language_instruction}
 You are an expert SEO content strategist specializing in creating actionable content tasks.
 
 You have been provided with detailed page analysis data from a website. Your primary goal is to deeply analyze this data, paying close attention to target_audience fields and other clues to understand user personas, and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.{context_note}
@@ -359,47 +180,15 @@ Provide 3-5 bullet points on how to implement these tasks effectively using the 
 Here is the page analysis data:
 {report_data_str}
 """
-            
-            response = model.generate_content(prompt)
-            response_text = response.text
 
-        return response_text
-    
-    except Exception as e:
-        logging.error(f"Error generating SEO suggestions: {e}")
-        error_details = ""
-        if hasattr(e, 'response') and hasattr(e.response, 'prompt_feedback'):
-            error_details = f" Prompt Feedback: {e.response.prompt_feedback}"
-        elif hasattr(e, 'args') and len(e.args) > 0:
-            error_details = f" Args: {e.args}"
-        return f"Could not generate SEO suggestions: {str(e)}{error_details}"
-
-
-def generate_with_mistral(report_data_str: str, api_key: str, lang: str = "en",
-                          pages_data_for_suggestions: dict = None,
-                          enhanced_pages_data: dict = None,
-                          implementation_priority_title: str = "Implementation Priority", 
-                          quick_implementation_guide_title: str = "Quick Implementation Guide"
-                         ) -> str:
-    """Generate SEO suggestions using Mistral API."""
-    url = "https://api.mistral.ai/v1/chat/completions"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-
-    language_names = {"en": "English", "tr": "Turkish"}
-    mistral_language_instruction = f"Please ensure your entire response is in {language_names.get(lang, 'English')}. "
-
-    # Determine the type of data we're working with
-    is_text_report = pages_data_for_suggestions and pages_data_for_suggestions.get("_source_type_") == "text_report"
-    has_main_context = enhanced_pages_data and "_main_page_context" in enhanced_pages_data
-
-    user_content = "" # Initialize user_content
+def get_mistral_prompt(is_text_report: bool, mistral_language_instruction: str, context_instruction: str, implementation_priority_title: str, quick_implementation_guide_title: str) -> str:
+    """
+    Returns the appropriate Mistral prompt (user_content) for generating SEO suggestions.
+    The prompt text is formatted later with the actual report data.
+    """
     if is_text_report:
-        # UPDATED MISTRAL PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
-        user_content = f"""{mistral_language_instruction}
+        # MISTRAL PROMPT FOR GENERAL TEXT REPORT - FOCUSED ON JSON TASKS
+        return f"""{mistral_language_instruction}
 You are an expert SEO content strategist specializing in creating actionable content tasks.
 
 You have been provided with a comprehensive SEO analysis report. Your primary goal is to deeply analyze this report, infer potential target audience personas and their needs if not explicitly stated, and generate specific, actionable content tasks in JSON format for Article Writer and Product Writer tools.
@@ -485,10 +274,8 @@ Here is the SEO ANALYSIS REPORT:
 {report_data_str}
 """
     else:
-        # UPDATED MISTRAL PROMPT FOR SELECTED PAGES - FOCUSED ON JSON TASKS
-        context_instruction = ""
-        if has_main_context:
-            context_instruction = """
+        # MISTRAL PROMPT FOR SELECTED PAGES (llm_analysis) - FOCUSED ON JSON TASKS
+        return f"""
 Important Context: The data includes header and footer information from the main page (marked as '_main_page_context') for site structure reference."""
 
         user_content = f"""{mistral_language_instruction}
@@ -578,32 +365,3 @@ Provide 3-5 bullet points on how to implement these tasks effectively using the 
 Here is the page analysis data:
 {report_data_str}
 """
-
-    data = {
-        "model": "mistral-large-latest",
-        "messages": [
-            {
-                "role": "system",
-                "content": f"You are an expert SEO content strategist specializing in creating actionable, JSON-formatted content tasks for Article Writer and Product Writer tools. {mistral_language_instruction} Your primary function is to analyze SEO data and generate specific, implementable content tasks that teams can immediately use for content creation."
-            },
-            {
-                "role": "user",
-                "content": user_content
-            }
-        ],
-        "temperature": 0.7,
-        "max_tokens": 3500 
-    }
-
-    response = requests.post(url, headers=headers, json=data)
-
-    if response.status_code == 200:
-        response_json = response.json()
-        if response_json.get('choices') and len(response_json['choices']) > 0 and response_json['choices'][0].get('message'):
-            return response_json['choices'][0]['message']['content']
-        else:
-            logging.error(f"Mistral API response format error: {response.text}")
-            raise Exception(f"Mistral API response format error. Check logs.")
-    else:
-        logging.error(f"Mistral API error: {response.status_code} - {response.text}")
-        raise Exception(f"Mistral API error: {response.status_code}. Check logs.")

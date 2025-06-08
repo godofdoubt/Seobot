@@ -6,11 +6,11 @@ analyzer/config.py
 
 
 # Crawling and Analysis Limits
-MAX_PAGES_TO_ANALYZE = 30
+MAX_PAGES_TO_ANALYZE = 20
 MAX_LINKS_TO_DISCOVER = 200
-PAGE_TIMEOUT = 15000  # milliseconds
+PAGE_TIMEOUT = 25000  # milliseconds
 NAVIGATION_TIMEOUT = 45000 # 45 seconds for navigation actions
-EXPECT_TIMEOUT = 10000 # 10 seconds for expect assertions (Playwright)
+EXPECT_TIMEOUT = 20000 # 10 seconds for expect assertions (Playwright)
 
 #MAX_CATEGORY_PAGES_TO_SCAN = 25
 CRAWL_DELAY_MIN = 0.5

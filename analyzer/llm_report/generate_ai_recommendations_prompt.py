@@ -1,18 +1,29 @@
-
 import json
+# Removed streamlit import as language_code is passed directly
 
-def build_ai_recommendations_prompt(website_data_summary: dict) -> str:
+def build_ai_recommendations_prompt(website_data_summary: dict, language_code: str = "en") -> str:
+    language_instruction = f"Respond in Turkish. " if language_code == "tr" else ""
+    
+    # --- START MODIFICATION for persona count ---
+    persona_instruction_detail = "first, define 5-7 distinct target audience personas."
+    persona_critical_requirement_detail = "Generate at least 5, ideally 5-7 detailed `target_audience_personas`"
+    if language_code == "tr":
+        persona_instruction_detail = "öncelikle en az 5, ideal olarak 5-7 farklı hedef kitle personası tanımlayın."
+        persona_critical_requirement_detail = "En az 5, ideal olarak 5-7 adet detaylı `target_audience_personas` oluşturun"
+    # --- END MODIFICATION for persona count ---
+
     """
     Build the comprehensive AI recommendations prompt focused on insights.
 
     Args:
         website_data_summary: Dictionary containing complete website analysis data
+        language_code: Language code for the response (e.g., "en", "tr")
 
     Returns:
         Complete prompt string for AI recommendations
     """
-    return f"""
-    Based on the comprehensive SEO and content analysis of this website, first, define 3-5 distinct target audience personas. Then, provide strategic recommendations and highlight key insights with illustrative examples of how to leverage them for SEO and content improvement. The focus is on showcasing a deep understanding of the data and its implications, generating actionable insights rather than exhaustive lists of tasks.
+    return f"""{language_instruction}
+    Based on the comprehensive SEO and content analysis of this website, {persona_instruction_detail} Then, provide strategic recommendations and highlight key insights with illustrative examples of how to leverage them for SEO and content improvement. The focus is on showcasing a deep understanding of the data and its implications, generating actionable insights rather than exhaustive lists of tasks.
 
     WEBSITE ANALYSIS DATA:
     {json.dumps(website_data_summary, indent=2, ensure_ascii=False)}
@@ -20,7 +31,7 @@ def build_ai_recommendations_prompt(website_data_summary: dict) -> str:
     Generate recommendations and insights in the following JSON structure. For sections focusing on derived insights (`seo_optimization_insights`, `content_strategy_insights`), provide only 1-2 high-impact, illustrative examples for each, focusing on the 'why' and 'so what' derived from the data:
 
     {{
-        "target_audience_personas": [
+        "target_audience_personas": [ // Ensure you generate AT LEAST 5 personas here.
             {{
                 "persona_name": "string (e.g., 'Tech-Savvy Tom', 'Budget-Conscious Brenda', 'Araştırmacı Ayşe')",
                 "demographics": "string (e.g., '25-35, Urban, Early Adopter', '40-55, Suburban, Value Seeker')",
@@ -70,9 +81,9 @@ def build_ai_recommendations_prompt(website_data_summary: dict) -> str:
 
     CRITICAL REQUIREMENTS:
 
-    1.  **Language Detection**: If website content (keywords, summaries, topic categories from `website_data_summary`) is primarily in Turkish, respond entirely in Turkish, including persona names and details. Otherwise, use English.
+    1.  **Language Adherence**: The entire response, including all JSON keys and string values (persona names, descriptions, insights, etc.), MUST be in the language specified at the beginning of this prompt ({language_instruction if language_code == 'tr' else 'English'}). If the instruction is to respond in Turkish, ensure all output is in Turkish. Otherwise, use English.
 
-    2.  **Persona Definition First**: Generate 3-5 detailed `target_audience_personas` based on the `website_data_summary` (keywords, content themes, inferred user intent). These personas should inform subsequent recommendations and insights.
+    2.  **Persona Definition First**: {persona_critical_requirement_detail} based on the `website_data_summary` (keywords, content themes, inferred user intent). These personas should inform subsequent recommendations and insights. You MUST generate AT LEAST 5 personas.
 
     3.  **Data-Driven Insights**: ALL recommendations and insights MUST be based on the actual `technical_statistics` and `website_analysis_data` provided. Reference specific metrics, issues, or opportunities found in the data.
 

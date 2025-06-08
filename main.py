@@ -1,6 +1,4 @@
-
-
-# /SeoTree/main.py
+# /SeoBot/main.py
 import streamlit as st
 import os
 from dotenv import load_dotenv
@@ -21,7 +19,7 @@ from utils.shared_functions import analyze_website, load_saved_report, init_shar
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
-from analyzer.llm_analysis_end_processor import LLMAnalysisEndProcessor
+from analyzer.llm_report.llm_analysis_end_processor import LLMAnalysisEndProcessor
 
 
 
@@ -65,27 +63,37 @@ def display_report(text_report, full_report, normalized_url):
     st.session_state.url_being_analyzed = None     # Clear the URL being analyzed
     st.rerun() # This can now stay
 
+
 # Changed to a synchronous function
 def trigger_detailed_analysis_background_process(report_id: int): # report_id is int from DB
     """Triggers the detailed analysis by scheduling it in a background thread."""
     try:
-        logging.info(f"Attempting to trigger detailed analysis for report ID {report_id} via background thread.")
+        # Get the current language from Streamlit session state
+        current_language = st.session_state.get("language", "en") # Default to 'en' if not set
+        logging.info(f"Attempting to trigger detailed analysis for report ID {report_id} with language '{current_language}' via background thread.")
 
         # Instantiate the processor.
-        processor = LLMAnalysisEndProcessor()
+        # NOTE: This instance of processor is only used to call schedule_run_in_background.
+        # The actual processing in the thread will use a NEW instance initialized with current_language.
+        # We don't need to pass language_code here because schedule_run_in_background will create
+        # a new instance with the correct language for the thread.
+        processor = LLMAnalysisEndProcessor() # Instantiated with its default lang, but it's fine
 
-        # Schedule the run method in a background thread.
+        # Schedule the run method in a background thread, passing the current language
         # processor.run expects a list of strings for report_ids.
-        processor.schedule_run_in_background(report_ids=[str(report_id)])
+        processor.schedule_run_in_background(
+            report_ids=[str(report_id)],
+            language_code=current_language # Pass the determined language
+        )
 
-        logging.info(f"Successfully scheduled detailed analysis (background thread) for report ID {report_id}")
+        logging.info(f"Successfully scheduled detailed analysis (background thread) for report ID {report_id} with language '{current_language}'")
         return True
     except ValueError as ve:
         error_msg = language_manager.get_text("detailed_analysis_init_error", st.session_state.get("language", "en"))
         logging.error(f"Failed to initialize LLMAnalysisEndProcessor for report ID {report_id}: {ve} - {error_msg}")
         st.error(error_msg)
         return False
-    except RuntimeError as re_err: 
+    except RuntimeError as re_err:
         error_msg = language_manager.get_text("detailed_analysis_runtime_error", st.session_state.get("language", "en"))
         logging.error(f"Runtime error during LLMAnalysisEndProcessor initialization for report ID {report_id}: {re_err} - {error_msg}")
         st.error(error_msg)
@@ -169,7 +177,7 @@ async def process_url(url, lang="en"):
 
 # --- DATA EXTRACTION AND VISUALIZATION FUNCTIONS ---
 
-def extract_metrics_from_report(full_report_json, text_report_fallback=None): # text_report_fallback is not used in new logic
+def extract_metrics_from_report(full_report_json):
     """
     Extract key metrics from the SEO report for visualization.
     Prioritizes data from full_report_json. SEO score is calculated
@@ -183,8 +191,8 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
             'images': 0, 
             'headings': 0, 
             'missing_alt_tags': 0, # Specifically for homepage if available
-            'internal_links': None, # From text fallback if needed
-            'external_links': None  # From text fallback if needed
+            'internal_links': None, # Now populated from JSON if available
+            'external_links': None  # Now populated from JSON if available
         },
         'technical_metrics': { # Site-wide technical indicators
             'robots_txt_status': 'error',
@@ -193,7 +201,7 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
             'mobile_friendly': 'error', # Derived from site_health_indicators
             'title_tag': 'error', # Homepage title status
             'internal_404_count': 0, # Populated from site_health_indicators
-            'page_speed': None # From text fallback if available
+            'page_speed': None # Derived from crawl time
         },
         'site_health_indicators': { # Detailed site-wide health data for scoring
             'thin_content_page_count': 0,
@@ -209,18 +217,9 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
         }
     }
 
-    if not full_report_json:
-        logging.warning("extract_metrics_from_report: full_report_json is None. Metrics will be very limited and score will likely be 0.")
-        # Try to get some very basic info from text_report_fallback for issue score calculation
-        if text_report_fallback:
-            for line in text_report_fallback.split('\n'):
-                line_lower = line.lower()
-                if 'priority:' in line_lower:
-                    if 'critical' in line_lower: metrics['issues_by_priority']['critical'] += 1
-                    elif 'high' in line_lower: metrics['issues_by_priority']['high'] += 1
-                    elif 'medium' in line_lower: metrics['issues_by_priority']['medium'] += 1
-                    elif 'low' in line_lower: metrics['issues_by_priority']['low'] += 1
-        return metrics # Return early with mostly default/empty metrics
+    if not full_report_json or not isinstance(full_report_json, dict):
+        logging.warning("extract_metrics_from_report: full_report_json is None or not a dict. Metrics will be very limited.")
+        return metrics # Return early with default/empty metrics
 
     main_url_from_json = full_report_json.get('url')
 
@@ -261,7 +260,11 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
     
     analysis_duration = full_report_json.get('analysis_duration_seconds')
     if isinstance(analysis_duration, (int, float)) and health['crawled_pages_count'] > 0:
-        health['avg_crawl_time_per_page'] = analysis_duration / health['crawled_pages_count']
+        avg_crawl_time = analysis_duration / health['crawled_pages_count']
+        health['avg_crawl_time_per_page'] = avg_crawl_time
+        if avg_crawl_time < 2: tech_metrics['page_speed'] = 'good'
+        elif avg_crawl_time <= 4: tech_metrics['page_speed'] = 'warning'
+        else: tech_metrics['page_speed'] = 'error'
 
     # Homepage specific data (from llm_analysis if available, or page_statistics for main_url)
     hp_data_source = None
@@ -300,8 +303,9 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
         elif isinstance(headings_count_data, dict): # e.g. {'h1':1, 'h2':3}
             metrics['page_metrics']['headings'] = sum(v for v in headings_count_data.values() if isinstance(v, int))
 
-
         metrics['page_metrics']['missing_alt_tags'] = hp_data_source.get('missing_alt_tags_count',0)
+        metrics['page_metrics']['internal_links'] = hp_data_source.get('internal_links_count')
+        metrics['page_metrics']['external_links'] = hp_data_source.get('external_links_count')
 
 
     # Iterate all page_statistics for thin content, bad titles, 404s
@@ -318,7 +322,7 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
             if isinstance(title_text, str) and "<br" in title_text.lower():
                 health['bad_format_title_page_count'] += 1
             
-            status_code = page_data.get('status_code') # Not in example JSON, so will be 0
+            status_code = page_data.get('status_code')
             if isinstance(status_code, int) and status_code == 404:
                 health['internal_404_page_count'] +=1
     
@@ -326,7 +330,7 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
 
 
     # 3. Calculate SEO Score
-    score_a, score_b, score_c, score_d_base = 0, 0, 0, 10 # MODIFIED: score_d_base from 30 to 10
+    score_a, score_b, score_c, score_d_base = 0, 0, 0, 10
 
     # A. Technical Foundation (Max 20 points)
     if tech_metrics['robots_txt_status'] == 'good': score_a += 5
@@ -364,19 +368,15 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
     
     # C.3 Homepage Content Length (Max 10 points)
     hp_words_approx = health['homepage_content_length_chars'] / 5.5 if health['homepage_content_length_chars'] else 0
-    # MODIFIED thresholds:
     if hp_words_approx >= 800: score_c += 10
     elif hp_words_approx >= 600: score_c += 7
     elif hp_words_approx >= 400: score_c += 4 
-    # else 0 points if < 400 words (e.g. 300-399 words gets 0 points now)
     
     # C.4 Average Content Length (Max 10 points)
     avg_words_approx = health['average_content_length_chars'] / 5.5 if health['average_content_length_chars'] else 0
-    # MODIFIED thresholds:
     if avg_words_approx >= 800: score_c += 10
     elif avg_words_approx >= 600: score_c += 6 
     elif avg_words_approx >= 350: score_c += 3
-    # else 0 points if < 350 words (e.g. 200-349 words gets 0 points now)
 
     # C.5 Alt Text Coverage (Max 5 points)
     if health['alt_text_coverage_percentage'] >= 95.0: score_c += 5
@@ -392,56 +392,39 @@ def extract_metrics_from_report(full_report_json, text_report_fallback=None): # 
     
     thin_content_penalty = 0
     if health['thin_content_page_count'] > 0:
-        penalty_per_thin_page = 3 # MODIFIED: from 1 to 3
+        penalty_per_thin_page = 3
         
-        # Determine the cap for thin content penalty
-        # The complex commented out logic has been simplified to the effective intended logic:
         if health['crawled_pages_count'] > 0 and health['crawled_pages_count'] <= 10:
-             # For small sites (1-10 crawled pages)
-             # Cap is the number of crawled pages. This means for a 3-page site, if all 3 are thin,
-             # raw penalty is 3*3=9. Cap is 3. Final penalty is 3.
              thin_content_penalty_cap = health['crawled_pages_count']
         else: 
-             # For sites with > 10 pages or if crawled_pages_count is 0 (though 0 implies no thin pages anyway)
-             thin_content_penalty_cap = 10 # Flat cap of 10 points
+             thin_content_penalty_cap = 10
         
         thin_content_penalty = min(health['thin_content_page_count'] * penalty_per_thin_page, thin_content_penalty_cap)
     
     score_d = max(0, score_d_base - issue_penalty - thin_content_penalty)
 
-    metrics['seo_score'] = min(100, int(round(score_a + score_b + score_c + score_d)))
+    final_s_a, final_s_b, final_s_c, final_s_d = 0, 0, 0, 0
+    try:
+        final_s_a = score_a if isinstance(score_a, (int, float)) else 0
+        final_s_b = score_b if isinstance(score_b, (int, float)) else 0
+        final_s_c = score_c if isinstance(score_c, (int, float)) else 0
+        final_s_d = score_d if isinstance(score_d, (int, float)) else 0
+
+        current_sum = final_s_a + final_s_b + final_s_c + final_s_d
+        
+        rounded_sum = round(current_sum) 
+        int_sum = int(rounded_sum)     
+        final_seo_score = min(100, int_sum)
+        metrics['seo_score'] = final_seo_score
+    except (TypeError, ValueError, OverflowError) as e:
+        logging.error(
+            f"Error calculating final SEO score. Components: a={score_a}, b={score_b}, c={score_c}, d={score_d}. Error: {e}",
+            exc_info=True
+        )
+
     logging.info(f"Calculated SEO score for {main_url_from_json or 'report'}: {metrics['seo_score']}")
     logging.info(f"Score breakdown: Tech(A)={score_a}, Mobile(B)={score_b}, Content(C)={score_c}, Issues/Penalties(D)={score_d} (Base: {score_d_base}, IssuePen: {issue_penalty}, ThinPen: {thin_content_penalty})")
-    logging.info(f"Health Indicators: {health}")
-
-    # Fallback for Page Speed in technical_metrics if not calculated from duration
-    if tech_metrics['page_speed'] is None and text_report_fallback:
-        for line in text_report_fallback.split('\n'):
-            line_lower = line.lower()
-            status_category = None
-            if '✅' in line: status_category = 'good'
-            elif '⚠️' in line: status_category = 'warning'
-            elif '❌' in line: status_category = 'error'
-            if status_category and 'page speed' in line_lower:
-                tech_metrics['page_speed'] = status_category
-                break
-    
-    # Fallback for internal/external links for homepage bar chart
-    if text_report_fallback:
-        lines = text_report_fallback.split('\n')
-        for line in lines:
-            if ':' in line and not line.startswith('#'): # Basic check for key:value lines
-                key_value = line.split(':', 1)
-                if len(key_value) == 2:
-                    key, value_str = key_value[0].strip().lower(), key_value[1].strip()
-                    number_match = re.search(r'(\d+)', value_str)
-                    if number_match:
-                        try:
-                            num_value = int(number_match.group(1))
-                            if 'internal link' in key and metrics['page_metrics']['internal_links'] is None: metrics['page_metrics']['internal_links'] = num_value
-                            elif 'external link' in key and metrics['page_metrics']['external_links'] is None: metrics['page_metrics']['external_links'] = num_value
-                        except ValueError: pass
-
+    logging.info(f"Health Indicators: {health}")    
 
     return metrics
 
@@ -650,7 +633,7 @@ def display_seo_dashboard(metrics, lang="en"):
         # SEO Score Gauge
         fig_gauge = create_seo_score_gauge(metrics['seo_score'], lang)
         st.plotly_chart(fig_gauge, use_container_width=True)
-        if metrics['seo_score'] is None or (metrics['seo_score'] == 0 and not metrics.get('site_health_indicators',{}).get('crawled_pages_count')): 
+        if metrics.get('site_health_indicators',{}).get('crawled_pages_count', 0) == 0: 
              st.caption(language_manager.get_text("seo_score_not_available_caption", lang, fallback="SEO Score might be 0 due to limited data for calculation."))
 
         # Page Content Metrics (Homepage)
@@ -671,44 +654,40 @@ def display_seo_dashboard(metrics, lang="en"):
             st.info(language_manager.get_text("content_quality_overview_not_available", lang, fallback="Content Quality Overview data not available."))
 
         # Textual summary for content quality and SEO score
-        if metrics['seo_score'] < 70: # Threshold for low score
+        crawled_pages_count = site_health_indicators.get('crawled_pages_count', 0)
+        # Only show this advice if an analysis with crawled pages was actually performed.
+        if crawled_pages_count > 0 and metrics['seo_score'] < 70:
             thin_pages = site_health_indicators.get('thin_content_page_count', 0)
             bad_titles = site_health_indicators.get('bad_format_title_page_count', 0)
-            crawled_pages_count = site_health_indicators.get('crawled_pages_count', 0)
-
+            
             message_parts = []
-            if crawled_pages_count > 0: # Only provide detailed content advice if we have crawled pages
-                if thin_pages > 0:
-                    message_parts.append(
-                        language_manager.get_text(
-                            "content_issue_thin_pages_found", lang, count=thin_pages,
-                            fallback=f"{thin_pages} page(s) with potentially thin content"
-                        )
+            if thin_pages > 0:
+                message_parts.append(
+                    language_manager.get_text(
+                        "content_issue_thin_pages_found", lang, count=thin_pages,
+                        fallback=f"{thin_pages} page(s) with potentially thin content"
                     )
-                if bad_titles > 0:
-                    message_parts.append(
-                        language_manager.get_text(
-                            "content_issue_bad_titles_found", lang, count=bad_titles,
-                            fallback=f"{bad_titles} page(s) with title format issues"
-                        )
+                )
+            if bad_titles > 0:
+                message_parts.append(
+                    language_manager.get_text(
+                        "content_issue_bad_titles_found", lang, count=bad_titles,
+                        fallback=f"{bad_titles} page(s) with title format issues"
                     )
+                )
 
             if message_parts:
-                issues_string = ", ".join(message_parts)
-                if len(message_parts) > 1 : issues_string = " and ".join(message_parts) # Better grammar for two items
-                
+                issues_string = " and ".join(message_parts) if len(message_parts) > 1 else message_parts[0]
                 full_message = language_manager.get_text(
                     "low_score_content_advice", lang, issues=issues_string,
                     fallback=f"Your SEO score may be affected by content quality. Consider addressing: {issues_string}. Improving these areas can enhance your site's performance."
                 )
                 st.warning(full_message)
-            elif crawled_pages_count > 0 and metrics['seo_score'] is not None : # Score is low, but these specific content issues are not detected, and score is actually calculated
-                 # Check for seo_score is not None to avoid this message if score is 0 due to no data
-                if not (metrics['seo_score'] == 0 and not crawled_pages_count): # Avoid if gauge caption already covers it
-                    st.info(language_manager.get_text(
-                        "low_score_other_factors", lang,
-                        fallback="Your SEO score is below the optimal range. While major thin content or title format issues weren't detected site-wide from this scan, review other technical aspects, content relevance, and user experience to identify areas for improvement."
-                    ))
+            else: # Score is low, but these specific content issues were not detected
+                st.info(language_manager.get_text(
+                    "low_score_other_factors", lang,
+                    fallback="Your SEO score is below the optimal range. While major thin content or title format issues weren't detected site-wide from this scan, review other technical aspects, content relevance, and user experience to identify areas for improvement."
+                ))
         st.markdown("<br>", unsafe_allow_html=True) # Add some spacing before the next chart
 
 
@@ -721,8 +700,8 @@ def display_seo_dashboard(metrics, lang="en"):
         else: st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
     st.markdown("---")
 
-def display_styled_report(full_report_json, text_report_for_display, lang):
-    metrics = extract_metrics_from_report(full_report_json, text_report_for_display)
+def display_styled_report(full_report_json, lang):
+    metrics = extract_metrics_from_report(full_report_json)
     display_seo_dashboard(metrics, lang)
 
 def run_main_app():
@@ -752,7 +731,6 @@ def run_main_app():
                 if is_authenticated: st.session_state.authenticated = True; st.session_state.username = username; st.rerun()
                 else: st.error(language_manager.get_text("login_failed", lang))
     else:
-        #st.markdown(language_manager.get_text("logged_in_as", lang, username=st.session_state.username)) # Added username placeholder
         st.markdown(language_manager.get_text("logged_in_as", lang, username=st.session_state.username))
         if st.session_state.analysis_complete and hasattr(st.session_state, 'full_report') and st.session_state.full_report and hasattr(st.session_state, 'url') and st.session_state.url: # Check full_report
             st.success(language_manager.get_text("analysis_complete_message", lang))
@@ -765,9 +743,8 @@ def run_main_app():
             with col2:
                 if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True): st.switch_page("pages/3_Product_Writer.py")
             display_detailed_analysis_status_enhanced(supabase, lang)
-            #st.subheader(language_manager.get_text("analysis_results_for_url", lang, url=st.session_state.url)) # Added url placeholder
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, url=st.session_state.url))
-            display_styled_report(st.session_state.full_report, st.session_state.text_report, lang) # Pass text_report as fallback
+            display_styled_report(st.session_state.full_report, lang)
             
             if hasattr(st.session_state, 'text_report') and st.session_state.text_report: # Ensure text_report exists for raw data expander
                 with st.expander(f"📄 {language_manager.get_text('raw_report_data_label', lang)}", expanded=False):

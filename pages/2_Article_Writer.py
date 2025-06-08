@@ -276,32 +276,53 @@ async def main():
                 st.session_state.article_options = {}
 
             task_title_from_trigger = task_details.get('suggested_title', 'the selected article topic')
-            st.session_state.article_options["focus_keyword"] = task_details.get("focus_keyword", "")
+            
+            # --- MODIFIED TONE PROCESSING FOR SEO HELPER TRIGGER ---
+            raw_tone_value_trigger = task_details.get("article_tone", "Professional") # Can be list, string, or default string
+            parsed_tones_list_trigger = []
+            original_tone_for_logging_trigger = ""
 
+            if isinstance(raw_tone_value_trigger, list):
+                original_tone_for_logging_trigger = ", ".join(raw_tone_value_trigger)
+                validated_tones = [tone for tone in raw_tone_value_trigger if tone in expanded_tone_internal_options]
+                parsed_tones_list_trigger = list(set(validated_tones)) if validated_tones else ["Professional"]
+            elif isinstance(raw_tone_value_trigger, str):
+                original_tone_for_logging_trigger = raw_tone_value_trigger
+                internal_tone_str_for_parsing = convert_display_tone_to_internal_string(
+                    raw_tone_value_trigger,
+                    expanded_tone_internal_options,
+                    lang,
+                    language_manager
+                )
+                parsed_tones_list_trigger = parse_tone_string_to_list(internal_tone_str_for_parsing, expanded_tone_internal_options)
+            else: # Fallback for unexpected types
+                original_tone_for_logging_trigger = str(raw_tone_value_trigger)
+                parsed_tones_list_trigger = ["Professional"]
+
+            st.session_state.article_options["tone"] = parsed_tones_list_trigger
+
+            # Determine if original input was effectively "Professional" for logging condition
+            is_original_effectively_professional_trigger = False
+            if isinstance(raw_tone_value_trigger, str):
+                is_original_effectively_professional_trigger = raw_tone_value_trigger.strip().lower() == "professional"
+            elif isinstance(raw_tone_value_trigger, list):
+                normalized_original_list = sorted(list(set(
+                    t.strip().lower() for t in raw_tone_value_trigger if isinstance(t, str) and t.strip()
+                )))
+                is_original_effectively_professional_trigger = (normalized_original_list == ["professional"])
+
+            # "N/A (Key Missing)" is explicitly handled inside task_data population, so here we just check if the string is non-empty and valid.
+            if original_tone_for_logging_trigger and original_tone_for_logging_trigger != "N/A (Key Missing)":
+                if parsed_tones_list_trigger == ["Professional"] and not is_original_effectively_professional_trigger:
+                    logging.warning(f"AW - SEO Helper Trigger: Original suggested tone '{original_tone_for_logging_trigger}' was processed as {parsed_tones_list_trigger}. Original may have been unmappable or was inherently 'Professional'.")
+            # --- END MODIFIED TONE PROCESSING ---
+            
+            st.session_state.article_options["focus_keyword"] = task_details.get("focus_keyword", "")
             valid_lengths = ["Short", "Medium", "Long", "Very Long"]
             task_length_val = task_details.get("content_length")
             st.session_state.article_options["content_length"] = task_length_val if task_length_val in valid_lengths else "Medium"
             if task_length_val not in valid_lengths and task_length_val != "N/A (Key Missing)": logging.warning(f"AW - SEO Helper Trigger: Invalid content length '{task_length_val}'. Defaulting to Medium.")
 
-            # --- MODIFIED TONE PROCESSING FOR SEO HELPER TRIGGER ---
-            task_tone_val_str = task_details.get("article_tone", "Professional") # Default to "Professional" string
-            
-            # Convert display/mixed tone string to internal English-based string for parsing
-            internal_tone_str_for_parsing = convert_display_tone_to_internal_string(
-                task_tone_val_str,
-                expanded_tone_internal_options,
-                lang, # current language
-                language_manager # language_manager instance
-            )
-            parsed_tones_list = parse_tone_string_to_list(internal_tone_str_for_parsing, expanded_tone_internal_options)
-            
-            st.session_state.article_options["tone"] = parsed_tones_list
-            
-            # Logging condition for original tone string from task_details
-            if task_tone_val_str != "N/A (Key Missing)" and \
-               (not parsed_tones_list or (parsed_tones_list == ["Professional"] and task_tone_val_str.lower() not in ["professional", "Professional"])):
-                logging.warning(f"AW - SEO Helper Trigger: Original suggested tone '{task_tone_val_str}' was processed as {parsed_tones_list}. Original may have been unmappable or was inherently 'Professional'.")
-            # --- END MODIFIED TONE PROCESSING ---
 
             additional_kws_val = task_details.get("additional_keywords", [])
             st.session_state.article_options["keywords"] = ", ".join(additional_kws_val) if isinstance(additional_kws_val, list) else (str(additional_kws_val) if additional_kws_val else "")
@@ -451,7 +472,18 @@ async def main():
                 task_data = {}
                 required_keys_for_sidebar = ["focus_keyword", "content_length", "article_tone", "additional_keywords", "suggested_title"]
                 for r_key in required_keys_for_sidebar:
-                    task_data[r_key] = task.get(r_key, "N/A (Key Missing)" if r_key != "additional_keywords" else [])
+                    # For article_tone, we expect a list from JSON or fallback to a string.
+                    # `get` will correctly fetch list or string.
+                    # "N/A (Key Missing)" for non-list non-string keys is appropriate.
+                    # For "additional_keywords" and "article_tone" default to [] if missing.
+                    if r_key == "additional_keywords":
+                         task_data[r_key] = task.get(r_key, [])
+                    elif r_key == "article_tone":
+                        # article_tone from JSON is a list. If it's missing, it will be N/A (Key Missing) or default
+                        task_data[r_key] = task.get(r_key, "N/A (Key Missing)")
+                    else:
+                        task_data[r_key] = task.get(r_key, "N/A (Key Missing)")
+
 
                 task_title_display = task_data.get('suggested_title', 'Untitled Suggestion')
                 if not task_title_display or task_title_display == "N/A (Key Missing)": task_title_display = f'Suggestion {i+1}'
@@ -462,9 +494,18 @@ async def main():
                     st.markdown(f"**{language_manager.get_text('focus_keyword_label', lang, fallback='Focus Keyword')}:** {task_data.get('focus_keyword', 'N/A')}")
                     st.markdown(f"**{language_manager.get_text('content_length_label', lang, fallback='Content Length')}:** {task_data.get('content_length', 'N/A')}")
                     
-                    # Display original tone string from suggestion in expander
-                    task_tone_val_expander_str = task_data.get('article_tone', 'N/A')
-                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {task_tone_val_expander_str}")
+                    # Improved display for article_tone in expander
+                    raw_tone_for_expander = task_data.get('article_tone') # This will be list or "N/A (Key Missing)" string
+                    display_tone_in_expander = "N/A"
+                    if isinstance(raw_tone_for_expander, list):
+                        if raw_tone_for_expander: # If list is not empty
+                            display_tone_in_expander = ", ".join(raw_tone_for_expander)
+                        # else: remains "N/A" or could be "Default (Professional)" if we want to indicate
+                    elif isinstance(raw_tone_for_expander, str): # Handles "N/A (Key Missing)"
+                        display_tone_in_expander = raw_tone_for_expander
+                    # else: # Should not be hit given task_data population
+                    #    display_tone_in_expander = str(raw_tone_for_expander) if raw_tone_for_expander is not None else "N/A"
+                    st.markdown(f"**{language_manager.get_text('article_tone_label', lang, fallback='Article Tone')}:** {display_tone_in_expander}")
 
 
                     add_keywords_val_display = task_data.get('additional_keywords', [])
@@ -486,10 +527,17 @@ async def main():
                     if target_audience_val:
                         st.markdown(f"**{language_manager.get_text('target_audience_label', lang, fallback='Target Audience')}:** {target_audience_val}")
 
-                    outline_preview_val = task.get('outline_preview')
-                    if outline_preview_val:
-                        st.markdown(f"**{language_manager.get_text('outline_preview_label', lang, fallback='Outline Preview')}:**")
-                        st.markdown(f"> {str(outline_preview_val).replace(chr(10), chr(10) + '> ')}")
+                    outline_preview_val = task.get('outline_preview') # outline_preview is 'content_outline' in JSON
+                    if 'content_outline' in task: # Use the actual key from JSON
+                        outline_preview_val = task.get('content_outline')
+                        if isinstance(outline_preview_val, list) and outline_preview_val:
+                            st.markdown(f"**{language_manager.get_text('outline_preview_label', lang, fallback='Outline Preview')}:**")
+                            for item in outline_preview_val:
+                                st.markdown(f"- {item}")
+                        elif isinstance(outline_preview_val, str) and outline_preview_val.strip():
+                             st.markdown(f"**{language_manager.get_text('outline_preview_label', lang, fallback='Outline Preview')}:**")
+                             st.markdown(f"> {outline_preview_val.replace(chr(10), chr(10) + '> ')}")
+
 
                     if st.button(language_manager.get_text("use_this_suggestion_button", lang, fallback="Use This Suggestion"), key=f"use_suggestion_{i}"):
                         if "article_options" not in st.session_state: st.session_state.article_options = {}
@@ -501,27 +549,52 @@ async def main():
                         if task_length_val not in valid_lengths and task_length_val != "N/A (Key Missing)": st.warning(f"Invalid content length '{task_length_val}' in suggestion. Defaulting to Medium.")
 
                         # --- MODIFIED TONE PROCESSING FOR "USE THIS SUGGESTION" ---
-                        task_tone_val_str_suggestion = task_data.get("article_tone", "Professional") # Default to "Professional" string
-                        
-                        # Convert display/mixed tone string to internal English-based string for parsing
-                        internal_tone_str_for_parsing_suggestion = convert_display_tone_to_internal_string(
-                            task_tone_val_str_suggestion,
-                            expanded_tone_internal_options,
-                            lang, # current language
-                            language_manager # language_manager instance
-                        )
-                        parsed_tones_list_suggestion = parse_tone_string_to_list(internal_tone_str_for_parsing_suggestion, expanded_tone_internal_options)
-                        
+                        # task_data["article_tone"] can be a list from JSON or "N/A (Key Missing)" string
+                        raw_tone_value_suggestion = task_data.get("article_tone") # .get on task_data
+                        parsed_tones_list_suggestion = []
+                        original_tone_for_warning_suggestion = ""
+
+                        if isinstance(raw_tone_value_suggestion, list):
+                            original_tone_for_warning_suggestion = ", ".join(raw_tone_value_suggestion)
+                            validated_tones = [tone for tone in raw_tone_value_suggestion if tone in expanded_tone_internal_options]
+                            parsed_tones_list_suggestion = list(set(validated_tones)) if validated_tones else ["Professional"]
+                        elif isinstance(raw_tone_value_suggestion, str):
+                            original_tone_for_warning_suggestion = raw_tone_value_suggestion
+                            # If "N/A (Key Missing)" or other string, process it
+                            if raw_tone_value_suggestion == "N/A (Key Missing)": # Explicitly handle if this string value means "default"
+                                parsed_tones_list_suggestion = ["Professional"]
+                            else:
+                                internal_tone_str_for_parsing_suggestion = convert_display_tone_to_internal_string(
+                                    raw_tone_value_suggestion, 
+                                    expanded_tone_internal_options,
+                                    lang,
+                                    language_manager
+                                )
+                                parsed_tones_list_suggestion = parse_tone_string_to_list(internal_tone_str_for_parsing_suggestion, expanded_tone_internal_options)
+                        else: # Fallback (e.g. if None or other unexpected type)
+                            original_tone_for_warning_suggestion = str(raw_tone_value_suggestion)
+                            parsed_tones_list_suggestion = ["Professional"]
+
                         st.session_state.article_options["tone"] = parsed_tones_list_suggestion
                         
-                        # Warning condition for original tone string from task_data
-                        if task_tone_val_str_suggestion != "N/A (Key Missing)" and \
-                           (not parsed_tones_list_suggestion or \
-                            (parsed_tones_list_suggestion == ["Professional"] and task_tone_val_str_suggestion.lower() not in ["professional", "Professional"])):
-                            st.warning(f"Invalid or partially mapped article tone '{task_tone_val_str_suggestion}' in suggestion. Processed as: {parsed_tones_list_suggestion}.")
+                        # Determine if original input was effectively "Professional" for warning
+                        is_original_effectively_professional_suggestion = False
+                        if isinstance(raw_tone_value_suggestion, str):
+                            is_original_effectively_professional_suggestion = raw_tone_value_suggestion.strip().lower() == "professional" or raw_tone_value_suggestion == "N/A (Key Missing)"
+                        elif isinstance(raw_tone_value_suggestion, list):
+                            normalized_original_list = sorted(list(set(
+                                t.strip().lower() for t in raw_tone_value_suggestion if isinstance(t, str) and t.strip()
+                            )))
+                            is_original_effectively_professional_suggestion = (normalized_original_list == ["professional"])
+                        
+                        # Only warn if the original tone was not "N/A (Key Missing)" string (which implies default)
+                        # and the processed tone is Professional BUT the original was not meant to be Professional
+                        if original_tone_for_warning_suggestion != "N/A (Key Missing)":
+                            if parsed_tones_list_suggestion == ["Professional"] and not is_original_effectively_professional_suggestion:
+                                st.warning(f"Invalid or partially mapped article tone '{original_tone_for_warning_suggestion}' in suggestion. Processed as: {parsed_tones_list_suggestion}.")
                         # --- END MODIFIED TONE PROCESSING ---
 
-                        additional_kws_val = task_data.get("additional_keywords", [])
+                        additional_kws_val = task_data.get("additional_keywords", []) # Already defaults to [] if missing
                         st.session_state.article_options["keywords"] = ", ".join(additional_kws_val) if isinstance(additional_kws_val, list) else (str(additional_kws_val) if additional_kws_val and additional_kws_val != "N/A (Key Missing)" else "")
                         st.session_state.article_options["custom_title"] = task_data.get("suggested_title", "")
                         st.session_state.selected_auto_suggestion_task_index = i

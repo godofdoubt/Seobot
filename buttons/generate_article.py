@@ -1,3 +1,4 @@
+
 #/buttons/generate_article.py
 import google.generativeai as genai
 import re
@@ -8,8 +9,13 @@ import os
 import streamlit as st 
 import json 
 
+# Assuming generate_article_prompts.py is in the same directory (buttons)
+# and 'buttons' is part of a package or sys.path allows this.
+# If run as a script and files are siblings, 'from generate_article_prompts import ...' might be needed.
+from .generate_article_prompts import get_article_generation_prompts
+
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 def select_focus_keyword_from_structured_data(page_data: dict, main_page_data: dict = None) -> str:
     keywords_to_consider = []
@@ -116,9 +122,11 @@ def generate_article(
                 keywords_str = ", ".join(processed_keywords)
                 custom_keywords_prompt_part = f"\n\n**Additional Required Keywords:** {keywords_str}"
 
-        title_instruction_prompt_part = ""
+        # This is for the "Content and Tone" section if a custom title is provided.
+        # It will be passed as `content_tone_title_instruction` to the prompt function.
+        title_instruction_prompt_part_for_content_tone = ""
         if custom_title:
-            title_instruction_prompt_part = f"\n\n**Required Title:** Use this exact title for the article: \"{custom_title}\""
+            title_instruction_prompt_part_for_content_tone = f"\n\n**Required Title:** Use this exact title for the article: \"{custom_title}\""
 
         notes_section_parts = []
         if opts.get("target_page_url"):
@@ -155,49 +163,27 @@ def generate_article(
         prompt_prefix = random.choice(prompt_variants)
         language_instruction = f"Respond in Turkish. " if lang == "tr" else ""
 
-        title_generation_instruction_part = f'Create a creative and compelling title that accurately reflects the article\'s content, emphasizing **"{focus_keyword}"**.'
+        # This is for the "8. Title:" section of the prompt.
+        # It will be passed as `final_title_directive` to the prompt function.
+        title_generation_instruction_part_for_final_directive = f'Create a creative and compelling title that accurately reflects the article\'s content, emphasizing **"{focus_keyword}"**.'
         if custom_title:
-            title_generation_instruction_part = "Use the provided title exactly as specified."
-                
-        prompt = f"""{language_instruction}{prompt_prefix} using the provided page analysis data.
+            title_generation_instruction_part_for_final_directive = "Use the provided title exactly as specified."
+        
+        prompt = get_article_generation_prompts(
+            language_instruction=language_instruction,
+            prompt_prefix=prompt_prefix,
+            website_name=website_name,
+            focus_keyword=focus_keyword,
+            custom_keywords_prompt_part=custom_keywords_prompt_part,
+            tone_instruction_prompt_part=tone_instruction_prompt_part,
+            content_tone_title_instruction=title_instruction_prompt_part_for_content_tone, # formerly title_instruction_prompt_part
+            notes_prompt_section=notes_prompt_section,
+            content_length=content_length,
+            final_title_directive=title_generation_instruction_part_for_final_directive, # formerly title_generation_instruction_part
+            analysis_data_json=analysis_data_json,
+            variation_seed=variation_seed
+        )
 
-**Website Name:** {website_name}
-
-**Core Instructions for Article Generation:**
-
-1.  **Primary Focus:** The article's central theme MUST be **"{focus_keyword}"**. All content should revolve around and support this topic.
-    {custom_keywords_prompt_part}
-
-2.  **Source Material:** Your primary source of information is the "Page Analysis Data" (in JSON format) provided below. Extract relevant details, summaries, keywords, target audience information, and other contextual data from this JSON to build your article.
-    *   If "target_page_analysis" is present within the JSON, prioritize its content (like `content_summary`, `keywords`, `suggested_keywords_for_seo`, 'content_summary', `topic_categories`, `target_audience`) for the article's main subject.
-    *   Use "main_page_analysis" for general site context (e.g., overall brand voice, primary services/products if relevant to the focus keyword, but avoid just listing header/footer elements unless they contribute to the article's theme).
-
-3.  **Content and Tone:**
-    *   Write naturally and engagingly for an audience interested in **"{focus_keyword}"** as it relates to {website_name}.
-    {tone_instruction_prompt_part} 
-    {title_instruction_prompt_part}  # CORRECTED LINE: Removed faulty conditional and comment.
-    {notes_prompt_section}
-
-4.  **Avoid Meta-Commentary:** Do NOT mention "Page Analysis Data," "SEO report," "JSON data," or directly quote field names from the analysis (e.g., "the `content_summary` field says..."). Integrate the information seamlessly and naturally into the article.
-
-5.  **Content Length:** Aim for a {content_length.lower()} article. {"Concise: 2-3 paragraphs." if content_length == "Short" else ""}{"Comprehensive: multiple sections and paragraphs." if content_length in ["Long", "Very Long"] else "A moderately detailed article with several paragraphs."}
-
-6.  **Adherence to Directives:** Carefully follow all "Key Directives for Article Generation," especially any provided 'Content Outline', 'Target Audience for Article', and 'Internal Linking Opportunities'. These directives are crucial for tailoring the article.
-
-7.  **Keyword Usage & Listing:**
-    *   From the "Page Analysis Data" (primarily `keywords`, `suggested_keywords_for_seo` within `target_page_analysis` or `main_page_analysis`), identify the most relevant keywords related to **"{focus_keyword}"**.
-    *   Naturally incorporate these identified keywords and any 'Additional Required Keywords' throughout the article where contextually appropriate.
-    *   At the very end of the article, under a specific heading "Notes:" Summurise your notes. and  "Keywords Used:", provide a bulleted list of the *primary keywords you intentionally used* in the article's body, including **"{focus_keyword}"**.
-
-8.  **Title:** {title_generation_instruction_part}
-
-**Page Analysis Data (JSON format):**
-```json
-{analysis_data_json}
-
-
---- Timestamp for Variation: {variation_seed} ---
-"""
         # For debugging the prompt:
         # st.text_area("Generated Prompt:", prompt, height=500)
 
@@ -213,4 +199,3 @@ def generate_article(
         error_message = "Could not generate article due to an error."
         if lang == "tr": error_message = "Bir hata nedeniyle makale oluşturulamadı."
         return f"{error_message} (Error: {str(e)})"
-
