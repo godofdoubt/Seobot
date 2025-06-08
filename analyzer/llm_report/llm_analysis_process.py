@@ -7,13 +7,13 @@ import httpx # For Mistral API calls
 from .llm_analysis_process_prompts import LLMAnalysisPrompts # Import the prompts class for single page
 from .generate_ai_recommendations import generate_ai_recommendations_content # Import the new function
 
-# Assuming SeoTree is the root package and utils is a sibling directory to analyzer
+# Assuming Seobot is the root package and utils is a sibling directory to analyzer
 # Adjust the import path according to your project structure.
 # Example: from ..utils.language_support import language_manager
-# If analyzer and utils are top-level under SeoTree: from SeoTree.utils.language_support import language_manager
+# If analyzer and utils are top-level under Seobot: from Seobot.utils.language_support import language_manager
 # For this example, assuming a structure like:
 # project_root/
-#   SeoTree/
+#   Seobot/
 #     analyzer/
 #       llm_analysis_process.py
 #     utils/

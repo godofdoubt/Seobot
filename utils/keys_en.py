@@ -1,5 +1,5 @@
 # keys_en.py
-# SeoTree/utils/keys_en.py
+# Seobot/utils/keys_en.py
 
 translations = {
     # Existing keys ...

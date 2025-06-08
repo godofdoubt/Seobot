@@ -7,17 +7,17 @@ from typing import Callable, Coroutine, Any, Tuple, Optional
 # For a typical structure where llm_analysis_process.py and this file are in 'analyzer'
 from .generate_ai_recommendations_prompt import build_ai_recommendations_prompt
 # Import language_manager
-# Assuming 'SeoTree' is a package accessible in PYTHONPATH,
+# Assuming 'Seobot' is a package accessible in PYTHONPATH,
 # or utils is a sibling package to analyzer under a common root.
-# If analyzer and SeoTree.utils are from different top-level structures, ensure PYTHONPATH is correct.
-# A common structure might be project_root/analyzer and project_root/SeoTree/utils.
-# For this solution, we'll assume `from SeoTree.utils.language_support import language_manager` is viable.
+# If analyzer and Seobot.utils are from different top-level structures, ensure PYTHONPATH is correct.
+# A common structure might be project_root/analyzer and project_root/Seobot/utils.
+# For this solution, we'll assume `from Seobot.utils.language_support import language_manager` is viable.
 # If `utils` is a direct sibling of `analyzer` (e.g. project_root/analyzer, project_root/utils),
 # then `from ..utils.language_support import language_manager` would be used.
 try:
-    from SeoTree.utils.language_support import language_manager
+    from utils.language_support import language_manager
 except ImportError:
-    # Fallback for environments where SeoTree might not be directly in PYTHONPATH
+    # Fallback for environments where Seobot might not be directly in PYTHONPATH
     # or for local testing scenarios. This assumes utils is a sibling of analyzer.
     try:
         from ..utils.language_support import language_manager

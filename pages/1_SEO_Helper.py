@@ -1,6 +1,4 @@
-
-
-#SeoTree/pages/1_SEO_Helper.py
+#Seobot/pages/1_SEO_Helper.py
 import streamlit as st
 
 # --- Streamlit Page Configuration ---
@@ -371,9 +369,7 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_l
                     display_parts.append(f"***{key.replace('_', ' ').title()}:***\n{json.dumps(content_ideas[key], indent=2)}\n\n")
 
             if content_ideas.get("parsing_error_detail"):
-                # FIX: The original line caused a SyntaxError due to nested f-strings with conflicting quotes.
-                # Changed the outer f-string to use triple quotes (f"""...""") to resolve the issue.
-                display_parts.append(f"""\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('error_parsing_content_tasks', lang, error_detail=content_ideas['parsing_error_detail'], fallback=f'Error parsing content tasks: {content_ideas["parsing_error_detail"]}')}*""")
+                display_parts.append(f"\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('error_parsing_content_tasks', lang, error_detail=content_ideas['parsing_error_detail'], fallback=f'Error parsing content tasks: {content_ideas["parsing_error_detail"]}')}*")
                 if content_ideas.get("raw_unparsed_json_block"):
                     display_parts.append(f"\n*{language_manager.get_text('raw_json_block_unparsed_label', lang, fallback='Raw JSON block (could not parse)')}:*\n```json\n{content_ideas['raw_unparsed_json_block']}\n```\n")
             elif content_ideas.get("_source") == "no_json_block_found" or content_ideas.get("_source") == "no_json_block_found_or_empty":

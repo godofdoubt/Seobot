@@ -1,4 +1,4 @@
-# SeoTree/utils/language_support.py
+# Seobot/utils/language_support.py
 import logging
 
 # Attempt to import translations from sibling files.

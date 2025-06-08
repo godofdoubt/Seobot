@@ -1,4 +1,4 @@
-# SeoTree/utils/keys_tr.py
+# Seobot/utils/keys_tr.py
 
 translations = {
     # Existing keys ...
