@@ -264,7 +264,6 @@ def get_content_creation_cta_text(suggestions_data, lang):
 
     return primary_cta_text, primary_task_type, primary_tasks, secondary_task_info
 
-# --- FIX APPLIED TO THIS FUNCTION ---
 def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_loaded_suggestions=False):
     """
     Helper to build display text from structured suggestions data.
@@ -369,7 +368,8 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_l
                     display_parts.append(f"***{key.replace('_', ' ').title()}:***\n{json.dumps(content_ideas[key], indent=2)}\n\n")
 
             if content_ideas.get("parsing_error_detail"):
-                display_parts.append(f"\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('error_parsing_content_tasks', lang, error_detail=content_ideas['parsing_error_detail'], fallback=f'Error parsing content tasks: {content_ideas["parsing_error_detail"]}')}*")
+                # FIX: Corrected the fallback argument to use a format template string instead of a nested f-string.
+                display_parts.append(f"\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('error_parsing_content_tasks', lang, error_detail=content_ideas['parsing_error_detail'], fallback='Error parsing content tasks: {error_detail}')}*")
                 if content_ideas.get("raw_unparsed_json_block"):
                     display_parts.append(f"\n*{language_manager.get_text('raw_json_block_unparsed_label', lang, fallback='Raw JSON block (could not parse)')}:*\n```json\n{content_ideas['raw_unparsed_json_block']}\n```\n")
             elif content_ideas.get("_source") == "no_json_block_found" or content_ideas.get("_source") == "no_json_block_found_or_empty":
@@ -381,7 +381,8 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_l
 
         # Outer parsing error
         if structured_data.get("parsing_error_outer"):
-            display_parts.append(f"\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('major_error_parsing_suggestions', lang, error_outer=structured_data['parsing_error_outer'], fallback=f'There was a major error parsing these suggestions. Error: {structured_data["parsing_error_outer"]}')}*\n")
+            # FIX: Corrected the fallback argument to use a format template string instead of a nested f-string.
+            display_parts.append(f"\n*{language_manager.get_text('note_prefix', lang, fallback='Note')}: {language_manager.get_text('major_error_parsing_suggestions', lang, error_outer=structured_data['parsing_error_outer'], fallback='There was a major error parsing these suggestions. Error: {error_outer}')}*\n")
             if structured_data.get("failed_input_text_on_error"):
                 display_parts.append(f"{language_manager.get_text('problematic_input_text_label', lang, fallback='Problematic input text (first 500 chars)')}:\n```\n{structured_data['failed_input_text_on_error'][:500]}...\n```\n")
 
@@ -918,7 +919,6 @@ async def main_seo_helper():
                                 details_html_display = "".join([f"<li style='font-size: small; {item_style_display.replace('font-weight: bold;','')} margin-left: 20px;'>{detail}</li>" for detail in task_details_list_display])
                                 st.markdown(f"<ul>{details_html_display}</ul>", unsafe_allow_html=True)
 
-                        # --- FIX: COMPLETED THIS SECTION ---
                         elif task_type_panel_display == "product_writer":
                             task_product_name_display = task_item_display.get('product_name', f"Product Task {i+1}")
                             st.markdown(f"<div style='{item_style_display}'>{prefix_icon_display} **{task_product_name_display}**</div>", unsafe_allow_html=True)
