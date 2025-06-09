@@ -25,7 +25,7 @@ gemini_model_instance = None
 if GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model_instance = genai.GenerativeModel('gemini-1.5-flash-latest') # Using standard model
+        gemini_model_instance = genai.GenerativeModel('gemini-2.0-flash') # Using standard model
         logging.info("Gemini API configured successfully.")
     except Exception as e:
         logging.error(f"Failed to configure Gemini API: {e}")

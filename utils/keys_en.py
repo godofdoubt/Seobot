@@ -400,6 +400,8 @@ translations = {
     "report_common_target_audiences_subpages_title_format": "Top {count} Common Target Audiences for Subpages",
     "report_common_content_tones_subpages_title_format": "Top {count} Common Content Tones in Subpages",
     "report_ai_powered_strategic_insights": "AI-Powered Strategic Insights & Recommendations",
+    "ai_powered_strategic_insights": "AI-Powered Strategic Insights & Recommendations",
+    #reportsuz seo helper page.
     "report_no_ai_recommendations": "AI recommendations were not generated.",
     "report_error_generating_ai_recommendations": "An error occurred while generating AI-powered recommendations.",
     "report_no_ai_recommendations_configured": "AI recommendations cannot be generated as no LLM is configured for this task.",

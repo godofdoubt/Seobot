@@ -421,6 +421,8 @@ translations = {
     "report_common_target_audiences_subpages_title_format": "Alt Sayfalar İçin En Yaygın {count} Hedef Kitle",
     "report_common_content_tones_subpages_title_format": "Alt Sayfalardaki En Yaygın {count} İçerik Tonu",
     "report_ai_powered_strategic_insights": "Yapay Zeka Destekli Stratejik İçgörüler ve Öneriler",
+    # Bu da 1_seo_helper.py'nin kullandığı anahtar. "report_" öneki yok.
+    "ai_powered_strategic_insights": "AI Destekli Stratejik İçgörüler ve Öneriler",
     "report_no_ai_recommendations": "Yapay zeka önerileri oluşturulmadı.",
     "report_error_generating_ai_recommendations": "Yapay zeka destekli öneriler oluşturulurken bir hata oluştu.",
     "report_no_ai_recommendations_configured": "Bu görev için hiçbir LLM yapılandırılmadığından yapay zeka önerileri oluşturulamıyor.",

@@ -9,7 +9,7 @@ from supabase import create_client, Client
 import google.generativeai as genai
 import threading
 from .llm_analysis_process import LLMAnalysisProcess
-
+import streamlit as st
 # It's good practice to also import any client libraries for Mistral if you use them directly
 # e.g., from mistralai.client import MistralClient
 # For this example, Mistral calls will be encapsulated in LLMAnalysisProcess, potentially using httpx.
@@ -46,7 +46,7 @@ class LLMAnalysisEndProcessor:
             try:
                 genai.configure(api_key=self.gemini_api_key)
                 # Updated model name as per common usage, adjust if needed
-                self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                self.model = genai.GenerativeModel('gemini-2.0-flash')
                 self.logger.info(f"Gemini model initialized ('{self.model.model_name}').")
             except Exception as e:
                 self.logger.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
@@ -248,7 +248,7 @@ class LLMAnalysisEndProcessor:
                             # Mark as not main page (is_main_page=False)
                             # If analyze_single_page needs language_code, it should be passed here:
                             # e.g., await self.analysis_process.analyze_single_page(p_url, p_data, is_main_page=False, language_code=self.language_code)
-                            analysis_result = await self.analysis_process.analyze_single_page(p_url, p_data, is_main_page=False)
+                            analysis_result = await self.analysis_process.analyze_single_page(p_url, p_data, is_main_page=False, language_code=self.language_code)
                             last_error_result = analysis_result # Keep track of last result
 
                             if "error" not in analysis_result or not analysis_result.get("error"):

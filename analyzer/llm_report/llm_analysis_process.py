@@ -15,7 +15,8 @@ from .generate_ai_recommendations import generate_ai_recommendations_content # I
 # project_root/
 #   Seobot/
 #     analyzer/
-#       llm_analysis_process.py
+#              llm_report/
+#               llm_analysis_process.py
 #     utils/
 #       language_support.py
 #       keys_en.py
@@ -177,7 +178,11 @@ class LLMAnalysisProcess:
             self.logger.error(f"Error calling Mistral API for {purpose}: {e}", exc_info=True)
             return None, f"Mistral API error: {str(e)}"
 
-    async def analyze_single_page(self, page_url: str, page_data: dict, is_main_page: bool = False) -> dict:
+    # MODIFIED: Added language_code to the method signature to fix TypeError
+    async def analyze_single_page(self, page_url: str, page_data: dict, is_main_page: bool = False, language_code: str = "en") -> dict:
+        # Note: language_code is accepted for signature consistency but not currently used in this method.
+        # The prompts for data extraction are in English, and the LLM can analyze content in any language.
+        
         # Initialize base result dictionary
         base_result = {
             "url": page_url,
@@ -214,7 +219,8 @@ class LLMAnalysisProcess:
             page_url=page_url,
             truncated_cleaned_text=truncated_cleaned_text,
             headings_data=headings_data,
-            is_main_page=is_main_page
+            is_main_page=is_main_page,
+            language_code=language_code
         )
 
         llm_response_str = None

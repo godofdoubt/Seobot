@@ -90,8 +90,10 @@ class LLMAnalysisPrompts:
         return base_structure
     
     @staticmethod
+    # MODIFIED: Added 'language_code' parameter to the method signature.
     def build_single_page_analysis_prompt(page_url: str, truncated_cleaned_text: str, 
-                                        headings_data: dict, is_main_page: bool = False) -> str:
+                                        headings_data: dict, is_main_page: bool = False, 
+                                        language_code: str = "en") -> str:
         """
         Build the complete prompt for single page analysis.
         
@@ -100,6 +102,7 @@ class LLMAnalysisPrompts:
             truncated_cleaned_text: The cleaned text content of the page
             headings_data: Dictionary containing heading structure
             is_main_page: Whether this is the main page (includes header/footer analysis)
+            language_code: The language code (e.g., "en", "tr") for the output.
             
         Returns:
             Complete prompt string for LLM analysis
@@ -115,11 +118,18 @@ class LLMAnalysisPrompts:
         # Ensure only relevant instructions are included
         instruction_texts_to_include = [instructions[key] for key in core_instruction_keys]
         
-        # Pre-join the instruction texts to avoid complex expression in f-string
         joined_instruction_details = "\n".join(instruction_texts_to_include)
-        lang = st.session_state.get("language", "en")
-        language_instruction = f"Respond in Turkish. " if lang == "tr" else ""
-        prompt = f"""{language_instruction} If content is Turkish make your analysis in Turkish, Otherwise make it in English.
+        
+        # MODIFIED: Created a clearer, more robust language instruction for the LLM.
+        language_map = {"tr": "Turkish", "en": "English"}
+        output_language = language_map.get(language_code, "English") # Default to English
+        
+        language_instruction = (
+            f"IMPORTANT: The analysis and all text values in your final JSON response MUST be in {output_language}. "
+            f"Analyze the content provided, regardless of its original language, but formulate your entire response in {output_language}."
+        )
+
+        prompt = f"""{language_instruction}
     --
     Analyze the following web page content for the URL: {page_url}
     ---

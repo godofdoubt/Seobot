@@ -278,19 +278,26 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_l
         text_report_content = st.session_state.text_report
         text_report_lower = text_report_content.lower()
 
-        # --- FIX: Use case-insensitive search for the heading ---
-        # Define potential headings in lowercase for robust matching
-        insights_heading_en_lower = "## ai-powered strategic insights & recommendations"
-        insights_heading_tr_lower = "## yapay zeka destekli stratejik içgörüler ve öneriler"
+       
+        # === DÜZELTME BAŞLANGICI ===
+
+        # 1. Doğru dil anahtarını kullanarak başlık metnini al.
+        # Bu anahtar, llm_analysis_process.py'de kullanılan anahtarla AYNI OLMALI.
+        insights_heading_key = "report_ai_powered_strategic_insights"
+        heading_text_from_manager = language_manager.get_text(insights_heading_key, lang)
         
-        insights_heading_to_find = insights_heading_tr_lower if lang == "tr" else insights_heading_en_lower
+        # 2. Markdown başlığını (##) ekle ve büyük/küçük harfe duyarsız arama yap.
+        heading_to_find_in_report = f"## {heading_text_from_manager}"
         
-        insights_start_index = text_report_lower.find(insights_heading_to_find)
+        # 3. text_report içinde büyük/küçük harfe duyarsız arama yap.
+        insights_start_index = text_report_content.lower().find(heading_to_find_in_report.lower())
+
+        # === DÜZELTME SONU ===
         
         if insights_start_index != -1:
             # Find original heading text with original casing to split correctly
-            original_heading = text_report_content[insights_start_index : insights_start_index + len(insights_heading_to_find)]
-            section_content_start = insights_start_index + len(original_heading)
+            original_heading = text_report_content[insights_start_index : insights_start_index + len(heading_to_find_in_report)]
+            section_content_start = insights_start_index + len(heading_to_find_in_report)
 
             # Find the end of the section
             next_separator_index = text_report_content.find("\n---", section_content_start)
@@ -310,7 +317,9 @@ def _build_suggestions_display_text(structured_data, lang, title_prefix="", is_l
             logging.info(f"Successfully extracted strategic insights section from text_report (lang: {lang}).")
         else:
             logging.warning(f"Strategic insights heading not found in text_report (lang: '{lang}'). Section will be skipped.")
+            logging.debug(f"Aranan başlık: '{heading_to_find_in_report}'") #hata ayıklama
             logging.debug(f"Text report snippet (first 500 chars): {text_report_content[:500]}")
+            
     
     # --- Display Structured SEO Suggestions & Content Ideas ---
     if insights_displayed_successfully and structured_data:

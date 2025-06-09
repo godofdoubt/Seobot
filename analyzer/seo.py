@@ -306,66 +306,79 @@ class SEOAnalyzer:
         logging.info(f"Total unique internal links found on {page.url}: {len(normalized_final_links)}")
         return normalized_final_links
 
-    async def _wait_for_dynamic_content(self, page: Page, max_wait_seconds: int = 10) -> None:
-        """Wait for dynamic content to load before extracting links."""
+    async def _wait_for_dynamic_content(self, page: Page, max_wait_seconds: int = 22) -> None:
+        """
+        Wait for dynamic content to load using a more flexible strategy,
+        less prone to timeouts on low-compute environments.
+        This version corrects the TypeError from the previous suggestion.
+        """
         logging.info(f"Waiting for dynamic content on {page.url} (max {max_wait_seconds}s)...")
         try:
-            network_idle_timeout_ms = max_wait_seconds * 1000 * 0.7 # Corrected: 10000 to 1000
-            await page.wait_for_load_state('networkidle', timeout=network_idle_timeout_ms)
+            # 1. Wait for the initial DOM to be ready. 'load' is a good baseline.
+            initial_load_timeout = max_wait_seconds * 1000 * 0.5
+            await page.wait_for_load_state('load', timeout=initial_load_timeout)
+            logging.info(f"Initial 'load' state reached for {page.url}.")
 
-            js_stability_check_timeout_seconds = max_wait_seconds * 0.3
+            # 2. Execute a scroll to trigger lazy-loaded content.
+            await page.evaluate("""
+                () => {
+                    window.scrollTo(0, document.body.scrollHeight / 2);
+                    return new Promise(resolve => setTimeout(resolve, 500)); // Brief pause after scroll
+                }
+            """)
+            await page.evaluate("() => window.scrollTo(0, 0)") # Scroll back to top
 
+            # 3. Implement a smarter wait that checks for DOM stability, with the timeout handled by asyncio.
+            js_stability_check_timeout_seconds = max_wait_seconds * 0.4
+        
             js_code_for_stability_check = """
-                () => new Promise(resolve => {
-                    let lastCount = document.querySelectorAll('a[href]').length;
-                    let stableCount = 0;
-                    let checksDone = 0;
-                    const maxChecks = 5;
+                () => new Promise((resolve) => {
+                    let lastBodyHeight = document.body.scrollHeight;
+                    let stableChecks = 0;
+                    const maxStableChecks = 3; // Require 3 stable checks (1.5 seconds)
+                    const checkInterval = 500; // Check every 500ms
 
-                    const checkStability = () => {
-                        checksDone++;
-                        const currentCount = document.querySelectorAll('a[href]').length;
-                        if (currentCount === lastCount) {
-                            stableCount++;
-                            if (stableCount >= 2) {
+                    const intervalId = setInterval(() => {
+                        const currentBodyHeight = document.body.scrollHeight;
+                        if (currentBodyHeight === lastBodyHeight) {
+                            stableChecks++;
+                            if (stableChecks >= maxStableChecks) {
+                                clearInterval(intervalId);
                                 resolve();
-                                return;
                             }
                         } else {
-                            stableCount = 0;
-                            lastCount = currentCount;
+                            stableChecks = 0;
+                            lastBodyHeight = currentBodyHeight;
                         }
-                        if (checksDone >= maxChecks) {
-                            resolve();
-                            return;
-                        }
-                        setTimeout(checkStability, 500);
-                    };
+                    }, checkInterval);
 
-                    setTimeout(checkStability, 500);
-                    setTimeout(resolve, 3000);
+                    // As a fallback, resolve after a max duration slightly less than the python timeout
+                    setTimeout(() => {
+                        clearInterval(intervalId);
+                        resolve();
+                    }, (js_stability_check_timeout_seconds * 1000) - 500);
                 })
-            """
+            """.replace('js_stability_check_timeout_seconds', str(js_stability_check_timeout_seconds)) # Inject variable
 
             await asyncio.wait_for(
                 page.evaluate(js_code_for_stability_check),
                 timeout=js_stability_check_timeout_seconds
             )
 
-            await page.evaluate("""
-                () => {
-                    window.scrollTo(0, document.body.scrollHeight / 2);
-                    return new Promise(resolve => setTimeout(resolve, 300));
-                }
-            """)
-            await page.evaluate("() => window.scrollTo(0, 0)")
             logging.info(f"Dynamic content wait finished for {page.url}.")
 
         except PlaywrightTimeoutError:
-            logging.warning(f"PlaywrightTimeoutError during dynamic content wait for {page.url} (e.g., networkidle timed out).")
+            logging.warning(
+                f"PlaywrightTimeoutError during the initial 'load' state wait for {page.url}. "
+                "The page is very slow to load its main resources."
+            )
         except asyncio.TimeoutError:
-            logging.warning(f"asyncio.TimeoutError during JavaScript stability check for {page.url}.")
+            logging.warning(
+                f"asyncio.TimeoutError during JavaScript stability check for {page.url}. "
+                "DOM did not stabilize in time, but proceeding with analysis."
+            )
         except Exception as e:
+            # This will now catch other potential errors without being masked by the incorrect TypeError
             logging.warning(f"Dynamic content wait for {page.url} failed: {type(e).__name__} - {e}")
 
     async def _extract_links_with_context(self, page: Page, base_domain_check_part: str, site_canonical_base_url: str, exclude_patterns: List[str]) -> Dict[str, Any]:

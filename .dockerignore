@@ -5,3 +5,25 @@ __pycache__/
 .env
 venv/
 dataflow.txt
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Docker
+.dockerignore
+Dockerfile
+
+# Diğer
+*.log

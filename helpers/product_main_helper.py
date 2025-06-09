@@ -15,7 +15,7 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
     # Configure Gemini
     genai.configure(api_key=GEMINI_API_KEY)
     # Assuming 'gemini-2.0-flash' is a valid model identifier you intend to use.
-    # Standard models are often 'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-flash-latest', etc.
+    
     model = genai.GenerativeModel('gemini-2.0-flash') # Using a common valid model
 
     async def process_question(prompt: str, context: str) -> str:

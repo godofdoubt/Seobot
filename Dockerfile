@@ -1,5 +1,5 @@
-# Use the latest stable Python runtime (Python 3.12 slim) as a parent image
-FROM python:3.13-slim
+# Use the latest stable Python runtime (Python 3.11 (render 3.11 de) slim) as a parent image
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
