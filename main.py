@@ -46,8 +46,12 @@ for key, value in os.environ.items():
     if key.startswith('USER') and key.endswith('_API_KEY'):
         USER_API_KEYS[value] = key.replace('_API_KEY', '')
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+# Define a function to initialize the client and cache it
+@st.cache_resource
+def init_supabase_client():
+    """Initializes and returns a Supabase client, cached for reuse."""
+    logging.info("Initializing Supabase client.")
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def authenticate_user(api_key):
     if api_key in USER_API_KEYS:
@@ -104,12 +108,13 @@ def trigger_detailed_analysis_background_process(report_id: int): # report_id is
         st.error(error_msg)
         return False
 
-async def process_url(url, lang="en"):
+# FIX: Added `supabase` client as a parameter
+async def process_url(url, supabase, lang="en"):
     st.session_state.analysis_in_progress = True
-    st.session_state.url_being_analyzed = url 
+    st.session_state.url_being_analyzed = url
     try:
-        normalized_url = normalize_url(url) 
-        if not normalized_url: 
+        normalized_url = normalize_url(url)
+        if not normalized_url:
             st.error(language_manager.get_text("invalid_url_format_warning", lang, fallback="Invalid URL format provided for processing."))
             st.session_state.analysis_in_progress = False
             st.session_state.url_being_analyzed = None
@@ -145,7 +150,7 @@ async def process_url(url, lang="en"):
                         st.session_state.detailed_analysis_info = {"report_id": report_id_for_detailed_analysis, "url": normalized_url, "status_message": language_manager.get_text("detailed_analysis_inprogress", lang), "status": "in_progress"}
                         if trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
                             st.session_state[f"auto_refresh_{report_id_for_detailed_analysis}"] = True; st.session_state[f"last_check_{report_id_for_detailed_analysis}"] = 0; st.session_state[f"analysis_start_time_{report_id_for_detailed_analysis}"] = time.time()
-                        else: 
+                        else:
                             st.session_state.detailed_analysis_info["status"] = "error"
                             st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_trigger_failed_status", lang, fallback="Failed to start detailed analysis process.")
             else:
@@ -160,7 +165,7 @@ async def process_url(url, lang="en"):
                         st.session_state.detailed_analysis_info = {"report_id": report_id_for_detailed_analysis, "url": normalized_url, "status_message": language_manager.get_text("detailed_analysis_inprogress", lang), "status": "in_progress"}
                         if trigger_detailed_analysis_background_process(report_id_for_detailed_analysis):
                              st.session_state[f"auto_refresh_{report_id_for_detailed_analysis}"] = True; st.session_state[f"last_check_{report_id_for_detailed_analysis}"] = 0; st.session_state[f"analysis_start_time_{report_id_for_detailed_analysis}"] = time.time()
-                        else: 
+                        else:
                             st.session_state.detailed_analysis_info["status"] = "error"
                             st.session_state.detailed_analysis_info["status_message"] = language_manager.get_text("detailed_analysis_trigger_failed_status", lang, fallback="Failed to start detailed analysis process.")
                 else:
@@ -187,9 +192,9 @@ def extract_metrics_from_report(full_report_json):
         'seo_score': 0, # Default to 0, will be calculated
         'issues_by_priority': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}, # Still extracted for score, not charted
         'page_metrics': { # For homepage primarily
-            'word_count': 0, 
-            'images': 0, 
-            'headings': 0, 
+            'word_count': 0,
+            'images': 0,
+            'headings': 0,
             'missing_alt_tags': 0, # Specifically for homepage if available
             'internal_links': None, # Now populated from JSON if available
             'external_links': None  # Now populated from JSON if available
@@ -229,16 +234,16 @@ def extract_metrics_from_report(full_report_json):
             prio_lower = prio.lower()
             if prio_lower in metrics['issues_by_priority'] and isinstance(count, int):
                 metrics['issues_by_priority'][prio_lower] = count
-    
+
     # 2. Populate Site Health Indicators & some Technical Metrics
     health = metrics['site_health_indicators']
     tech_metrics = metrics['technical_metrics']
 
     health['crawled_pages_count'] = full_report_json.get('crawled_internal_pages_count', 0)
-    
+
     tech_metrics['robots_txt_status'] = 'good' if full_report_json.get('robots_txt_found') else 'error'
     tech_metrics['sitemap_status'] = 'good' if full_report_json.get('sitemap_found') else 'error'
-    
+
     ssl_valid = full_report_json.get('ssl_is_valid')
     if ssl_valid is True: tech_metrics['ssl_secure'] = 'good'
     elif ssl_valid is False: tech_metrics['ssl_secure'] = 'error'
@@ -248,7 +253,7 @@ def extract_metrics_from_report(full_report_json):
     mobile_viewport_pages = full_report_json.get('pages_with_mobile_viewport_count', 0)
     if health['crawled_pages_count'] > 0:
         health['mobile_optimization_percentage'] = (mobile_viewport_pages / health['crawled_pages_count']) * 100
-    
+
     total_imgs = full_report_json.get('total_images_count', 0)
     total_missing_alts = full_report_json.get('total_missing_alt_tags_count', 0)
     if total_imgs > 0:
@@ -257,7 +262,7 @@ def extract_metrics_from_report(full_report_json):
         health['alt_text_coverage_percentage'] = 100.0
 
     health['average_content_length_chars'] = full_report_json.get('average_cleaned_content_length_per_page', 0)
-    
+
     analysis_duration = full_report_json.get('analysis_duration_seconds')
     if isinstance(analysis_duration, (int, float)) and health['crawled_pages_count'] > 0:
         avg_crawl_time = analysis_duration / health['crawled_pages_count']
@@ -272,18 +277,18 @@ def extract_metrics_from_report(full_report_json):
     if isinstance(llm_analysis_data, dict) and llm_analysis_data.get('url') == main_url_from_json:
         if 'tech_stats' in llm_analysis_data and isinstance(llm_analysis_data['tech_stats'], dict):
             hp_data_source = llm_analysis_data['tech_stats']
-    
+
     if not hp_data_source and main_url_from_json: # Fallback to page_statistics for homepage
         page_stats = full_report_json.get('page_statistics', {})
         if isinstance(page_stats, dict) and main_url_from_json in page_stats:
             if isinstance(page_stats[main_url_from_json], dict):
                  hp_data_source = page_stats[main_url_from_json]
-    
+
     if hp_data_source:
         hp_len_chars = hp_data_source.get('cleaned_content_length')
         if isinstance(hp_len_chars, (int, float)):
             health['homepage_content_length_chars'] = int(hp_len_chars)
-            if health['homepage_content_length_chars'] > 0 : 
+            if health['homepage_content_length_chars'] > 0 :
                 metrics['page_metrics']['word_count'] = int(health['homepage_content_length_chars'] / 5.5)
 
         hp_title_text = hp_data_source.get('title', '')
@@ -313,19 +318,19 @@ def extract_metrics_from_report(full_report_json):
     if isinstance(page_statistics_dict, dict):
         for url, page_data in page_statistics_dict.items():
             if not isinstance(page_data, dict): continue
-            
+
             content_len_chars = page_data.get('cleaned_content_length', 0)
             if isinstance(content_len_chars, (int,float)) and content_len_chars < 1200: # Approx < 220 words
                 health['thin_content_page_count'] += 1
-            
+
             title_text = page_data.get('title', '')
             if isinstance(title_text, str) and "<br" in title_text.lower():
                 health['bad_format_title_page_count'] += 1
-            
+
             status_code = page_data.get('status_code')
             if isinstance(status_code, int) and status_code == 404:
                 health['internal_404_page_count'] +=1
-    
+
     tech_metrics['internal_404_count'] = health['internal_404_page_count']
 
 
@@ -346,7 +351,7 @@ def extract_metrics_from_report(full_report_json):
     if health['mobile_optimization_percentage'] >= 99.0: score_b = 15
     elif health['mobile_optimization_percentage'] >= 90.0: score_b = 10
     elif health['mobile_optimization_percentage'] >= 80.0: score_b = 5
-    
+
     # Set technical_metrics['mobile_friendly'] for chart based on percentage
     if health['mobile_optimization_percentage'] >= 90.0: tech_metrics['mobile_friendly'] = 'good'
     elif health['mobile_optimization_percentage'] >= 70.0: tech_metrics['mobile_friendly'] = 'warning'
@@ -364,18 +369,18 @@ def extract_metrics_from_report(full_report_json):
         elif bad_title_ratio < 0.1: score_c += 3
         elif bad_title_ratio < 0.25: score_c += 1
     elif health['bad_format_title_page_count'] == 0 : # No pages crawled, no bad titles
-        score_c += 5 
-    
+        score_c += 5
+
     # C.3 Homepage Content Length (Max 10 points)
     hp_words_approx = health['homepage_content_length_chars'] / 5.5 if health['homepage_content_length_chars'] else 0
     if hp_words_approx >= 800: score_c += 10
     elif hp_words_approx >= 600: score_c += 7
-    elif hp_words_approx >= 400: score_c += 4 
-    
+    elif hp_words_approx >= 400: score_c += 4
+
     # C.4 Average Content Length (Max 10 points)
     avg_words_approx = health['average_content_length_chars'] / 5.5 if health['average_content_length_chars'] else 0
     if avg_words_approx >= 800: score_c += 10
-    elif avg_words_approx >= 600: score_c += 6 
+    elif avg_words_approx >= 600: score_c += 6
     elif avg_words_approx >= 350: score_c += 3
 
     # C.5 Alt Text Coverage (Max 5 points)
@@ -389,18 +394,18 @@ def extract_metrics_from_report(full_report_json):
     issue_penalty += metrics['issues_by_priority']['high'] * 5
     issue_penalty += metrics['issues_by_priority']['medium'] * 2
     issue_penalty += metrics['issues_by_priority']['low'] * 1
-    
+
     thin_content_penalty = 0
     if health['thin_content_page_count'] > 0:
         penalty_per_thin_page = 3
-        
+
         if health['crawled_pages_count'] > 0 and health['crawled_pages_count'] <= 10:
              thin_content_penalty_cap = health['crawled_pages_count']
-        else: 
+        else:
              thin_content_penalty_cap = 10
-        
+
         thin_content_penalty = min(health['thin_content_page_count'] * penalty_per_thin_page, thin_content_penalty_cap)
-    
+
     score_d = max(0, score_d_base - issue_penalty - thin_content_penalty)
 
     final_s_a, final_s_b, final_s_c, final_s_d = 0, 0, 0, 0
@@ -411,9 +416,9 @@ def extract_metrics_from_report(full_report_json):
         final_s_d = score_d if isinstance(score_d, (int, float)) else 0
 
         current_sum = final_s_a + final_s_b + final_s_c + final_s_d
-        
-        rounded_sum = round(current_sum) 
-        int_sum = int(rounded_sum)     
+
+        rounded_sum = round(current_sum)
+        int_sum = int(rounded_sum)
         final_seo_score = min(100, int_sum)
         metrics['seo_score'] = final_seo_score
     except (TypeError, ValueError, OverflowError) as e:
@@ -424,7 +429,7 @@ def extract_metrics_from_report(full_report_json):
 
     logging.info(f"Calculated SEO score for {main_url_from_json or 'report'}: {metrics['seo_score']}")
     logging.info(f"Score breakdown: Tech(A)={score_a}, Mobile(B)={score_b}, Content(C)={score_c}, Issues/Penalties(D)={score_d} (Base: {score_d_base}, IssuePen: {issue_penalty}, ThinPen: {thin_content_penalty})")
-    logging.info(f"Health Indicators: {health}")    
+    logging.info(f"Health Indicators: {health}")
 
     return metrics
 
@@ -432,18 +437,18 @@ def extract_metrics_from_report(full_report_json):
 def create_seo_score_gauge(score, lang="en"):
     """Create a gauge chart for SEO score."""
     if score is None:
-        score = 0 
+        score = 0
 
     title_text = language_manager.get_text("seo_score_gauge_title", lang, fallback="SEO Score")
 
     fig = go.Figure(go.Indicator(
-        mode = "gauge+number", 
+        mode = "gauge+number",
         value = score,
         domain = {'x': [0, 1], 'y': [0, 1]},
         title = {'text': title_text, 'font': {'size': 20}},
         gauge = {
             'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': "#667eea"}, 
+            'bar': {'color': "#667eea"},
             'bgcolor': "white",
             'borderwidth': 2,
             'bordercolor': "gray",
@@ -452,10 +457,10 @@ def create_seo_score_gauge(score, lang="en"):
                 {'range': [50, 80], 'color': '#fff3cd'},
                 {'range': [80, 100], 'color': '#d4edda'}
             ],
-            'threshold': { 
+            'threshold': {
                 'line': {'color': "red", 'width': 3},
                 'thickness': 0.75,
-                'value': score 
+                'value': score
             }
         }
     ))
@@ -468,7 +473,7 @@ def create_content_quality_overview_chart(site_health_indicators, lang="en"):
 
     chart_labels = []
     chart_values = []
-    chart_tooltips = [] 
+    chart_tooltips = []
 
     # Metric 1: Thin Content Pages
     thin_pages_count = site_health_indicators.get('thin_content_page_count', 0)
@@ -481,8 +486,8 @@ def create_content_quality_overview_chart(site_health_indicators, lang="en"):
     chart_labels.append(language_manager.get_text("metric_bad_format_titles", lang, fallback="Pages with Title Format Issues"))
     chart_values.append(bad_titles_count)
     chart_tooltips.append(language_manager.get_text("tooltip_bad_format_titles", lang, bad_titles_count=bad_titles_count, fallback=f"{bad_titles_count} pages found with title formatting problems (e.g., <br> tags). Ensure titles are clean and descriptive."))
-    
-    if not chart_labels: return None 
+
+    if not chart_labels: return None
 
     fig = go.Figure()
     for i in range(len(chart_labels)):
@@ -490,14 +495,14 @@ def create_content_quality_overview_chart(site_health_indicators, lang="en"):
             y=[chart_labels[i]],
             x=[chart_values[i]],
             orientation='h',
-            text=str(chart_values[i]), 
+            text=str(chart_values[i]),
             textposition="inside",
             insidetextanchor="middle",
             marker_color='#ff7f0e' if chart_values[i] > 0 else '#2ca02c', # Orange for issues, green if zero
             hovertext=chart_tooltips[i],
-            hoverinfo="text" 
+            hoverinfo="text"
         ))
-    
+
     fig.update_layout(
         title_text=language_manager.get_text("content_quality_overview_title", lang, fallback="Content Quality Overview"),
         xaxis=dict(title=language_manager.get_text("xaxis_label_num_pages", lang, fallback="Number of Pages")),
@@ -524,7 +529,7 @@ def create_page_metrics_bar_chart(page_metrics_data, lang="en"):
     metrics_list = []; values = []
     # Explicit order for the bar chart
     ordered_keys = ['word_count', 'images', 'headings', 'internal_links', 'external_links']
-    
+
     for metric_key in ordered_keys:
         value = page_metrics_data.get(metric_key)
         if value is not None and metric_key in metric_names_map:
@@ -534,18 +539,18 @@ def create_page_metrics_bar_chart(page_metrics_data, lang="en"):
     if not metrics_list: return None # No valid data to plot
 
     fig = go.Figure(data=[go.Bar(
-        x=metrics_list, 
-        y=values, 
-        text=values, 
-        textposition='auto', 
+        x=metrics_list,
+        y=values,
+        text=values,
+        textposition='auto',
         marker_color=['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'] * (len(metrics_list)//5 + 1)
     )])
     fig.update_layout(
-        title_text=language_manager.get_text("page_content_metrics_bar_title_hp", lang, fallback="Page Content Metrics (Homepage)"), 
-        xaxis_title=language_manager.get_text("metrics_axis_label", lang, fallback="Metrics"), 
-        yaxis_title=language_manager.get_text("count_axis_label", lang, fallback="Count"), 
-        height=380, 
-        margin=dict(l=20, r=20, t=50, b=20), 
+        title_text=language_manager.get_text("page_content_metrics_bar_title_hp", lang, fallback="Page Content Metrics (Homepage)"),
+        xaxis_title=language_manager.get_text("metrics_axis_label", lang, fallback="Metrics"),
+        yaxis_title=language_manager.get_text("count_axis_label", lang, fallback="Count"),
+        height=380,
+        margin=dict(l=20, r=20, t=50, b=20),
         font={'family': "Arial, sans-serif"}
     )
     return fig
@@ -553,7 +558,7 @@ def create_page_metrics_bar_chart(page_metrics_data, lang="en"):
 def create_technical_status_chart(technical_metrics_data, lang="en"):
     """Create a status chart for technical SEO factors."""
     if not technical_metrics_data: return None
-    
+
     tech_factor_map = {
         'mobile_friendly': language_manager.get_text("tech_mobile_friendly", lang, fallback="Mobile Friendly"),
         'ssl_secure': language_manager.get_text("tech_ssl_secure", lang, fallback="SSL Secure"),
@@ -561,7 +566,7 @@ def create_technical_status_chart(technical_metrics_data, lang="en"):
         'title_tag': language_manager.get_text("tech_title_tag_hp", lang, fallback="Title Tag (Homepage)"),
         'robots_txt_status': language_manager.get_text("tech_robots_txt", lang, fallback="Robots.txt Status"),
         'sitemap_status': language_manager.get_text("tech_sitemap_status", lang, fallback="Sitemap Status"),
-        'internal_404_count': language_manager.get_text("tech_internal_404s", lang, fallback="Internal 404s") 
+        'internal_404_count': language_manager.get_text("tech_internal_404s", lang, fallback="Internal 404s")
     }
     status_color_map = {'good': '#28a745', 'warning': '#ffc107', 'error': '#dc3545', 'info': '#17a2b8'}
     status_text_map = {
@@ -574,7 +579,7 @@ def create_technical_status_chart(technical_metrics_data, lang="en"):
 
     # Explicit order for technical status chart
     ordered_tech_keys = [
-        'ssl_secure', 'robots_txt_status', 'sitemap_status', 
+        'ssl_secure', 'robots_txt_status', 'sitemap_status',
         'mobile_friendly', 'title_tag', 'page_speed', 'internal_404_count'
     ]
 
@@ -582,7 +587,7 @@ def create_technical_status_chart(technical_metrics_data, lang="en"):
         status_val = technical_metrics_data.get(category_key)
         if status_val is not None and category_key in tech_factor_map:
             categories.append(tech_factor_map[category_key])
-            
+
             current_status_text = ""
             current_color = '#cccccc' # Default
 
@@ -594,7 +599,7 @@ def create_technical_status_chart(technical_metrics_data, lang="en"):
                 status_str_lower = str(status_val).lower()
                 current_status_text = status_text_map.get(status_str_lower, str(status_val).title())
                 current_color = status_color_map.get(status_str_lower, '#cccccc')
-            
+
             status_texts_display.append(current_status_text)
             colors.append(current_color)
 
@@ -603,23 +608,23 @@ def create_technical_status_chart(technical_metrics_data, lang="en"):
     fig = go.Figure()
     for i in range(len(categories)):
         fig.add_trace(go.Bar(
-            y=[categories[i]], 
+            y=[categories[i]],
             x=[1], # All bars have a "length" of 1 for visual representation
             name=status_texts_display[i], # Use for hover/legend if enabled
-            orientation='h', 
-            marker_color=colors[i], 
-            text=status_texts_display[i], 
-            textposition="inside", 
+            orientation='h',
+            marker_color=colors[i],
+            text=status_texts_display[i],
+            textposition="inside",
             insidetextanchor="middle"
         ))
 
     fig.update_layout(
-        title_text=language_manager.get_text("technical_seo_status_title", lang, fallback="Technical SEO Status"), 
-        barmode='stack', 
-        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0,1]), 
-        yaxis=dict(autorange="reversed"), 
+        title_text=language_manager.get_text("technical_seo_status_title", lang, fallback="Technical SEO Status"),
+        barmode='stack',
+        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0,1]),
+        yaxis=dict(autorange="reversed"),
         height=max(300, len(categories) * 60), # Dynamic height
-        showlegend=False, 
+        showlegend=False,
         margin=dict(l=160, r=20, t=50, b=20), # Increased left margin for longer labels
         font={'family': "Arial, sans-serif"}
     )
@@ -633,17 +638,17 @@ def display_seo_dashboard(metrics, lang="en"):
         # SEO Score Gauge
         fig_gauge = create_seo_score_gauge(metrics['seo_score'], lang)
         st.plotly_chart(fig_gauge, use_container_width=True)
-        if metrics.get('site_health_indicators',{}).get('crawled_pages_count', 0) == 0: 
+        if metrics.get('site_health_indicators',{}).get('crawled_pages_count', 0) == 0:
              st.caption(language_manager.get_text("seo_score_not_available_caption", lang, fallback="SEO Score might be 0 due to limited data for calculation."))
 
         # Page Content Metrics (Homepage)
         page_metrics_for_chart = {k: v for k,v in metrics.get('page_metrics', {}).items() if v is not None and k != 'missing_alt_tags'}
-        if page_metrics_for_chart: 
+        if page_metrics_for_chart:
             fig_bar = create_page_metrics_bar_chart(page_metrics_for_chart, lang)
             if fig_bar: st.plotly_chart(fig_bar, use_container_width=True)
             else: st.info(language_manager.get_text("page_metrics_not_available_hp", lang, fallback="Page Content Metrics (Homepage) not available."))
         else: st.info(language_manager.get_text("page_metrics_not_available_hp", lang, fallback="Page Content Metrics (Homepage) not available."))
-    
+
     with col2:
         # Content Quality Overview Chart (New)
         site_health_indicators = metrics.get('site_health_indicators', {})
@@ -659,7 +664,7 @@ def display_seo_dashboard(metrics, lang="en"):
         if crawled_pages_count > 0 and metrics['seo_score'] < 70:
             thin_pages = site_health_indicators.get('thin_content_page_count', 0)
             bad_titles = site_health_indicators.get('bad_format_title_page_count', 0)
-            
+
             message_parts = []
             if thin_pages > 0:
                 message_parts.append(
@@ -700,18 +705,32 @@ def display_seo_dashboard(metrics, lang="en"):
         else: st.info(language_manager.get_text("technical_seo_status_not_available", lang, fallback="Technical SEO Status not available."))
     st.markdown("---")
 
+# TWEAK 1: Added cached function for performance
+@st.cache_data
+def cached_extract_metrics(full_report_json):
+    """Caches the metric extraction from the full report JSON to improve performance."""
+    logging.info("Running metric extraction (will be cached on subsequent runs with same input).")
+    return extract_metrics_from_report(full_report_json)
+
 def display_styled_report(full_report_json, lang):
-    metrics = extract_metrics_from_report(full_report_json)
+    # Use the cached function to extract metrics
+    metrics = cached_extract_metrics(full_report_json)
     display_seo_dashboard(metrics, lang)
 
 def run_main_app():
     st.set_page_config(page_title="Raven Web Services Beta", page_icon="📊", layout="wide", initial_sidebar_state="collapsed", menu_items={'Get Help': 'https://www.seo1.com/help', 'Report a bug': "https://www.se10.com/bug", 'About': "# Raven Web Services"})
+
+
+    # Get the cached client inside your main app function
+    supabase = init_supabase_client()
     hide_pages_nav = """<style> div[data-testid="stSidebarNav"] {display: none !important;} </style>"""
     st.markdown(hide_pages_nav, unsafe_allow_html=True)
-    st.title("Raven Web Services") 
+    st.title("Raven Web Services")
     init_shared_session_state()
     lang = st.session_state.language
-    if st.session_state.current_page != "main": update_page_history("main")
+    # TWEAK 2: Only update history if the page is actually changing to prevent redundant calls.
+    if st.session_state.get("current_page") != "main":
+        update_page_history("main")
     if "analysis_complete" not in st.session_state: st.session_state.analysis_complete = False
     if "detailed_analysis_info" not in st.session_state: st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
 
@@ -738,18 +757,18 @@ def run_main_app():
             if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_after_analysis", use_container_width=True): st.switch_page("pages/1_SEO_Helper.py")
             st.markdown(f"### {language_manager.get_text('content_generation_tools', lang)}"); st.markdown(language_manager.get_text("create_optimized_content", lang))
             col1, col2 = st.columns(2)
-            with col1: 
+            with col1:
                 if st.button(language_manager.get_text("article_writer_button", lang), key="article_writer_button_results", use_container_width=True): st.switch_page("pages/2_Article_Writer.py")
             with col2:
                 if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True): st.switch_page("pages/3_Product_Writer.py")
             display_detailed_analysis_status_enhanced(supabase, lang)
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, url=st.session_state.url))
             display_styled_report(st.session_state.full_report, lang)
-            
+
             if hasattr(st.session_state, 'text_report') and st.session_state.text_report: # Ensure text_report exists for raw data expander
                 with st.expander(f"📄 {language_manager.get_text('raw_report_data_label', lang)}", expanded=False):
                     st.text_area(label=language_manager.get_text('seo_report_label', lang), value=st.session_state.text_report, height=300, help=language_manager.get_text('raw_report_help', lang))
-            
+
             # Option to display full JSON report for debugging/advanced users
             if st.checkbox(language_manager.get_text("show_full_json_report", lang, fallback="Show Full JSON Report Data (for debugging)"), key="show_json_debug"):
                  with st.expander(f"🧬 {language_manager.get_text('full_json_report_label', lang, fallback='Full JSON Report')}", expanded=False):
@@ -776,7 +795,8 @@ def run_main_app():
                                     if parsed.scheme in ['http', 'https'] and parsed.hostname and ('.' in parsed.hostname or parsed.hostname.lower() == 'localhost' or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", parsed.hostname)):
                                         valid_for_processing = True
                                 except ValueError: pass # Error during parsing means invalid
-                            if valid_for_processing: asyncio.run(process_url(url_to_analyze, lang))
+                            # FIX: Pass the supabase client to the processing function
+                            if valid_for_processing: asyncio.run(process_url(url_to_analyze, supabase, lang))
                             else: st.warning(language_manager.get_text("invalid_url_format_warning", lang, fallback="Invalid URL format. Please enter a valid website address (e.g., https://example.com)."))
             st.markdown(f"### {language_manager.get_text('analyze_with_ai', lang)}")
             if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"): st.switch_page("pages/1_SEO_Helper.py")

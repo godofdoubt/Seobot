@@ -410,6 +410,7 @@ def common_sidebar(page_specific_content_func=None):
 
     article_writer_path = "pages/2_Article_Writer.py"
     product_writer_path = "pages/3_Product_Writer.py"
+    image_creator_path = "pages/4_image_creator.py" # Added path for the new page
 
     if os.path.exists(article_writer_path):
         st.sidebar.page_link(
@@ -424,6 +425,14 @@ def common_sidebar(page_specific_content_func=None):
             label=language_manager.get_text("product_writer_button", lang),
             disabled=is_analysis_in_progress
         )
+    # START of new code block
+    if os.path.exists(image_creator_path):
+        st.sidebar.page_link(
+            image_creator_path,
+            label=language_manager.get_text("image_creator_button", lang, fallback="Image Creator"), # Added new page link
+            disabled=is_analysis_in_progress
+        )
+    # END of new code block        
 
     st.sidebar.divider()
 

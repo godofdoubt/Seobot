@@ -14,6 +14,41 @@ import streamlit as st
 # e.g., from mistralai.client import MistralClient
 # For this example, Mistral calls will be encapsulated in LLMAnalysisProcess, potentially using httpx.
 
+# Load environment variables once at the module level
+load_dotenv()
+
+# --- Cached Resource Initializers ---
+
+@st.cache_resource
+def get_supabase_client():
+    """Initializes and returns a cached Supabase client instance."""
+    logging.info("INITIALIZING SUPABASE CLIENT for the first time.")
+    url = os.getenv('SUPABASE_URL')
+    key = os.getenv('SUPABASE_KEY')
+    if not url or not key:
+        logging.error("Supabase URL or Key not found in environment variables.")
+        return None
+    return create_client(url, key)
+
+@st.cache_resource
+def get_gemini_model():
+    """Initializes and returns a cached Gemini model instance."""
+    gemini_api_key = os.getenv('GEMINI_API_KEY')
+    if not gemini_api_key:
+        logging.warning("GEMINI_API_KEY not found in environment variables.")
+        return None
+    
+    logging.info("INITIALIZING GEMINI MODEL for the first time.")
+    try:
+        genai.configure(api_key=gemini_api_key)
+        # Updated model name as per common usage, adjust if needed
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        return model
+    except Exception as e:
+        logging.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
+        return None
+
+# --- Main Processor Class ---
 
 class LLMAnalysisEndProcessor:
     # MODIFIED: Added language_code to __init__ and store it
@@ -26,33 +61,18 @@ class LLMAnalysisEndProcessor:
         self.language_code = language_code
         self.logger.info(f"LLMAnalysisEndProcessor initialized with language_code: '{self.language_code}'")
 
+        # Initialize Supabase client using the cached function
+        self.supabase: Client = get_supabase_client()
+        if not self.supabase:
+            self.logger.error("Supabase client could not be initialized. Check environment variables (SUPABASE_URL, SUPABASE_KEY).")
+            raise ValueError("Supabase client is not available.")
 
-        # Load environment variables
-        load_dotenv()
-
-        # Initialize Supabase client
-        self.SUPABASE_URL = os.getenv('SUPABASE_URL')
-        self.SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-        if not self.SUPABASE_URL or not self.SUPABASE_KEY:
-            self.logger.error("SUPABASE_URL and SUPABASE_KEY must be set in environment variables or .env file.")
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set.")
-        self.supabase: Client = create_client(self.SUPABASE_URL, self.SUPABASE_KEY)
-
-        # Configure Gemini API
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        self.model = None # Initialize model to None
-        if self.gemini_api_key:
-            try:
-                genai.configure(api_key=self.gemini_api_key)
-                # Updated model name as per common usage, adjust if needed
-                self.model = genai.GenerativeModel('gemini-2.0-flash')
-                self.logger.info(f"Gemini model initialized ('{self.model.model_name}').")
-            except Exception as e:
-                self.logger.error(f"Failed to configure Gemini or initialize model: {e}", exc_info=True)
-                self.model = None # Ensure model is None on failure
+        # Configure Gemini API using the cached function
+        self.model = get_gemini_model()
+        if self.model:
+            self.logger.info(f"Gemini model retrieved from cache or initialized ('{self.model.model_name}').")
         else:
-            self.logger.warning("GEMINI_API_KEY not set. Gemini functionalities will be unavailable unless Mistral is primary.")
+            self.logger.warning("Gemini functionalities will be unavailable unless Mistral is primary.")
 
         # Configure Mistral API
         self.mistral_api_key = os.getenv('MISTRAL_API_KEY')
@@ -483,6 +503,9 @@ class LLMAnalysisEndProcessor:
         self.logger.info(f"LLMAnalysisEndProcessor run method finished operation.")
 
 # Example usage (for testing purposes)
+# Note: This __main__ block will fail if Streamlit is not running, because @st.cache_resource
+# requires an active Streamlit context. It's kept for reference but should be run
+# via a Streamlit app (`streamlit run your_app.py`) for the caching to work.
 if __name__ == '__main__':
     async def main_test_runner():
         # Setup enhanced logging for standalone test
@@ -493,32 +516,23 @@ if __name__ == '__main__':
         )
         logger = logging.getLogger("LLMAnalysisEndProcessor_StandaloneTest")
         logger.info("Starting standalone test run...")
+        logger.warning("NOTE: This standalone test will fail because @st.cache_resource requires a Streamlit app context.")
+        logger.warning("To test, import and use LLMAnalysisEndProcessor from a Streamlit app file.")
 
+
+        # The following code will raise an error outside of Streamlit.
         processor = None
         try:
             # Test with a specific language
             test_language = "tr" # or "en"
-            logger.info(f"Testing with language_code: '{test_language}'")
+            logger.info(f"Attempting to initialize processor with language_code: '{test_language}'")
             processor = LLMAnalysisEndProcessor(language_code=test_language)
 
-            # Example: Test processing specific report IDs (replace with valid IDs from your DB)
-            # Make sure these reports exist and meet criteria (e.g., 'report' blob exists, not completed, no error)
-            # await processor.run(report_ids=[123]) # Replace 123 with a valid ID
-
-            # Example: Test processing pending reports
-            # This will fetch reports based on criteria defined in _process_pending_reports
-            await processor.run(process_pending=True, batch_size=1) # Small batch for testing
-
-            # Example: Test scheduling in background
-            # processor.schedule_run_in_background(report_ids=[124], language_code=test_language) # Replace 124
-            # logger.info("Scheduled background processing. Main test might exit before completion.")
-            # await asyncio.sleep(30) # Give some time for thread to work if testing this
-
+            # This part will not be reached in a standalone run.
             logger.info("Standalone test run operations initiated/completed.")
-        except ValueError as ve_init: # Catch initialization errors specifically
-            logger.error(f"LLMAnalysisEndProcessor initialization failed: {ve_init}", exc_info=True)
+
         except Exception as e:
-            logger.error(f"Error during standalone test run: {e}", exc_info=True)
+            logger.error(f"Error during standalone test run, as expected: {e}", exc_info=True)
         finally:
              if processor: # Optional: log if processor instance was created
                  logger.info("Processor instance existed during test.")

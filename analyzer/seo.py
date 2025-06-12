@@ -306,7 +306,7 @@ class SEOAnalyzer:
         logging.info(f"Total unique internal links found on {page.url}: {len(normalized_final_links)}")
         return normalized_final_links
 
-    async def _wait_for_dynamic_content(self, page: Page, max_wait_seconds: int = 22) -> None:
+    async def _wait_for_dynamic_content(self, page: Page, max_wait_seconds: int = 10) -> None:
         """
         Wait for dynamic content to load using a more flexible strategy,
         less prone to timeouts on low-compute environments.
