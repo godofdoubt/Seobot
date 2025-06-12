@@ -718,25 +718,58 @@ def display_styled_report(full_report_json, lang):
     display_seo_dashboard(metrics, lang)
 
 def run_main_app():
-    st.set_page_config(page_title="Raven Web Services Beta", page_icon="📊", layout="wide", initial_sidebar_state="collapsed", menu_items={'Get Help': 'https://www.seo1.com/help', 'Report a bug': "https://www.se10.com/bug", 'About': "# Raven Web Services"})
-
-
-    # Get the cached client inside your main app function
-    supabase = init_supabase_client()
+    # --- STEP 1: Initial Page Configuration ---
+    # Configure the page and inject CSS immediately. This is critical to prevent the
+    # default Streamlit navigation from flashing on screen (FOUC - Flash of Unstyled Content).
+    st.set_page_config(
+        page_title="RICAS Beta", 
+        page_icon="📊", 
+        layout="wide", 
+        initial_sidebar_state="collapsed", 
+        menu_items={'Get Help': 'https://www.seo1.com/help', 'Report a bug': "https://www.se10.com/bug", 'About': "# Raven Web Services"}
+    )
     hide_pages_nav = """<style> div[data-testid="stSidebarNav"] {display: none !important;} </style>"""
     st.markdown(hide_pages_nav, unsafe_allow_html=True)
-    st.title("Raven Web Services")
+
+    # --- STEP 2: Render Initial UI & Basic Setup ---
+    # Display the title and initialize session state right away. These are fast operations
+    # and give the user immediate visual feedback that the app is loading.
+    
+    # --- NEW CODE START ---
+    # Display the logo at the top of the page.
+    # It assumes you have a folder named 'assets' in your root directory
+    # with the logo file 'logo.png' inside it.
+    try:
+        st.image('assets/logo.png', width=200) # Adjust the width as needed
+    except FileNotFoundError:
+        # This will log a warning to your console if the file is not found,
+        # but the app will continue to run without crashing.
+        logging.warning("Logo file not found at 'assets/logo.png'. Skipping logo display.")
+    # --- NEW CODE END ---
+
+    st.title("Raven Intelligent Content Automation Solutions")
     init_shared_session_state()
     lang = st.session_state.language
-    # TWEAK 2: Only update history if the page is actually changing to prevent redundant calls.
-    if st.session_state.get("current_page") != "main":
-        update_page_history("main")
-    if "analysis_complete" not in st.session_state: st.session_state.analysis_complete = False
-    if "detailed_analysis_info" not in st.session_state: st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
 
+    # --- STEP 3: Validate Configuration ---
+    # Check for essential environment variables. This is a quick check.
     for config_name, config_value in {'Supabase URL': SUPABASE_URL, 'Supabase Key': SUPABASE_KEY}.items():
         if not config_value: st.error(f"{config_name} is missing."); st.stop()
     if not GEMINI_API_KEY and not MISTRAL_API_KEY: st.error(language_manager.get_text("no_ai_model", lang)); st.stop()
+
+    # --- STEP 4: Initialize External Services & Dependent Logic ---
+    # Now, initialize the Supabase client. This might be a slightly slower operation
+    # (especially on the very first page load), so we do it after the initial UI is visible.
+    supabase = init_supabase_client()
+    
+    # This function might depend on the supabase client, so it's placed here.
+    if st.session_state.get("current_page") != "main":
+        update_page_history("main")
+
+    # --- STEP 5: Main Application Logic ---
+    # Initialize remaining session state flags and then run the main app router.
+    if "analysis_complete" not in st.session_state: st.session_state.analysis_complete = False
+    if "detailed_analysis_info" not in st.session_state: st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
 
     if not st.session_state.authenticated:
         st.markdown(language_manager.get_text("welcome_seo", lang)); st.markdown(language_manager.get_text("enter_api_key", lang))
