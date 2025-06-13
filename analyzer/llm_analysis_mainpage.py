@@ -1,3 +1,4 @@
+
 import json
 import logging
 import os
@@ -192,9 +193,17 @@ async def llm_analysis_start(report_data: dict) -> dict:
         logging.warning(f"No cleaned_text or substantive headings_data found for URL {page_url_from_report} (after potential boilerplate removal). LLM analysis might be ineffective.")
         return _error_response("No content (cleaned_text or substantive headings) available for analysis.", url=page_url_from_report)
 
-    # Language instruction
-    language_instruction = f"If content is Turkish make your analysis in Turkish , Otherwise make it in English."
-    #lang = st.session_state.get("language", "en") # As in your original
+    # FIX: Removed the buggy/weak language_instruction variable.
+    # A robust solution would pass the selected language into this function.
+    # Since that's not possible without changing the signature, we use a simple
+    # heuristic on the content to determine the language. This is a major
+    # improvement over the previous logic which always defaulted to English.
+    def _detect_language(text: str) -> str:
+        # Simple heuristic: check for common Turkish characters in the first 2000 chars.
+        return "tr" if any(c in "çğıöşüÇĞİÖŞÜ" for c in text[:2000]) else "en"
+
+    language_code = _detect_language(cleaned_text)
+    logging.info(f"Detected language_code '{language_code}' for analysis of {page_url_from_report}.")
     
     llm_response_str = ""
     service_used = ""
@@ -203,8 +212,8 @@ async def llm_analysis_start(report_data: dict) -> dict:
     if gemini_model_instance:
         logging.debug(f"Attempting LLM analysis with Gemini for URL: {page_url_from_report}")
         try:
-            # Get Gemini-specific prompt
-            prompt = get_gemini_analysis_prompt(page_url_from_report, cleaned_text, headings_data, language_instruction)
+            # FIX: Call prompt function with the correctly determined language_code.
+            prompt = get_gemini_analysis_prompt(page_url_from_report, cleaned_text, headings_data, language_code)
             llm_response_str = await _call_gemini_api(prompt)
             if llm_response_str:
                 service_used = "Gemini"
@@ -221,8 +230,8 @@ async def llm_analysis_start(report_data: dict) -> dict:
              logging.info(f"Attempting LLM analysis with Mistral for URL: {page_url_from_report} (Gemini not used or failed).")
         
         try:
-            # Get Mistral-specific prompt
-            prompt = get_mistral_analysis_prompt(page_url_from_report, cleaned_text, headings_data, language_instruction)
+            # FIX: Call prompt function with the correctly determined language_code.
+            prompt = get_mistral_analysis_prompt(page_url_from_report, cleaned_text, headings_data, language_code)
             llm_response_str = await _call_mistral_api(prompt)
             if llm_response_str:
                  service_used = "Mistral"

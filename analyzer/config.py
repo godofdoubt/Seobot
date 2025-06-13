@@ -6,8 +6,8 @@ analyzer/config.py
 
 
 # Crawling and Analysis Limits
-MAX_PAGES_TO_ANALYZE = 20
-MAX_LINKS_TO_DISCOVER = 200
+MAX_PAGES_TO_ANALYZE = 27
+MAX_LINKS_TO_DISCOVER = 175
 PAGE_TIMEOUT = 25000  # milliseconds
 NAVIGATION_TIMEOUT = 45000 # 45 seconds for navigation actions
 EXPECT_TIMEOUT = 20000 # 20 seconds for expect assertions (Playwright)
@@ -39,6 +39,7 @@ EXCLUDE_PATTERNS = [
     'cropped-pngitem_',
     '/woocommerce',
     '/cropped-logo',
+    '/go'
     '/logo-',
     '/category/uncategorized/',
     '/tag/',
@@ -102,7 +103,7 @@ EXCLUDE_PATTERNS = [
     '/mesafeli-satis-sozlesmesi',
     '/uyelik-sozlesmesi',
     '/UyelikSozlesme.aspx',
-    '/sikca-sorulan-sorular',
+    #'/sikca-sorulan-sorular',
     '/kisisel-verilerin-kullanilmasi',
     '/uyeliksiz-kisisel-verilerin-islenme-ve-aydinlatma-metni',
     '/site-kullanim-kosullari',
@@ -126,6 +127,7 @@ EXCLUDE_PATTERNS = [
     '/cookie-policy',
     '/cerez-politikasi',
     '/kvkk',
+    '/cayma-hakki',
     '/gdpr',
     '/impressum',
     '/wishlist',
@@ -305,6 +307,5 @@ COMMON_STOP_WORDS = {
             'ne', 'nasıl', 'neden', 'kim', 'nereye', 'their', 'his', 'may', 'if', 'as', 'so', 'who', 'which', 'than',
             'sepetim', 'İnternet sitesi sonraki yorumlarımda kullanılması adım, e-posta adresim adresim tarayıcıya kaydedilsin', 
             'Beni sonraki yorumlar e-posta bilgilendir. Beni yeni yazılarda e-posta bilgilendir.',
-            "INFORMATION Copyright © 2025" , 'Copyright © 2025' , 'Beni yeni yazılarda e-posta bilgilendir' , 'İçeriğe geç' , 'Tüm Hakları Saklıdır', '© 2025'
-       
+            "INFORMATION Copyright © 2025" , 'Copyright © 2025' , 'Beni yeni yazılarda e-posta bilgilendir' , 'İçeriğe geç' , 'Tüm Hakları Saklıdır', '© 2025' 
         }

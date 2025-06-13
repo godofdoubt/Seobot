@@ -1,23 +1,27 @@
+
 import json
 
-def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_instruction: str = None) -> str:
+def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_code: str = "en") -> str:
     """
     Generate the analysis prompt for LLM processing.
     
     Args:
-        page_url: The URL of the page being analyzed
-        cleaned_text: The cleaned text content from the page
-        headings_data: Dictionary containing page headings
-        language_instruction: Optional language instruction override
+        page_url: The URL of the page being analyzed.
+        cleaned_text: The cleaned text content from the page.
+        headings_data: Dictionary containing page headings.
+        language_code: The target language for the analysis output (e.g., 'tr', 'en').
     
     Returns:
-        str: The formatted prompt for LLM analysis
+        str: The formatted prompt for LLM analysis.
     """
     
-    # Default language instruction if not provided
-    if language_instruction is None:
-        language_instruction = "If content is Turkish make your analysis in Turkish, Otherwise make it in English."
-    
+    # FIX: Simplified language instruction logic. The prompt now generates its own
+    # strong instruction based only on the language_code, removing the buggy override parameter.
+    if language_code == 'tr':
+        language_instruction = "Analizini ve tüm JSON alanlarındaki (özellikle 'content_summary' ve 'suggested_keywords_for_seo') metinleri kesinlikle Türkçe yap. Sayfa dili ne olursa olsun, analiz çıktısı Türkçe olmalıdır."
+    else: # Default to English
+        language_instruction = "Perform your analysis and generate all text fields (especially 'content_summary' and 'suggested_keywords_for_seo') strictly in English, regardless of the source page language."
+
     # Truncate text if too long
     max_text_len = 30000
     truncated_cleaned_text = cleaned_text[:max_text_len] + ('...' if len(cleaned_text) > max_text_len else '')
@@ -61,10 +65,10 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
        * Return as list of strings, empty list [] if none found
     
     2. **"content_summary"**:
-       * Summarize ONLY the main informational content (2-4 sentences, 50-100 words)
-       * Ignore navigation menus, headers, footers, and accessibility text
-       * Focus on what the business/service actually offers or what the page is about
-       * If main content is minimal, state "Insufficient main content for summary"
+       * Summarize ONLY the main informational content (5-7 sentences, 100-200 words). **The summary language MUST match the primary instruction language (e.g., Turkish for Turkish analysis).**
+       * Ignore navigation menus, headers, footers, and accessibility text.
+       * Focus on what the business/service actually offers or what the page is about.
+       * If main content is minimal, state the equivalent of "Insufficient main content for summary" in the target language.
     
     3. **"other_information_and_contacts"**:
        * Extract specific, actionable contact information:
@@ -79,7 +83,7 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
        * Return empty list [] if no specific information found
     
     4. **"suggested_keywords_for_seo"**:
-       * Suggest 3-5 SEO-relevant keywords based on main content theme
+       * Suggest 3-5 SEO-relevant keywords based on the main content theme. **Keywords MUST be in the same language as the requested analysis language.**
        * Consider long-tail variations and related services/products
        * Focus on search intent (what users might search for to find this page)
        * Exclude already identified primary keywords
@@ -145,7 +149,10 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
         * Helps identify content quality issues
     
     **Additional Processing Rules:**
-    - **Verbatim Extraction:** When extracting text for fields like "header", "footer", and "needless_info", you MUST copy the text *exactly* as it appears in the provided content. Do not add, remove, or change any words. For example, if the text is "detaylı bilgi sözleşmesini", do not return "detaylı bilgi KVKK sözleşmesini".
+    - **CRITICAL - Verbatim Extraction:** For "header", "footer", "needless_info", and "navigation_items", you MUST extract the text fragments *EXACTLY* as they appear in the provided page content.
+      - **DO NOT** add, remove, summarize, or change any words.
+      - **DO NOT** infer or add context. For example, if the text is `Detaylı bilgi sözleşmesini`, you MUST return `Detaylı bilgi sözleşmesini` and NOT `Detaylı bilgi KVKK sözleşmesini`.
+      - Your task is to copy the fragment precisely as-is. This is essential for later processing.
     - Prioritize context over keywords when categorizing text elements
     - Use position indicators (beginning/end of content) to help identify headers/footers
     - Consider semantic meaning - don't just pattern match
@@ -158,35 +165,33 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
     return prompt
 
 
-def get_gemini_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_instruction: str = None) -> str:
+def get_gemini_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_code: str = "en") -> str:
     """
     Get the analysis prompt specifically optimized for Gemini models.
-    Currently uses the same prompt as the general one, but can be customized for Gemini-specific needs.
     
     Args:
         page_url: The URL of the page being analyzed
         cleaned_text: The cleaned text content from the page
         headings_data: Dictionary containing page headings
-        language_instruction: Optional language instruction override
+        language_code: The target language for the analysis output.
     
     Returns:
         str: The formatted prompt for Gemini LLM analysis
     """
-    return get_analysis_prompt(page_url, cleaned_text, headings_data, language_instruction)
+    return get_analysis_prompt(page_url, cleaned_text, headings_data, language_code)
 
 
-def get_mistral_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_instruction: str = None) -> str:
+def get_mistral_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, language_code: str = "en") -> str:
     """
     Get the analysis prompt specifically optimized for Mistral models.
-    Currently uses the same prompt as the general one, but can be customized for Mistral-specific needs.
     
     Args:
         page_url: The URL of the page being analyzed
         cleaned_text: The cleaned text content from the page
         headings_data: Dictionary containing page headings
-        language_instruction: Optional language instruction override
+        language_code: The target language for the analysis output.
     
     Returns:
         str: The formatted prompt for Mistral LLM analysis
     """
-    return get_analysis_prompt(page_url, cleaned_text, headings_data, language_instruction)
+    return get_analysis_prompt(page_url, cleaned_text, headings_data, language_code)
