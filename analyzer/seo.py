@@ -1,3 +1,4 @@
+
 import logging
 import asyncio # For _wait_for_dynamic_content and type hints
 from dotenv import load_dotenv
@@ -295,7 +296,67 @@ class SEOAnalyzer:
             logging.warning(f"Structured data link extraction failed for {page.url}: {e}")
             filtered_structured_links = []
 
-        all_found_links_raw = set(links_js_enhanced_links + playwright_urls + nav_links_from_js + filtered_structured_links)
+        # --- MODIFICATION START: Improved Blog Post Detection ---
+        # Strategy 5: Blog and Pagination Link Extraction (runs on all pages)
+        blog_specific_links = []
+        try:
+            # This logic now runs on every page to find blog links from anywhere on the site,
+            # such as a "Latest Posts" section on the homepage.
+            blog_links_raw = await page.evaluate("""
+                () => {
+                    const links = new Set();
+                    // Selectors for individual blog post links
+                    const postSelectors = [
+                        'article a[href]', '.post a[href]', '.blog-post a[href]',
+                        '.entry-title a[href]', 'h2.entry-title a', '.post-title a',
+                        '.post-preview a', '.article-title a', 'a.blog-item-link', '.read-more',
+                        '.latest-posts a[href]', '.recent-posts a[href]' // Added selectors for common homepage sections
+                    ];
+                    // Selectors for blog pagination (next/previous page links)
+                    const paginationSelectors = [
+                        '.pagination a[href]', '.nav-links a[href]', 'a.next', 'a.page-numbers',
+                        '.wp-pagenavi a', '.blog-pagination a'
+                    ];
+                    const allSelectors = postSelectors.concat(paginationSelectors);
+
+                    allSelectors.forEach(selector => {
+                        try { // Inner try-catch for robustness against invalid selectors on some pages
+                            document.querySelectorAll(selector).forEach(link => {
+                                if (link.href) {
+                                    const hrefAttr = link.getAttribute('href');
+                                    // Ensure we don't capture empty, anchor, or javascript links
+                                    if (hrefAttr && hrefAttr.trim() !== '#' && !hrefAttr.startsWith('javascript:')) {
+                                         links.add(new URL(link.href, document.baseURI).href);
+                                    }
+                                }
+                            });
+                        } catch (e) {
+                           // Silently ignore errors from a single selector failing
+                        }
+                    });
+                    return Array.from(links);
+                }
+            """)
+
+            # Filter and process the raw links found by the blog-specific strategy
+            for link_str in blog_links_raw:
+                try:
+                    parsed_link = urlparse(link_str)
+                    # Check if it's an internal link and not in exclude patterns
+                    if parsed_link.netloc.replace('www.', '', 1).lower() == base_domain_check_part.lower():
+                        if not any(exclude.lower() in link_str.lower() for exclude in exclude_patterns):
+                            blog_specific_links.append(link_str)
+                except:
+                    # Ignore errors parsing individual URLs from this list
+                    continue
+            if blog_specific_links:
+                logging.info(f"Blog/Pagination-specific extraction found {len(blog_specific_links)} potential links on {page.url}")
+
+        except Exception as e:
+            logging.warning(f"Blog/Pagination-specific link extraction failed for {page.url}: {e}")
+        # --- MODIFICATION END ---
+
+        all_found_links_raw = set(links_js_enhanced_links + playwright_urls + nav_links_from_js + filtered_structured_links + blog_specific_links)
 
         normalized_final_links: Set[str] = set()
         for link_str in all_found_links_raw:

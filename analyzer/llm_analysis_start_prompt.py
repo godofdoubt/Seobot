@@ -90,8 +90,8 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
          - Site branding/logo text
          - Main navigation menu items
          - Primary taglines or slogans
+         - Site-wide trust signals like quality certifications (e.g., "ISO 22000-2018 Gıda Güvenliği Yönetim Sistemi", "Helal Sertifikası") if they appear in a consistent, repeating top banner.
        * Stop extraction when main content clearly begins (look for paragraph text, detailed descriptions)
-       * Include category names AND their immediate sub-items if they appear in header section
        * Example pattern recognition:
          - Navigation: "Home | About | Services | Contact"
          - Categories: "Products" followed by "Product A, Product B, Product C"
@@ -99,22 +99,24 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
     
     6. **"footer"** (Better Identification):
        * Extract elements from the BOTTOM portion of cleaned text:
-         - Copyright notices (© year, company name)
-         - Legal links (Privacy Policy, Terms, etc.)
+         - Copyright notices (e.g., "© 2023 Gıdaormanı")
+         - Legal links ("Privacy Policy", "Terms", "KVKK")
          - Repeated contact info in footer context
          - Footer-specific social media links
-       * Look for typical footer patterns: copyright symbols, years, legal terminology
-       * Distinguish from header by position and content type
+         - **Also include footer section headings (e.g., "KURUMSAL", "MÜŞTERİ HİZMETLERİ", "ALIŞVERİŞ BİLGİLERİ").**
+       * Look for typical footer patterns: copyright symbols, years, legal terminology.
+       * Do NOT include the full paragraph of cookie consent text here; classify that as needless_info.
        * Return empty list [] if no clear footer identified
     
     7. **"needless_info"** (Enhanced Filtering):
        * Identify and extract truly non-content elements:
-         - Accessibility text: "Skip to Content", "Skip to main content", screen reader text
+         - Accessibility text: "Skip to Content", "Skip to main content"
+         - Full cookie consent banner text (e.g., "Çerez Kullanımı Sizlere iyi alışveriş deneyimi sunabilmek adına sitemizde yasal düzenlemelere uygun çerezler(cookies) kullanmaktayız...")
          - Repeated navigation blocks (if same menu appears multiple times)
          - Generic image alt text: "Slide Background", "Image placeholder", "decorative image"
-         - Language mixing artifacts (English words in Turkish content that seem out of place)
          - Shopping cart indicators: "My Cart 0.00", cart counters
-         - Generic action text: "Open Menu", "Close Menu", "Folder: Back"
+         - Generic action text: "Open Menu", "Close Menu", "Read More", "Devamını oku"
+         - Pagination controls: "Next", "Previous", page numbers (e.g., "1 2 >")
          - Placeholder content: "Lorem ipsum" text
          - Technical artifacts: view counters, share buttons without context
        * Be conservative - only include if clearly non-informational
@@ -143,6 +145,7 @@ def get_analysis_prompt(page_url: str, cleaned_text: str, headings_data: dict, l
         * Helps identify content quality issues
     
     **Additional Processing Rules:**
+    - **Verbatim Extraction:** When extracting text for fields like "header", "footer", and "needless_info", you MUST copy the text *exactly* as it appears in the provided content. Do not add, remove, or change any words. For example, if the text is "detaylı bilgi sözleşmesini", do not return "detaylı bilgi KVKK sözleşmesini".
     - Prioritize context over keywords when categorizing text elements
     - Use position indicators (beginning/end of content) to help identify headers/footers
     - Consider semantic meaning - don't just pattern match
@@ -187,9 +190,3 @@ def get_mistral_analysis_prompt(page_url: str, cleaned_text: str, headings_data:
         str: The formatted prompt for Mistral LLM analysis
     """
     return get_analysis_prompt(page_url, cleaned_text, headings_data, language_instruction)
-
-
-# You can add model-specific prompt variations here if needed
-# For example:
-# def get_claude_analysis_prompt(...):
-# def get_gpt_analysis_prompt(...):

@@ -92,51 +92,46 @@ def normalize_turkish_text(text: str) -> str:
 
     return text.strip()
 
-# In analyzer/methods.py
-
-# ... (other imports, logger definition) ...
 
 def _remove_snippets_from_text_internal(text: str, snippets_to_remove: Optional[List[str]]) -> str:
     """
     Internal helper to remove a list of text snippets from a larger text string.
-    Uses case-insensitive matching, ensuring snippets are not part of larger words.
-    Input text is assumed to be at the same "cleaning level" as the snippets.
+    Uses case-insensitive matching. It intelligently decides whether to use strict
+    word boundaries (for single words) or a more flexible substring match (for phrases).
     """
     modified_text = text
     if not snippets_to_remove or not text:
-        # logger.debug("In _remove_snippets_from_text_internal: No snippets or no text, returning early.") # More context in extract_text
         return text
 
-    # Check if any snippet in the list is actually non-empty after stripping
     actual_snippets_to_process = [s for s in snippets_to_remove if s and s.strip()]
     if not actual_snippets_to_process:
         logger.debug(f"In _remove_snippets_from_text_internal: Snippets list provided, but all are empty/whitespace. Original snippets: {snippets_to_remove}")
         return text
 
     for snippet_content in actual_snippets_to_process:
-        # snippet_content is already stripped and verified non-empty here
         try:
-            # Using lookarounds to ensure the snippet is not part of a larger "word"
-            # (?<!\w) - not preceded by a word character (allows start of string or punctuation/space before)
-            # (?!\w) - not followed by a word character (allows end of string or punctuation/space after)
-            escaped_snippet = re.escape(snippet_content) # No .strip() needed here, done above
-            pattern = r'(?<!\w)' + escaped_snippet + r'(?!\w)'
+            escaped_snippet = re.escape(snippet_content)
+            
+            # Use strict word boundaries ONLY for single-word snippets.
+            # For multi-word phrases, a simple substring match is more robust.
+            if ' ' in snippet_content:
+                # It's a phrase, do a direct substring match. More reliable for sentences.
+                pattern = escaped_snippet
+                logger.debug(f"Using PHRASE removal pattern for snippet: '{snippet_content[:70]}...'")
+            else:
+                # It's a single word, use strict word boundaries to avoid partial matches.
+                pattern = r'(?<!\w)' + escaped_snippet + r'(?!\w)'
+                logger.debug(f"Using WORD removal pattern: {pattern} for snippet: '{snippet_content[:70]}...'")
 
-            # Log the pattern being used for this specific snippet
-            # Added sample of text being searched for better debugging context
-            logger.debug(f"Attempting to remove snippet with pattern: {pattern} (from original: '{snippet_content[:50]}...') from text sample: '{modified_text[:100]}'")
-
-            # Store length BEFORE modification for optional logging
             original_len_before_sub = len(modified_text)
 
-            # Perform the actual modification
-            modified_text = re.sub(pattern, '', modified_text, flags=re.IGNORECASE | re.UNICODE)
+            # Perform the actual modification. Replace with a space to prevent merging adjacent words.
+            modified_text = re.sub(pattern, ' ', modified_text, flags=re.IGNORECASE | re.UNICODE)
 
             if len(modified_text) != original_len_before_sub:
                 logger.debug(f"Snippet '{snippet_content[:50]}...' REMOVED. Text length change: {original_len_before_sub} -> {len(modified_text)}")
             else:
-                # Simplified log when snippet is not found/removed
-                logger.debug(f"Snippet '{snippet_content[:50]}...' NOT found/removed with pattern '{pattern}'.")
+                logger.debug(f"Snippet '{snippet_content[:50]}...' NOT found/removed with its pattern.")
 
         except re.error as e:
             logger.warning(f"Regex error while trying to remove snippet '{snippet_content[:50]}...': {e}")
@@ -235,58 +230,81 @@ def extract_text(text: str,
         logger.debug("extract_text: Text is too short or empty, returning empty string.")
         return ""
 
+    # --- START: CORRECTED LOGIC ---
+
+    # Helper function to ensure snippets are cleaned identically to the main text.
+    def _clean_snippet_list(snippets: Optional[List[str]]) -> Optional[List[str]]:
+        if not snippets:
+            return None
+        cleaned_snippets = []
+        for s in snippets:
+            if s and s.strip():
+                # **FIX**: Apply the exact same multi-step cleaning process to the snippet
+                # Step 1: Normalize Turkish text and spacing (THIS WAS THE MISSING STEP)
+                normalized_s = normalize_turkish_text(s)
+                
+                # Step 2: Aggressively strip characters, same as the main text
+                cleaned_s = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', normalized_s)
+                
+                # Step 3: Consolidate whitespace
+                cleaned_s = re.sub(r'\s+', ' ', cleaned_s).strip()
+
+                if cleaned_s:
+                    cleaned_snippets.append(cleaned_s)
+        return cleaned_snippets
+
     # 1. Initial text processing (Normalization, specific regex fixes)
-    # This part handles basic cleanup before aggressive stripping.
     processed_text = normalize_turkish_text(text)
     processed_text = re.sub(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})(?=\d{1,2}[/.-])', r'\1 ', processed_text)
     logger.debug(f"Text after initial normalization (first 200 chars): '{processed_text[:200]}'")
 
-    # 2. Aggressive character stripping
-    # This step is crucial. It brings the current 'text' to the same "cleaning level"
-    # as the text from which LLM-derived snippets were generated.
-    # LLM received text that had already undergone this stripping.
+    # 2. Aggressive character stripping on the main text
+    # This brings the current 'text' to the same "cleaning level" as the snippets will be.
     text_after_aggressive_stripping = re.sub(r'[^\w\s\'-çğıöşüÇĞİÖŞÜ]', ' ', processed_text)
-    text_after_aggressive_stripping = re.sub(r'\s+', ' ', text_after_aggressive_stripping).strip() # Consolidate multiple spaces and trim
+    text_after_aggressive_stripping = re.sub(r'\s+', ' ', text_after_aggressive_stripping).strip()
     logger.debug(f"Text after aggressive char stripping (first 200 chars): '{text_after_aggressive_stripping[:200]}'")
 
-    # 3. Apply H/F/N snippets to the aggressively stripped text
-    # Now, both the text_for_final_processing and the snippets are at the same cleaning level (e.g., no '₺').
+    # 3. Clean all incoming snippet lists to ensure a like-for-like comparison
+    cleaned_header_snippets = _clean_snippet_list(header_snippets)
+    cleaned_footer_snippets = _clean_snippet_list(footer_snippets)
+    cleaned_needless_info_snippets = _clean_snippet_list(needless_info_snippets)
+    
+    # 4. Apply the CLEANED H/F/N snippets to the aggressively stripped text
     text_for_final_processing = text_after_aggressive_stripping
     original_length_for_debug = len(text_for_final_processing)
     
-    # The _remove_snippets_from_text_internal function will further clean spaces after each removal set.
-
-    if header_snippets:
-        logger.debug(f"Attempting to remove headers. Text length before: {len(text_for_final_processing)}")
-        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, header_snippets)
+    if cleaned_header_snippets:
+        logger.debug(f"Attempting to remove CLEANED headers. Text length before: {len(text_for_final_processing)}")
+        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, cleaned_header_snippets)
         logger.debug(f"Text length after header removal: {len(text_for_final_processing)}. Text sample: '{text_for_final_processing[:200]}'")
 
-    if footer_snippets:
-        logger.debug(f"Attempting to remove footers. Text length before: {len(text_for_final_processing)}")
-        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, footer_snippets)
+    if cleaned_footer_snippets:
+        logger.debug(f"Attempting to remove CLEANED footers. Text length before: {len(text_for_final_processing)}")
+        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, cleaned_footer_snippets)
         logger.debug(f"Text length after footer removal: {len(text_for_final_processing)}. Text sample: '{text_for_final_processing[:200]}'")
 
-    if needless_info_snippets:
-        logger.debug(f"Attempting to remove needless info. Text length before: {len(text_for_final_processing)}")
-        # The log inside _remove_snippets_from_text_internal will show sample of text_for_final_processing
-        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, needless_info_snippets)
+    if cleaned_needless_info_snippets:
+        logger.debug(f"Attempting to remove CLEANED needless info. Text length before: {len(text_for_final_processing)}")
+        text_for_final_processing = _remove_snippets_from_text_internal(text_for_final_processing, cleaned_needless_info_snippets)
         logger.debug(f"Text length after needless info removal: {len(text_for_final_processing)}. Text sample: '{text_for_final_processing[:200]}'")
-
+    
+    # --- END: CORRECTED LOGIC ---
+    
     if (header_snippets or footer_snippets or needless_info_snippets) and logger.isEnabledFor(logging.DEBUG):
         if original_length_for_debug != len(text_for_final_processing):
             logger.debug(f"Overall text length changed by H/F/needless_info removal: {original_length_for_debug} -> {len(text_for_final_processing)}")
         elif any(s and s.strip() for s in (header_snippets or [])) or \
              any(s and s.strip() for s in (footer_snippets or [])) or \
-             any(s and s.strip() for s in (needless_info_snippets or [])): # Check if there were actual snippets to process
+             any(s and s.strip() for s in (needless_info_snippets or [])):
             logger.debug(f"Text length ({original_length_for_debug}) not changed by H/F/needless_info removal, though non-empty snippets were provided (may indicate no matches, or snippets were all empty).")
     
-    # 4. Remove stop words if requested
+    # 5. Remove stop words if requested
     if remove_stop_words:
         logger.debug(f"Attempting to remove stop words. Text length before: {len(text_for_final_processing)}")
         text_for_final_processing = _remove_stop_words(text_for_final_processing, COMMON_STOP_WORDS)
         logger.debug(f"Text length after stop words removal: {len(text_for_final_processing)}. Text sample: '{text_for_final_processing[:200]}'")
     
-    # 5. Final text is already cleaned of extra spaces by previous functions
+    # 6. Final text is already cleaned of extra spaces by previous functions
     final_cleaned_text = text_for_final_processing
     logger.debug(f"Final cleaned text length: {len(final_cleaned_text)}. Sample: '{final_cleaned_text[:200]}'")
 

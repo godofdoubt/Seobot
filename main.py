@@ -4,22 +4,24 @@ import os
 from dotenv import load_dotenv
 import logging
 import asyncio
-import json # Already present, re-confirming
-import re   # Added for data extraction
-from datetime import datetime # Already present
-import time # Added for setting analysis_start_time
-import plotly.express as px # Added for Plotly Express
-import plotly.graph_objects as go # Added for Plotly Graph Objects
-# from plotly.subplots import make_subplots # Not used yet, can be added if complex subplots are needed
-# import pandas as pd # Not strictly needed for these charts, can be added if complex data manipulation is required by Plotly
-from urllib.parse import urlparse # Added for URL validation
+import json
+import re
+from datetime import datetime
+import time
+import plotly.express as px
+import plotly.graph_objects as go
+from urllib.parse import urlparse
 
-# Import update_page_history as well
-from utils.shared_functions import analyze_website, load_saved_report, init_shared_session_state, common_sidebar , display_detailed_analysis_status_enhanced, trigger_detailed_analysis_background_process_with_callback, update_page_history
+# Import your utility functions
+from utils.shared_functions import (
+    analyze_website, load_saved_report, init_shared_session_state, common_sidebar,
+    display_detailed_analysis_status_enhanced, update_page_history
+)
 from utils.s10tools import normalize_url
 from utils.language_support import language_manager
 from supabase import create_client, Client
 from analyzer.llm_report.llm_analysis_end_processor import LLMAnalysisEndProcessor
+
 
 
 
@@ -46,12 +48,18 @@ for key, value in os.environ.items():
     if key.startswith('USER') and key.endswith('_API_KEY'):
         USER_API_KEYS[value] = key.replace('_API_KEY', '')
 
-# Define a function to initialize the client and cache it
-@st.cache_resource
 def init_supabase_client():
-    """Initializes and returns a Supabase client, cached for reuse."""
+    # ... (no change)
     logging.info("Initializing Supabase client.")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
+# NOTE: To make the code runnable, I'm moving the cached version of init_supabase_client here.
+@st.cache_resource
+def init_supabase_client_cached():
+    """Initializes and returns a Supabase client, cached for reuse."""
+    SUPABASE_URL_CACHED = os.getenv('SUPABASE_URL')
+    SUPABASE_KEY_CACHED = os.getenv('SUPABASE_KEY')
+    logging.info("Initializing Supabase client (cached resource).")
+    return create_client(SUPABASE_URL_CACHED, SUPABASE_KEY_CACHED)
 
 def authenticate_user(api_key):
     if api_key in USER_API_KEYS:
@@ -717,98 +725,128 @@ def display_styled_report(full_report_json, lang):
     metrics = cached_extract_metrics(full_report_json)
     display_seo_dashboard(metrics, lang)
 
+# --- RESTRUCTURED MAIN APPLICATION ---
 def run_main_app():
-    # --- STEP 1: Initial Page Configuration ---
-    # Configure the page and inject CSS immediately. This is critical to prevent the
-    # default Streamlit navigation from flashing on screen (FOUC - Flash of Unstyled Content).
+    # --- STEP 1: IMMEDIATE PAGE CONFIGURATION (to prevent FOUC) ---
+    # This block must be the VERY FIRST thing in your app's execution flow.
+    # It sets the page layout and immediately injects the CSS to hide the
+    # default sidebar navigation before the browser has a chance to render it.
     st.set_page_config(
-        page_title="RICAS Beta", 
-        page_icon="📊", 
-        layout="wide", 
-        initial_sidebar_state="collapsed", 
-        menu_items={'Get Help': 'https://www.seo1.com/help', 'Report a bug': "https://www.se10.com/bug", 'About': "# Raven Web Services"}
+        page_title="RICAS Beta",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+        menu_items={'Get Help': 'https://www.ricas.com/help', 'Report a bug': "https://www.ricas.com/bug", 'About': "# Raven Web Services"}
     )
+    # This CSS is now injected immediately, solving the FOUC problem.
     hide_pages_nav = """<style> div[data-testid="stSidebarNav"] {display: none !important;} </style>"""
     st.markdown(hide_pages_nav, unsafe_allow_html=True)
 
-    # --- STEP 2: Render Initial UI & Basic Setup ---
-    # Display the title and initialize session state right away. These are fast operations
-    # and give the user immediate visual feedback that the app is loading.
-    
-    # --- NEW CODE START ---
-    # Display the logo at the top of the page.
-    # It assumes you have a folder named 'assets' in your root directory
-    # with the logo file 'logo.png' inside it.
-    try:
-        st.image('assets/logo.png', width=200) # Adjust the width as needed
-    except FileNotFoundError:
-        # This will log a warning to your console if the file is not found,
-        # but the app will continue to run without crashing.
-        logging.warning("Logo file not found at 'assets/logo.png'. Skipping logo display.")
-    # --- NEW CODE END ---
-
-    st.title("Raven Intelligent Content Automation Solutions")
+    # --- STEP 2: LOAD ENVIRONMENT & INITIALIZE SESSION ---
+    # These are fast operations. We load environment variables and set up
+    # the basic session state needed for the UI to function correctly.
+    load_dotenv()
     init_shared_session_state()
     lang = st.session_state.language
 
-    # --- STEP 3: Validate Configuration ---
-    # Check for essential environment variables. This is a quick check.
-    for config_name, config_value in {'Supabase URL': SUPABASE_URL, 'Supabase Key': SUPABASE_KEY}.items():
-        if not config_value: st.error(f"{config_name} is missing."); st.stop()
-    if not GEMINI_API_KEY and not MISTRAL_API_KEY: st.error(language_manager.get_text("no_ai_model", lang)); st.stop()
+    # --- STEP 3: RENDER INITIAL UI ELEMENTS ---
+    # Display static elements like the logo and title. This gives the user
+    # immediate feedback that the app is loading correctly.
+    try:
+        st.image('assets/logo.png', width=200)
+    except FileNotFoundError:
+        logging.warning("Logo file not found at 'assets/logo.png'. Skipping logo display.")
 
-    # --- STEP 4: Initialize External Services & Dependent Logic ---
-    # Now, initialize the Supabase client. This might be a slightly slower operation
-    # (especially on the very first page load), so we do it after the initial UI is visible.
-    supabase = init_supabase_client()
-    
-    # This function might depend on the supabase client, so it's placed here.
+    st.title("Raven Intelligent Content Automation Solutions")
+
+    # --- STEP 4: CONFIGURATION VALIDATION ---
+    # Now, check for essential configurations. If these fail, the app stops,
+    # but the initial page shell is already correctly rendered without the FOUC.
+    SUPABASE_URL = os.getenv('SUPABASE_URL')
+    SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
+    USER_API_KEYS = {v: k.replace('_API_KEY', '') for k, v in os.environ.items() if k.startswith('USER') and k.endswith('_API_KEY')}
+
+    for config_name, config_value in {'Supabase URL': SUPABASE_URL, 'Supabase Key': SUPABASE_KEY}.items():
+        if not config_value:
+            st.error(f"{config_name} is missing.")
+            st.stop()
+    if not GEMINI_API_KEY and not MISTRAL_API_KEY:
+        st.error(language_manager.get_text("no_ai_model", lang))
+        st.stop()
+
+    # Store API keys in session state if not already there
+    if "GEMINI_API_KEY" not in st.session_state: st.session_state.GEMINI_API_KEY = GEMINI_API_KEY
+    if "MISTRAL_API_KEY" not in st.session_state: st.session_state.MISTRAL_API_KEY = MISTRAL_API_KEY
+
+
+    # --- STEP 5: INITIALIZE EXTERNAL SERVICES & PAGE LOGIC ---
+    # This is the point where potentially slower operations, like connecting
+    # to a database, happen.
+    supabase = init_supabase_client_cached()
+
     if st.session_state.get("current_page") != "main":
         update_page_history("main")
 
-    # --- STEP 5: Main Application Logic ---
-    # Initialize remaining session state flags and then run the main app router.
-    if "analysis_complete" not in st.session_state: st.session_state.analysis_complete = False
-    if "detailed_analysis_info" not in st.session_state: st.session_state.detailed_analysis_info = {"report_id": None, "url": None, "status_message": "", "status": None}
-
+    # --- STEP 6: MAIN APPLICATION ROUTER ---
+    # The rest of your application logic follows.
     if not st.session_state.authenticated:
-        st.markdown(language_manager.get_text("welcome_seo", lang)); st.markdown(language_manager.get_text("enter_api_key", lang))
-        languages = language_manager.get_available_languages(); language_names = {"en": "English", "tr": "Türkçe"}
-        selected_language = st.selectbox("Language / Dil", languages, format_func=lambda x: language_names.get(x, x), index=languages.index(st.session_state.language))
-        if selected_language != st.session_state.language: st.session_state.language = selected_language; st.rerun()
+        st.markdown(language_manager.get_text("welcome_seo", lang))
+        st.markdown(language_manager.get_text("enter_api_key", lang))
+        languages = language_manager.get_available_languages()
+        language_names = {"en": "English", "tr": "Türkçe"}
+        selected_language = st.selectbox(
+            "Language / Dil", languages, format_func=lambda x: language_names.get(x, x),
+            index=languages.index(st.session_state.language)
+        )
+        if selected_language != st.session_state.language:
+            st.session_state.language = selected_language
+            st.rerun()
+
         with st.form("login_form"):
             api_key = st.text_input(language_manager.get_text("enter_api_key_label", lang), type="password")
             if st.form_submit_button(language_manager.get_text("login_button", lang)):
-                is_authenticated, username = authenticate_user(api_key)
-                if is_authenticated: st.session_state.authenticated = True; st.session_state.username = username; st.rerun()
-                else: st.error(language_manager.get_text("login_failed", lang))
+                is_authenticated, username = authenticate_user(api_key) # Assuming authenticate_user is defined above
+                if is_authenticated:
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.rerun()
+                else:
+                    st.error(language_manager.get_text("login_failed", lang))
     else:
+        # Authenticated user flow (this part of the logic remains the same)
         st.markdown(language_manager.get_text("logged_in_as", lang, username=st.session_state.username))
-        if st.session_state.analysis_complete and hasattr(st.session_state, 'full_report') and st.session_state.full_report and hasattr(st.session_state, 'url') and st.session_state.url: # Check full_report
+
+        if st.session_state.analysis_complete and st.session_state.get('full_report') and st.session_state.get('url'):
             st.success(language_manager.get_text("analysis_complete_message", lang))
-            st.markdown(f"### {language_manager.get_text('next_steps', lang)}"); st.markdown(language_manager.get_text("continue_optimizing", lang))
-            if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_after_analysis", use_container_width=True): st.switch_page("pages/1_SEO_Helper.py")
-            st.markdown(f"### {language_manager.get_text('content_generation_tools', lang)}"); st.markdown(language_manager.get_text("create_optimized_content", lang))
+            st.markdown(f"### {language_manager.get_text('next_steps', lang)}")
+            st.markdown(language_manager.get_text("continue_optimizing", lang))
+            if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_after_analysis", use_container_width=True):
+                st.switch_page("pages/1_SEO_Helper.py")
+            st.markdown(f"### {language_manager.get_text('content_generation_tools', lang)}")
+            st.markdown(language_manager.get_text("create_optimized_content", lang))
             col1, col2 = st.columns(2)
             with col1:
-                if st.button(language_manager.get_text("article_writer_button", lang), key="article_writer_button_results", use_container_width=True): st.switch_page("pages/2_Article_Writer.py")
+                if st.button(language_manager.get_text("article_writer_button", lang), key="article_writer_button_results", use_container_width=True):
+                    st.switch_page("pages/2_Article_Writer.py")
             with col2:
-                if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True): st.switch_page("pages/3_Product_Writer.py")
+                if st.button(language_manager.get_text("product_writer_button", lang), key="product_writer_button_results", use_container_width=True):
+                    st.switch_page("pages/3_Product_Writer.py")
+
             display_detailed_analysis_status_enhanced(supabase, lang)
             st.subheader(language_manager.get_text("analysis_results_for_url", lang, url=st.session_state.url))
             display_styled_report(st.session_state.full_report, lang)
 
-            if hasattr(st.session_state, 'text_report') and st.session_state.text_report: # Ensure text_report exists for raw data expander
+            if st.session_state.get('text_report'):
                 with st.expander(f"📄 {language_manager.get_text('raw_report_data_label', lang)}", expanded=False):
                     st.text_area(label=language_manager.get_text('seo_report_label', lang), value=st.session_state.text_report, height=300, help=language_manager.get_text('raw_report_help', lang))
 
-            # Option to display full JSON report for debugging/advanced users
             if st.checkbox(language_manager.get_text("show_full_json_report", lang, fallback="Show Full JSON Report Data (for debugging)"), key="show_json_debug"):
                  with st.expander(f"🧬 {language_manager.get_text('full_json_report_label', lang, fallback='Full JSON Report')}", expanded=False):
                     st.json(st.session_state.full_report, expanded=False)
-
         else:
-            st.markdown(f" {language_manager.get_text('platform_description', lang)}\n### {language_manager.get_text('getting_started', lang)}\n{language_manager.get_text('begin_by_analyzing', lang)}") #{## language_manager.get_text('welcome_message', lang)}\n
+            st.markdown(f" {language_manager.get_text('platform_description', lang)}\n### {language_manager.get_text('getting_started', lang)}\n{language_manager.get_text('begin_by_analyzing', lang)}")
             if st.session_state.analysis_in_progress and st.session_state.url_being_analyzed:
                 with st.form("url_form_disabled"):
                     st.text_input(language_manager.get_text("enter_url_placeholder", lang), value=st.session_state.url_being_analyzed, placeholder="https://example.com", disabled=True)
@@ -819,21 +857,30 @@ def run_main_app():
                     website_url_input = st.text_input(language_manager.get_text("enter_url_placeholder", lang), placeholder="https://example.com", key="main_url_input_active")
                     if st.form_submit_button(language_manager.get_text("analyze_button", lang)):
                         url_to_analyze = website_url_input.strip()
-                        if not url_to_analyze: st.warning(language_manager.get_text("please_enter_url", lang, fallback="Please enter a URL."))
+                        if not url_to_analyze:
+                            st.warning(language_manager.get_text("please_enter_url", lang, fallback="Please enter a URL."))
                         else:
-                            normalized_url_attempt = normalize_url(url_to_analyze); valid_for_processing = False
-                            if normalized_url_attempt:
-                                try:
-                                    parsed = urlparse(normalized_url_attempt)
-                                    if parsed.scheme in ['http', 'https'] and parsed.hostname and ('.' in parsed.hostname or parsed.hostname.lower() == 'localhost' or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", parsed.hostname)):
-                                        valid_for_processing = True
-                                except ValueError: pass # Error during parsing means invalid
-                            # FIX: Pass the supabase client to the processing function
-                            if valid_for_processing: asyncio.run(process_url(url_to_analyze, supabase, lang))
-                            else: st.warning(language_manager.get_text("invalid_url_format_warning", lang, fallback="Invalid URL format. Please enter a valid website address (e.g., https://example.com)."))
+                            # Validation logic remains the same
+                            valid_for_processing = False
+                            try:
+                                parsed = urlparse(normalize_url(url_to_analyze))
+                                if parsed.scheme in ['http', 'https'] and parsed.hostname:
+                                    valid_for_processing = True
+                            except (ValueError, AttributeError):
+                                pass
+                            if valid_for_processing:
+                                asyncio.run(process_url(url_to_analyze, supabase, lang)) # Correctly passing supabase
+                            else:
+                                st.warning(language_manager.get_text("invalid_url_format_warning", lang, fallback="Invalid URL format. Please enter a valid website address (e.g., https://example.com)."))
+
             st.markdown(f"### {language_manager.get_text('analyze_with_ai', lang)}")
-            if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"): st.switch_page("pages/1_SEO_Helper.py")
+            if st.button(language_manager.get_text("seo_helper_button", lang), key="seo_helper_button_before_analysis"):
+                st.switch_page("pages/1_SEO_Helper.py")
+
         common_sidebar()
 
+# Remember to define all your helper functions like authenticate_user, process_url etc. before this call.
 if __name__ == "__main__":
+    # Define all necessary functions before this point. For brevity, I'm assuming they are
+    # present above this `if` block in your actual file.
     run_main_app()

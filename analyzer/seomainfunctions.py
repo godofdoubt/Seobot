@@ -1,3 +1,5 @@
+
+
 import logging
 import time
 import random
@@ -38,7 +40,8 @@ async def _process_page_standalone(
     header_snippets_to_remove: Optional[List[str]] = None,
     footer_snippets_to_remove: Optional[List[str]] = None,
     needless_info_snippets_to_remove: Optional[List[str]] = None,
-    extract_with_context: bool = False
+    extract_with_context: bool = False,
+    skip_link_extraction: bool = False # MODIFICATION: Added flag to control link extraction
 ) -> Dict[str, Any]:
     result = {
         'url': url_to_crawl,
@@ -107,16 +110,23 @@ async def _process_page_standalone(
         
         result['cleaned_content_length'] = len(result['cleaned_text'])
       
+        # --- MODIFICATION START: Conditional link extraction ---
         if extract_with_context:
+            # Always extract links with context for the main page
             link_data = await analyzer_instance._extract_links_with_context(
                 page, start_domain_check_part, site_canonical_base_url, exclude_patterns
             )
             result['new_links'] = link_data['links']
             result['link_context'] = link_data['context']
-        else:
+        elif not skip_link_extraction:
+            # For sub-pages, only extract links if the skip flag is NOT set
             result['new_links'] = await analyzer_instance._extract_internal_links_from_page_enhanced(
                 page, start_domain_check_part, site_canonical_base_url, exclude_patterns
             )
+        else:
+            # If skipping, log it for clarity. 'new_links' will correctly remain an empty set.
+            logging.info(f"Skipping link extraction for {url_to_crawl} as sufficient links were found initially.")
+        # --- MODIFICATION END ---
         
         return result
     except PlaywrightTimeoutError:
@@ -179,26 +189,33 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
             logging.warning(f"Could not fetch robots.txt from {robots_url}: {e_robots}")
             robots_txt_found_status = False
     
-    # NEW CODE:
-    sitemap_pages_normalized: Set[str] = set()
     sitemap_pages_list = list(sitemap_pages_raw)
-    
-    # Sort sitemap pages to prioritize important ones
+
+    # Sorts URLs so that blog posts come first, followed by other key pages, then the rest.
     sitemap_pages_list.sort(key=lambda url: (
-        0 if any(pattern in url.lower() for pattern in ['/about', '/contact', '/services', '/products']) else 1,
+        # This check correctly finds any URL with '/blog' OR '/icerik'
+        0 if any(p in url.lower() for p in ['/blog', '/icerik']) else
+        (1 if any(pattern in url.lower() for pattern in ['/about', '/contact', '/services', '/products']) else 2),
         url
     ))
     
+    # --- MODIFICATION START: Use a list to preserve order and a set for uniqueness ---
+    ordered_sitemap_urls: List[str] = []
+    # Use a set to efficiently track uniqueness, pre-populating with the start URL
+    seen_normalized_urls: Set[str] = {analysis_url_input} 
+
     for page_url in sitemap_pages_list:
-        if len(sitemap_pages_normalized) >= config.MAX_LINKS_TO_DISCOVER - 10:  # Reserve some for dynamic discovery
+        if len(ordered_sitemap_urls) >= config.MAX_LINKS_TO_DISCOVER - 10:
             print(f"Limiting sitemap URLs to respect MAX_LINKS_TO_DISCOVER limit")
             break
         
         norm_page_url = analyzer_instance._normalize_url(page_url, analyzer_instance.site_base_for_normalization)
-        if norm_page_url and not any(exclude in norm_page_url for exclude in config.EXCLUDE_PATTERNS):
-            sitemap_pages_normalized.add(norm_page_url)
-    
-    print(f"Found {len(sitemap_pages_normalized)} URLs in sitemaps. Robots.txt found: {robots_txt_found_status}")
+        # Check if URL is valid, not excluded, and not already seen
+        if norm_page_url and norm_page_url not in seen_normalized_urls and not any(exclude in norm_page_url for exclude in config.EXCLUDE_PATTERNS):
+            ordered_sitemap_urls.append(norm_page_url)
+            seen_normalized_urls.add(norm_page_url)
+
+    print(f"Found {len(ordered_sitemap_urls)} unique, prioritized URLs in sitemaps. Robots.txt found: {robots_txt_found_status}")
     
     analysis = {
         'url': analysis_url_input, 
@@ -210,7 +227,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
         'sitemap_found': bool(sitemap_urls_discovered),
         'sitemap_urls_discovered': sitemap_urls_discovered,
         'sitemap_urls_discovered_count': len(sitemap_urls_discovered),
-        'sitemap_pages_processed_count': len(sitemap_pages_normalized),
+        'sitemap_pages_processed_count': len(ordered_sitemap_urls),
         'robots_txt_found': robots_txt_found_status,
         'total_cleaned_content_length': 0,
         'average_cleaned_content_length_per_page': 0.0,
@@ -221,15 +238,18 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
     }
 
     analyzer_instance.visited_urls.add(analysis_url_input) 
-    analyzer_instance.all_discovered_links.add(analysis_url_input)
-    analyzer_instance.all_discovered_links.update(sitemap_pages_normalized)
+    # The master list of all links now includes the start URL and all unique sitemap URLs
+    analyzer_instance.all_discovered_links.update(seen_normalized_urls)
     
     url_in_report_dict: Dict[str, bool] = {} 
     urls_to_visit = deque()
-    for s_url in sitemap_pages_normalized:
-        if s_url != analysis_url_input and s_url not in analyzer_instance.visited_urls:
+
+    # Populate the queue from the ORDERED list, preserving the sort priority
+    for s_url in ordered_sitemap_urls:
+        if s_url not in analyzer_instance.visited_urls:
             urls_to_visit.append(s_url)
             analyzer_instance.visited_urls.add(s_url) 
+    # --- MODIFICATION END ---
 
     actual_initial_url = None
     initial_cleaned_text_for_main_url = ""
@@ -241,6 +261,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
+        # MODIFICATION: Define flag with a default value before it might be set.
+        skip_subsequent_link_extraction = False
         try:
             context = await browser.new_context(
                 user_agent=config.USER_AGENT,
@@ -288,7 +310,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     if initial_result['cleaned_text']:
                         raw_initial_cleaned_text = initial_result['cleaned_text'] 
                     
-                        # Store link context for internal use but don't add to report
                         if 'link_context' in initial_result and initial_result['link_context']:
                             initial_page_link_context = initial_result['link_context']
                     
@@ -306,7 +327,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                 analyzer_instance.identified_needless_info_texts = analyzer_instance.initial_page_llm_report.get("needless_info", [])
                                 if analyzer_instance.identified_header_texts or analyzer_instance.identified_footer_texts or analyzer_instance.identified_needless_info_texts:
                                     print(f"Identified {len(analyzer_instance.identified_header_texts)} header, {len(analyzer_instance.identified_footer_texts)} footer, and {len(analyzer_instance.identified_needless_info_texts)} needless info elements via LLM")
-                                # Note: link_context is available internally but not added to report
                             else: 
                                 error_msg = analyzer_instance.initial_page_llm_report.get('error', 'Unknown LLM error') if analyzer_instance.initial_page_llm_report else 'No LLM report'
                                 logging.warning(f"LLM analysis for initial page failed: {error_msg}")
@@ -351,15 +371,12 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                         analysis['crawled_urls'].append(actual_initial_url)
                         url_in_report_dict[actual_initial_url] = True 
                         
-                        # NEW CODE:
                         def prioritize_and_add_links(analyzer_instance, new_links, urls_to_visit):
                             """Add links with priority, respecting MAX_LINKS_TO_DISCOVER limit"""
                             links_to_add = []
                             
-                            # Prioritize certain URL patterns (customize based on your needs)
-                            priority_patterns = ['/about', '/contact', '/services', '/products', '/blog']
+                            priority_patterns = ['/about', '/contact', '/services', '/products', '/blog' , '/blog/icerik' ,'/icerik']
                             
-                            # Separate priority and regular links
                             priority_links = []
                             regular_links = []
                             
@@ -370,7 +387,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                     else:
                                         regular_links.append(link)
                             
-                            # Add priority links first
                             for link in priority_links:
                                 if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
                                     analyzer_instance.all_discovered_links.add(link)
@@ -378,7 +394,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                     analyzer_instance.visited_urls.add(link)
                                     links_to_add.append(link)
                             
-                            # Then add regular links until we hit the limit
                             for link in regular_links:
                                 if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
                                     analyzer_instance.all_discovered_links.add(link)
@@ -388,7 +403,6 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             
                             return len(links_to_add)
                         
-                        # Replace the initial page link processing:
                         if initial_result['new_links']:
                             added_count = prioritize_and_add_links(
                                 analyzer_instance, 
@@ -397,6 +411,19 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             )
                             if added_count > 0:
                                 print(f"Added {added_count} new links from initial page")
+                        
+                        # --- MODIFICATION START: Set the skip flag after processing initial page ---
+                        # We have 1 page in the report (main) and a queue of other pages.
+                        # If this is enough to meet our analysis goal, we don't need to find more links.
+                        num_links_ready_for_analysis = len(url_in_report_dict) + len(urls_to_visit)
+                        skip_subsequent_link_extraction = num_links_ready_for_analysis >= config.MAX_PAGES_TO_ANALYZE
+
+                        if skip_subsequent_link_extraction:
+                            print(
+                                f"Sitemap and initial page provided enough links ({num_links_ready_for_analysis}) to meet the "
+                                f"analysis goal of {config.MAX_PAGES_TO_ANALYZE}. Skipping link extraction on subsequent pages."
+                            )
+                        # --- MODIFICATION END ---
                     else: 
                          if isinstance(analyzer_instance.initial_page_llm_report, dict):
                             analyzer_instance.initial_page_llm_report['tech_stats'] = initial_page_tech_stats
@@ -427,6 +454,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     for batch_url_item in batch_urls_to_crawl:
                         page = await context.new_page()
                         pages_for_batch.append(page)
+                        # --- MODIFICATION: Pass the skip_link_extraction flag ---
+                        # This uses the flag defined in the outer scope.
                         tasks.append(_process_page_standalone(
                             analyzer_instance,
                             page, batch_url_item, 
@@ -435,7 +464,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             config.EXCLUDE_PATTERNS,
                             header_snippets_to_remove=analyzer_instance.identified_header_texts, 
                             footer_snippets_to_remove=analyzer_instance.identified_footer_texts,
-                            needless_info_snippets_to_remove=analyzer_instance.identified_needless_info_texts
+                            needless_info_snippets_to_remove=analyzer_instance.identified_needless_info_texts,
+                            skip_link_extraction=skip_subsequent_link_extraction
                         ))
                     batch_proc_results = await asyncio.gather(*tasks, return_exceptions=True)
                     return batch_proc_results, pages_for_batch
@@ -443,19 +473,9 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     logging.error(f"Error creating batch tasks: {e_batch_create}")
                     return [e_batch_create] * len(batch_urls_to_crawl), pages_for_batch
 
-            # batch_size = min(8, config.MAX_PAGES_TO_ANALYZE if config.MAX_PAGES_TO_ANALYZE > 0 else 1)
-            # if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0
-            
-            # TRY THIS FIRST:
-            #batch_size = 1 # Process one page at a time to see if it even works
-            # THEN TRY:
-            # batch_size = 2 
-            # THEN TRY:
             batch_size = 3
-            # Find what your Render instance can handle.
-            if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0 # Keep this for the "don't crawl" case
+            if config.MAX_PAGES_TO_ANALYZE == 0: batch_size = 0
 
-            # NEW CODE - Remove the MAX_LINKS_TO_DISCOVER condition:
             while urls_to_visit and len(url_in_report_dict) < config.MAX_PAGES_TO_ANALYZE and batch_size > 0:
                 current_batch_urls = []
                 
@@ -471,6 +491,7 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                     
                 print(f"Processing batch of {len(current_batch_urls)} pages... ({len(url_in_report_dict)}/{config.MAX_PAGES_TO_ANALYZE} analyzed)")
                 
+                # The wrapper will now use the skip_subsequent_link_extraction flag internally
                 batch_results_data, batch_pages_created = await process_batch_wrapper(current_batch_urls)
                 
                 try: 
@@ -486,9 +507,8 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                             continue
                         
                         if actual_processed_url in url_in_report_dict:
-                            # NEW CODE:
-                            # Replace both instances in the batch processing loop with:
-                            if page_result_data.get('new_links'):
+                            # If we are skipping link extraction, we don't need to process new links here.
+                            if not skip_subsequent_link_extraction and page_result_data.get('new_links'):
                                 prioritize_and_add_links(
                                     analyzer_instance, 
                                     page_result_data.get('new_links', set()), 
@@ -522,15 +542,16 @@ async def analyze_url_standalone(analyzer_instance, url: str) -> Optional[Dict[s
                                 analysis['crawled_urls'].append(actual_processed_url)
                                 successful_pages_in_batch += 1
                         
-                        for new_link in page_result_data.get('new_links', set()): 
-                            if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
-                                if new_link not in analyzer_instance.visited_urls and new_link not in urls_to_visit: 
-                                    analyzer_instance.all_discovered_links.add(new_link)
-                                    urls_to_visit.append(new_link)
-                                    analyzer_instance.visited_urls.add(new_link) 
-                            else: break 
+                        # Only add new links if we are not skipping and below discovery limits
+                        if not skip_subsequent_link_extraction:
+                            for new_link in page_result_data.get('new_links', set()): 
+                                if len(analyzer_instance.all_discovered_links) < config.MAX_LINKS_TO_DISCOVER:
+                                    if new_link not in analyzer_instance.visited_urls and new_link not in urls_to_visit: 
+                                        analyzer_instance.all_discovered_links.add(new_link)
+                                        urls_to_visit.append(new_link)
+                                        analyzer_instance.visited_urls.add(new_link) 
+                                else: break 
                         
-                        # REPLACE with:
                         if len(url_in_report_dict) >= config.MAX_PAGES_TO_ANALYZE:
                             print("Reached max pages to analyze.")
                             break

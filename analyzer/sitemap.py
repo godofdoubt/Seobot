@@ -197,4 +197,16 @@ async def fetch_all_pages_from_sitemaps(discovered_sitemap_urls: List[str], sess
             all_pages_found.update(page_urls_from_sitemap)
     
     logger.info(f"Total unique pages collected from all processed sitemaps: {len(all_pages_found)}")
+     # =========================================================================
+    # === ADD THIS CODE TO LOG THE URLS ===
+    # =========================================================================
+    # Log all the URLs found at the DEBUG level.
+    # This is better than INFO to avoid cluttering logs unless you specifically want details.
+    # You may need to set your logger level to DEBUG to see this output.
+    if all_pages_found:
+        logger.debug("--- Full list of pages found in sitemaps ---")
+        # Sorting the list makes the log output consistent and easier to read
+        for page_url in sorted(list(all_pages_found)):
+            logger.debug(f"Sitemap URL Found: {page_url}")
+        logger.debug("--- End of sitemap URL list ---")
     return all_pages_found
