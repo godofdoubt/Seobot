@@ -780,6 +780,10 @@ async def main_seo_helper():
         else:
             placeholder_text = language_manager.get_text(placeholder_text_key, lang, fallback="Enter URL to analyze, or ask an SEO question...")
 
+# /SeoBot/pages/1_SEO_Helper.py
+
+# ... (fix for new analysis on page 1)
+
         if prompt := st.chat_input(placeholder_text):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
@@ -798,10 +802,11 @@ async def main_seo_helper():
                 else:
                     await process_chat_input(
                         prompt=prompt,
-                        process_url_from_main=lambda url, lang_code: main_process_url(url, lang_code), 
+                        process_url_from_main=lambda url, lang_code: main_process_url(url, supabase_client, lang_code), 
                         message_list="messages"
                     )
-        
+
+# ... (rest of the file)
         if is_paused_panel_display and tasks_for_panel_display and \
            0 <= current_task_idx_panel_display < len(tasks_for_panel_display):
             

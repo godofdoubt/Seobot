@@ -65,7 +65,7 @@ translations = {
 
     # General Messages
     "welcome_message": "Welcome nevaR Web Services!",
-    "welcome_seo": "Welcome nevaR Web Services Beta!",
+    "welcome_seo": "Welcome to RICAS",
     "welcome_authenticated": "Welcome, {0}!", # {0} is username
     "logged_in_as": "Logged in as: **{username}**",
     "analysis_complete_message": "✅ Analysis for your URL is complete.",

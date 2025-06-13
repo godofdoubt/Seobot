@@ -808,7 +808,7 @@ def run_main_app():
                     st.json(st.session_state.full_report, expanded=False)
 
         else:
-            st.markdown(f"## {language_manager.get_text('welcome_message', lang)}\n{language_manager.get_text('platform_description', lang)}\n### {language_manager.get_text('getting_started', lang)}\n{language_manager.get_text('begin_by_analyzing', lang)}")
+            st.markdown(f" {language_manager.get_text('platform_description', lang)}\n### {language_manager.get_text('getting_started', lang)}\n{language_manager.get_text('begin_by_analyzing', lang)}") #{## language_manager.get_text('welcome_message', lang)}\n
             if st.session_state.analysis_in_progress and st.session_state.url_being_analyzed:
                 with st.form("url_form_disabled"):
                     st.text_input(language_manager.get_text("enter_url_placeholder", lang), value=st.session_state.url_being_analyzed, placeholder="https://example.com", disabled=True)
