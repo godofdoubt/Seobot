@@ -1,15 +1,17 @@
+
 import json
 # Removed streamlit import as language_code is passed directly
 
 def build_ai_recommendations_prompt(website_data_summary: dict, language_code: str = "en") -> str:
-    language_instruction = f"Respond in Turkish. " if language_code == "tr" else ""
-    
     # --- START MODIFICATION for persona count ---
-    persona_instruction_detail = "first, define 5-7 distinct target audience personas."
-    persona_critical_requirement_detail = "Generate at least 5, ideally 5-7 detailed `target_audience_personas`"
     if language_code == "tr":
-        persona_instruction_detail = "öncelikle en az 5, ideal olarak 5-7 farklı hedef kitle personası tanımlayın."
-        persona_critical_requirement_detail = "En az 5, ideal olarak 5-7 adet detaylı `target_audience_personas` oluşturun"
+        language_instruction = "Yanıtınızı Türkçe verin. "
+        persona_instruction_detail = "öncelikle 5-7 farklı hedef kitle personası tanımlayın."
+        persona_critical_requirement_detail = "Verilen verilere dayanarak en az 5, ideal olarak 5-7 adet detaylı `target_audience_personas` oluşturun."
+    else:
+        language_instruction = "" # Default is English
+        persona_instruction_detail = "first, define 5-7 distinct target audience personas."
+        persona_critical_requirement_detail = "Generate at least 5, ideally 5-7 detailed `target_audience_personas`"
     # --- END MODIFICATION for persona count ---
 
     """
@@ -81,9 +83,9 @@ def build_ai_recommendations_prompt(website_data_summary: dict, language_code: s
 
     CRITICAL REQUIREMENTS:
 
-    1.  **Language Adherence**: The entire response, including all JSON keys and string values (persona names, descriptions, insights, etc.), MUST be in the language specified at the beginning of this prompt ({language_instruction if language_code == 'tr' else 'English'}). If the instruction is to respond in Turkish, ensure all output is in Turkish. Otherwise, use English.
+    1.  **Language Adherence**: The entire response, including all JSON keys and string values (persona names, descriptions, insights, etc.), MUST be in the language specified at the beginning of this prompt ({'Turkish' if language_code == 'tr' else 'English'}). If the instruction is to respond in Turkish, ensure all output is in Turkish. Otherwise, use English.
 
-    2.  **Persona Definition First**: {persona_critical_requirement_detail} based on the `website_data_summary` (keywords, content themes, inferred user intent). These personas should inform subsequent recommendations and insights. You MUST generate AT LEAST 5 personas.
+    2.  **Persona Definition First**: {persona_critical_requirement_detail}. These personas should inform subsequent recommendations and insights. You MUST generate AT LEAST 5 personas.
 
     3.  **Data-Driven Insights**: ALL recommendations and insights MUST be based on the actual `technical_statistics` and `website_analysis_data` provided. Reference specific metrics, issues, or opportunities found in the data.
 

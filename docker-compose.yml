@@ -1,15 +1,29 @@
-
 services:
   app:
-    build: . # Build from the Dockerfile in the current directory - Correct
+    # Docker imajını mevcut dizindeki Dockerfile'ı kullanarak oluştur.
+    build: .
+    
+    # Konteynere kolayca tanınabilecek bir isim verelim.
+    container_name: seobot_low_fullforce
+    
+    # .env dosyasındaki ortam değişkenlerini konteynerin içine yükle.
     env_file:
-      - .env 
+      - .env
+      
+    # Yerel makinenin 8501 portunu konteynerin 8501 portuna yönlendir.
     ports:
-      - "8501:8501" # Map local port 8501 to container port 8501 - Correct
+      - "8501:8501"
+      
+    # Yerel geliştirme sırasında kod değişikliklerinin anında yansıması için volume bağla.
     volumes:
-      # Mount the current local directory (.) to /app in the container - Correct for development
-      # This will overlay the files copied by the Dockerfile's COPY . /app during development,
-      # allowing you to make local code changes without rebuilding the image.
       - .:/app
-    # command: streamlit run main.py # You can explicitly set the command here, or let CMD from Dockerfile be used
-    # Leaving this commentedA out allows the CMD instruction in the Dockerfile to be used, which is fine.
+      
+    # Konteyner için kaynak limitlerini ayarla.
+    deploy:
+      resources:
+        limits:
+          # CPU kullanımını maksimum 0.1 çekirdekle sınırla.
+          cpus: '4'
+          # Bellek (RAM) kullanımını maksimum 1 GB ile sınırla.
+          # memory: 0.5G
+          memory: 5G
