@@ -26,7 +26,9 @@ async def analyze_keyword_difficulty(user_url: str, keyword: str, region: str = 
     """
     Performs a Google search and analyzes the results to find competitors,
     advertisers, and estimate keyword difficulty.
-    Returns a formatted string with the analysis report.
+    Returns a tuple containing:
+    1. A formatted string with the analysis report.
+    2. A list of competitor dictionaries [{'title': str, 'url': str}].
     """
     analysis_lines = [
         f"## 🚀 SERP Analysis for Keyword: '{keyword}'",
@@ -35,14 +37,14 @@ async def analyze_keyword_difficulty(user_url: str, keyword: str, region: str = 
     
     user_domain = get_normalized_domain(user_url)
     if not user_domain:
-        return "❌ **Error:** Could not parse a valid domain from the provided URL."
+        return "❌ **Error:** Could not parse a valid domain from the provided URL.", []
 
     # 1. Scrape Google
     scraper = GoogleSearchScraper(region=region)
     try:
         await scraper.search_google(keyword)
     except Exception as e:
-        return f"❌ **An error occurred during the scrape:**\n\n`{str(e)}`"
+        return f"❌ **An error occurred during the scrape:**\n\n`{str(e)}`", []
 
     # --- Analysis Step ---
     organic_results = scraper.results
@@ -51,22 +53,33 @@ async def analyze_keyword_difficulty(user_url: str, keyword: str, region: str = 
 
     # 2. Get competitor list
     competitors = []
+    competitors_for_analysis_tool = [] # This list will be returned
     user_url_found_in_top_7 = False
+    
+    # Check if user domain is in top results
     for result in organic_results:
         result_domain = get_normalized_domain(result.get('url', ''))
         if result_domain and result_domain == user_domain:
             user_url_found_in_top_7 = True
             break
     
+    # Populate competitor lists based on whether the user's URL was found
     if user_url_found_in_top_7:
         analysis_lines.append("\n✅ **Your domain was found in the top 7 organic results!**")
         for result in organic_results:
             result_domain = get_normalized_domain(result.get('url', ''))
             if result_domain and result_domain != user_domain:
                 competitors.append(result)
+                # Add to the return list if URL exists
+                if result.get('url'):
+                    competitors_for_analysis_tool.append({'title': result['title'], 'url': result['url']})
     else:
         analysis_lines.append("\n⚠️ **Your domain was NOT found in the top 7 organic results.**")
         competitors = organic_results[:5]
+        # Add to the return list if URL exists
+        for result in competitors:
+            if result.get('url'):
+                competitors_for_analysis_tool.append({'title': result['title'], 'url': result['url']})
 
     # 3. Get advertisers URL list
     advertisers = [ad for ad in ad_results if get_normalized_domain(ad.get('url', '')) != user_domain][:3]
@@ -146,4 +159,5 @@ async def analyze_keyword_difficulty(user_url: str, keyword: str, region: str = 
     
     analysis_lines.append("\n" + "="*30)
 
-    return "\n".join(analysis_lines)
+    # Return both the report and the list for the new tool
+    return "\n".join(analysis_lines), competitors_for_analysis_tool
