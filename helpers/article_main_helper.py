@@ -1,3 +1,8 @@
+
+
+### Updated File: `article_main_helper.py`
+
+
 #/mnt/data/Max/Seo12/helpers/article_main_helper.py
 import streamlit as st
 import re
@@ -6,6 +11,8 @@ import requests
 from utils.s10tools import normalize_url, Tool
 from typing import Dict
 from utils.language_support import language_manager
+from helpers import article_main_helper_prompts as prompts
+
 language_names = {"en": "English", "tr": "Turkish"}
 
 def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
@@ -24,13 +31,9 @@ def create_tools(GEMINI_API_KEY: str) -> Dict[str, Tool]:
             lang = st.session_state.get("language", "en")
             language_instruction = f"Please respond in {language_names.get(lang, 'English')}." if lang != "en" else ""
 
-            full_prompt = f"""{language_instruction}
-            {username_context}Context: {context}
-            Question: {prompt}
-
-            Please provide a helpful response focused on article writing and content strategy.
-            Consider the analysis report when providing guidance about content creation.
-            """
+            full_prompt = prompts.get_gemini_process_question_prompt(
+                language_instruction, username_context, context, prompt
+            )
             response = model.generate_content(full_prompt)
             return response.text
         except Exception as e:
@@ -137,46 +140,21 @@ async def process_with_mistral(prompt: str, MISTRAL_API_KEY: str):
 
                 # Check if the prompt is asking for article generation
                 if any(keyword in prompt.lower() for keyword in ["article", "content", "write", "blog", "post", "generate", "create"]):
-                    system_content = f"""{language_instruction}
-You are an expert content writer. Generate a well-structured, SEO-optimized article based on the provided website analysis.
-
-User Information:
-{username_context}
-
-Conversation History:
-{history_context}
-
-Context from SEO Report:
-{st.session_state.text_report}
-
-Website URL: {st.session_state.url}
-
-Instructions for article generation:
-1. Create a compelling headline that includes relevant keywords
-2. Structure the article with clear headings and subheadings
-3. Aim for approximately 1000-1500 words of high-quality content
-4. Include an introduction, main body with 3-5 sections, and conclusion
-5. Optimize for SEO while maintaining readability and engagement
-6. Use a conversational but authoritative tone
-7. Include calls-to-action where appropriate
-"""
+                    system_content = prompts.get_mistral_article_generation_prompt(
+                        language_instruction,
+                        username_context,
+                        history_context,
+                        st.session_state.text_report,
+                        st.session_state.url
+                    )
                 else:
-                    system_content = f"""{language_instruction}
-You are an expert in content writing and SEO strategy. Provide helpful responses about article writing, content strategy, and SEO optimization.
-
-User Information:
-{username_context}
-
-Conversation History:
-{history_context}
-
-Context from SEO Report:
-{st.session_state.text_report}
-
-Website URL: {st.session_state.url}
-
-Please provide specific, actionable advice related to content creation and article writing based on the SEO report.
-"""
+                    system_content = prompts.get_mistral_general_query_prompt(
+                        language_instruction,
+                        username_context,
+                        history_context,
+                        st.session_state.text_report,
+                        st.session_state.url
+                    )
 
                 data = {
                     "model": "mistral-large-latest",

@@ -26,7 +26,8 @@ def get_article_generation_prompts(
         content_length_description = "A moderately detailed article with several paragraphs."
 
     # Note: The prompt structure and wording are preserved from the original version.
-    prompt = f"""{language_instruction}{prompt_prefix} using the provided page analysis data.
+    prompt = f"""You are an expert content writer. Generate a well-structured, SEO-optimized article based on the provided website analysis. Always find posible suddle emotional hooks for entry of the article and end with CTA (Call To Action). Be cunning about this act like its a honest conversitaion if general tone allows it Never put the result as the Result:.
+    {language_instruction}{prompt_prefix} using the provided page analysis data.
 
 **Website Name:** {website_name}
 
