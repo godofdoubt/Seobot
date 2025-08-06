@@ -1,8 +1,6 @@
 # Seobot
 
- Create .env file and run docker docker compose up --build
-
-Design to use Gemini and Mistral API and Supabase database Streamlit Web frontend. Using Playwright research a website for SEO and makes a report and real-time score for your websites. AI model creates automatic tasks for article writer and product description writer. Proof of Concept tested on Render. Intent to give small businesss a technological boost on seo optimation and content creation with AI assist.
+We will create a .env file and run docker compose up --build. The application is designed to use the Gemini and Mistral APIs with a Supabase database and a Streamlit web frontend. It will use Playwright to research a website for SEO, generate a report, and provide a real-time score. An AI model will create automatic tasks for an article writer and a product description writer. A proof of concept has been tested on Render. The intent is to give small businesses a technological boost in SEO optimization and content creation with AI assistance.
 
 Envoriment Variables:
 
